@@ -644,6 +644,14 @@ function ns.Probe()
   end
   add("Dernier sort lancé (UNIT_SPELLCAST_SUCCEEDED) : %s", lastCast)
   local lc = db.probe.lastCombatCast
+  do
+    local W = ns.Wand
+    local sp = W and W.Speed()
+    local z = {}
+    for _, r in ipairs(sp and W.Zones(sp) or {}) do z[#z + 1] = ("%.2f-%.2f"):format(r[1], r[2]) end
+    add("Baguette : vitesse %s | échecs appris %d | zone rouge (phase) %s", sp and ("%.2f s"):format(sp) or "inconnue",
+      W and W.FailCount() or 0, #z > 0 and table.concat(z, " ; ") or "aucune")
+  end
   add("Dernier sort lancé EN COMBAT (spellID lisible ?) : %s", lc and ("%s %s (%s)"):format(tostring(lc.id), tostring(lc.name), tostring(lc.when)) or "aucun")
 
   section("Talents et double spécialisation")

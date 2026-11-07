@@ -39,6 +39,53 @@ function P.UpdateBar()
   end
 end
 
+-- Barre de tir de baguette : visible seulement tant que ns.Wand.State() existe ; OnUpdate (0,05 s) seulement pendant ce temps.
+-- Remplissage = phase du cycle, fond vert = on peut lancer, zones rouges = « n'appuie pas », trait blanc = curseur.
+local WAND_W = 112
+local wandActive, wandAcc = false, 0
+
+function P.UpdateWand()
+  if not frame then return end
+  local wb = frame.wand
+  local st = ns.Wand and ns.db and ns.db.show and ns.db.show.wandbar ~= false and ns.Wand.State()
+  if not st then
+    wb:Hide()
+    wb.label:SetText("")
+    if wandActive then wandActive = false wb:SetScript("OnUpdate", nil) end
+    return
+  end
+  wb:SetValue(st.phase)
+  wb.cursor:SetPoint("CENTER", wb, "LEFT", st.phase * WAND_W, 0)
+  for i, tex in ipairs(wb.zones) do
+    local z = st.zones[i]
+    if z then
+      tex:SetPoint("LEFT", wb, "LEFT", z[1] * WAND_W, 0)
+      tex:SetSize(math.max(1, (z[2] - z[1]) * WAND_W), 6)
+      tex:Show()
+    else
+      tex:Hide()
+    end
+  end
+  wb.red = st.red
+  local c = st.red and C.bad or C.good
+  wb.label:SetText(st.red and ns.L.WAND_WAIT or ns.L.WAND_GO)
+  wb.label:SetTextColor(c[1], c[2], c[3])
+  wb:Show()
+  if not wandActive then
+    wandActive, wandAcc = true, 0
+    wb:SetScript("OnUpdate", function(_, dt)
+      wandAcc = wandAcc + dt
+      if wandAcc >= 0.05 then wandAcc = 0 P.UpdateWand() end
+    end)
+  end
+end
+
+function ns.ToggleWand()
+  ns.db.show.wandbar = ns.db.show.wandbar == false
+  P.UpdateWand()
+  if ns.RefreshOptions then ns.RefreshOptions() end
+end
+
 function P.Render(result)
   if not frame then return end
   result = result or Rotation.current
@@ -62,7 +109,7 @@ end
 local function build()
   frame = UI.Panel("PretreCoachRotationFrame", UIParent)
   P.frame = frame
-  frame:SetSize(176, 104)
+  frame:SetSize(176, 112)
   frame:SetPoint("CENTER", UIParent, "CENTER", 0, -160)
   frame:Hide()
   UI.Movable(frame, "rotation")
@@ -88,9 +135,32 @@ local function build()
   bar.bg:SetColorTexture(1, 1, 1, 0.1)
   bar:Hide()
 
+  local wb = CreateFrame("StatusBar", nil, frame)
+  frame.wand = wb
+  wb:SetSize(WAND_W, 6)
+  wb:SetPoint("TOPLEFT", bar, "BOTTOMLEFT", 0, -3)
+  wb:SetMinMaxValues(0, 1)
+  pcall(wb.SetStatusBarTexture, wb, "Interface\\Buttons\\WHITE8X8")
+  wb:SetStatusBarColor(1, 1, 1, 0.3) -- fill translucide : les zones rouges restent visibles dessous
+  wb.bg = wb:CreateTexture(nil, "BACKGROUND")
+  wb.bg:SetAllPoints(wb)
+  wb.bg:SetColorTexture(C.good[1], C.good[2], C.good[3], 0.55)
+  wb.zones = {}
+  for i = 1, 2 do
+    local z = wb:CreateTexture(nil, "BACKGROUND", nil, 1)
+    z:SetColorTexture(C.bad[1], C.bad[2], C.bad[3], 0.85)
+    wb.zones[i] = z
+  end
+  wb.cursor = wb:CreateTexture(nil, "OVERLAY")
+  wb.cursor:SetSize(2, 10)
+  wb.cursor:SetColorTexture(1, 1, 1, 1)
+  wb.label = frame:CreateFontString(nil, "OVERLAY", UI.font.small)
+  wb.label:SetPoint("LEFT", wb, "RIGHT", 6, 0)
+  wb:Hide()
+
   frame.text = frame:CreateFontString(nil, "OVERLAY", UI.font.small)
   frame.text:SetJustifyH("LEFT")
-  frame.text:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -76)
+  frame.text:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -84)
   frame.text:SetWidth(156)
   frame.text:SetTextColor(C.white[1], C.white[2], C.white[3])
 end
@@ -102,3 +172,4 @@ ns.On("ADDON_LOADED", function(_, name)
 end)
 ns.Listen("ROTATION", function(_, result) P.Render(result) end)
 ns.Listen("TIMERS", P.UpdateBar)
+ns.Listen("WAND", P.UpdateWand)

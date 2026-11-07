@@ -107,6 +107,7 @@ function mock.reset()
   mock.dead, mock.canAttack, mock.items, mock.hp, mock.cooldowns, mock.mana = nil, nil, nil, nil, nil, nil
   mock.vitalsReadable, mock.nodes, mock.unspent, mock.usable = nil, nil, nil, nil
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known = 0, "Creature-0", nil, nil, nil
+  mock.rangedSpeed = nil
   mock.level, mock.xp, mock.xpMax, mock.xpSecret = nil, nil, nil, nil
   mock.secure, mock.attrCalls, mock.attrInCombat, mock.secureInCombat, mock.offline, mock.outOfRange = {}, 0, 0, 0, nil, nil
   mock.moveInCombat = 0
@@ -182,6 +183,7 @@ function UnitIsConnected() if secretNow() then return mock.SECRET end return moc
 function UnitInRange() if secretNow() then return mock.SECRET end return mock.outOfRange ~= true, true end
 function UnitCanAttack()if secretNow() then return mock.SECRET end return mock.canAttack ~= false end
 -- mock.guid pilote le GUID de la cible ; mock.noGuid = illisible (nil)
+function UnitRangedDamage() if secretNow() then return mock.SECRET end return mock.rangedSpeed end -- vitesse de la baguette (nil = inconnue)
 function UnitGUID() if mock.noGuid then return nil end return secretNow() and mock.SECRET or mock.guid end
 function CheckInteractDistance() return false end
 function GetUnitSpeed() return 0 end

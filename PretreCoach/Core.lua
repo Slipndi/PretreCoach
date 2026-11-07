@@ -70,7 +70,7 @@ end
 
 -- Valeurs par défaut des réglages : complétées sans jamais écraser ce que le joueur a déjà.
 ns.DEFAULTS = {
-  show = { guide = true, rotation = true, rules = true, toasts = true, minimap = true, progress = true, heal = true, cons = true, craft = true, mana = true },
+  show = { guide = true, rotation = true, rules = true, toasts = true, minimap = true, progress = true, heal = true, cons = true, craft = true, mana = true, wandbar = true },
   pace = { levels = {} },
   heal = { spells = { ["1"] = "LESSERHEAL", ["2"] = "RENEW", ["shift-1"] = "PWS" } }, -- sort de chaque bouton de souris (cles de Data/Spells)
   guide = { manual = {}, done = {}, tab = "now", compact = false },
@@ -135,6 +135,7 @@ local commands = {
   bilan = function() if ns.Pace then ns.Pace.Report() end end,
   progress = function() if ns.ToggleProgress then ns.ToggleProgress() end end,
   mana = function() if ns.ToggleMana then ns.ToggleMana() end end,
+  wand = function() if ns.ToggleWand then ns.ToggleWand() end end,
   heal = function()
     ns.db.show.heal = ns.db.show.heal == false
     if ns.UI.HealFrames then ns.UI.HealFrames.Render() end

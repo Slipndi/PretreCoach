@@ -202,8 +202,8 @@ local function suite(label)
     local function row(i) return m.rows and m.rows[i] end
     ns.ToggleMinimapMenu(b)
     local btns = N.UI.MenuRows()
-    assert(#btns == 14, "14 lignes cliquables")
-    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", "heal", "conso", "craft", "mana", nil }
+    assert(#btns == 15, "15 lignes cliquables")
+    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", "heal", "conso", "craft", "mana", "wand", nil }
     for i, e in ipairs(expect) do
       calls = {}
       if not m:IsShown() then ns.ToggleMinimapMenu(b) end
@@ -4531,6 +4531,122 @@ local function suite(label)
     assert(t:find("Martha Alliestar", 1, true) and not t:find("Questie", 1, true), "sans coordonnees : pas de lieu invente")
     n.Goto = nil
     assert(n.Prof.Steps(182).todo[1].kind == "rank", "Goto absent")
+  end)
+
+  -- Indicateur de tir de baguette (Wand.lua + barre du RotationPanel)
+  local SHOOT, SMITE_ID = 5019, 585
+  local function near(a, b) return type(a) == "number" and math.abs(a - b) < 0.01 end
+  local function shoot(t) mock.time = t mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", SHOOT) end
+  local function failAt(t, id) mock.time = t mock.fire("UNIT_SPELLCAST_FAILED", "player", "c", id or SMITE_ID) end
+  -- baguette lancee 4 fois a 1,5 s d'ecart : dernier tir a t = 104,5
+  local function wandBoot(fn)
+    local keep = PretreCoachDB
+    isolated(function()
+      local n, P = panel()
+      for i = 0, 3 do shoot(100 + i * 1.5) end
+      fn(n, P, n.Wand, P.frame.wand)
+    end, function() PretreCoachDB = keep end)
+  end
+
+  check("Baguette : vitesse = mediane des ecarts (hors 0,8-4 s), repli UnitRangedDamage", function()
+    wandBoot(function(n, P, W)
+      assert(near(W.Speed(), 1.5), "vitesse " .. tostring(W.Speed()))
+      shoot(120) -- ecart de 15,5 s : ignore
+      assert(near(W.Speed(), 1.5), "ecart aberrant ignore")
+      shoot(120.4) -- 0,4 s : ignore aussi
+      assert(near(W.Speed(), 1.5))
+    end)
+    local keep = PretreCoachDB
+    isolated(function()
+      local n = panel()
+      mock.rangedSpeed = 2.2
+      assert(n.Wand.Speed() == 2.2, "repli UnitRangedDamage")
+      mock.rangedSpeed = nil
+    end, function() PretreCoachDB = keep end)
+  end)
+
+  check("Baguette : zone rouge par defaut (0,5 s apres et avant le tir), phase verte ou rouge", function()
+    wandBoot(function(n, P, W, wb)
+      local z = W.Zones()
+      assert(#z == 2 and near(z[1][1], 0) and near(z[1][2], 1 / 3) and near(z[2][1], 2 / 3) and near(z[2][2], 1), "zones par defaut")
+      mock.time = 104.5 + 0.2
+      local st = W.State()
+      assert(st.red and near(W.Wait(), 0.3), "juste apres le tir : rouge, reste 0,3 s")
+      mock.time = 104.5 + 0.75
+      assert(not W.State().red and W.Wait() == nil, "milieu du cycle : vert")
+      mock.time = 104.5 + 1.4
+      assert(W.State().red, "juste avant le prochain tir : rouge")
+      -- la raison du conseil (ordre inchange)
+      local res = N.Rotation.Compute(rctx({ level = 20, hasWand = true, inCombat = true, hasSWP = true, wandWait = 0.3 }))
+      assert(keysOf(res) == "SHOOT" and not res.reason:find("attends la fin du tir", 1, true), "baguette seule : rien a ajouter")
+      res = N.Rotation.Compute(rctx({ level = 20, hasWand = true, inCombat = true, hasSWP = false, wandWait = 0.3 }))
+      assert(res.keys[1] ~= "SHOOT" and res.reason:find("attends la fin du tir (0.3 s)", 1, true), res.reason)
+    end)
+  end)
+
+  check("Baguette : zone apprise apres 3 echecs (Tir et valeurs secretes ignores)", function()
+    wandBoot(function(n, P, W)
+      failAt(104.5 + 0.6, SHOOT)
+      failAt(104.5 + 0.6, mock.noSecrets and "x" or mock.SECRET)
+      assert(W.FailCount() == 0, "Tir et secret ne comptent pas")
+      failAt(104.5 + 0.6) failAt(104.5 + 0.75)
+      local z = W.Zones()
+      assert(W.FailCount() == 2 and #z == 2, "2 echecs : toujours la zone par defaut")
+      failAt(104.5 + 0.9)
+      z = W.Zones()
+      assert(W.FailCount() == 3 and #z == 1 and near(z[1][1], 0.4 - 0.1 / 1.5) and near(z[1][2], 0.6 + 0.1 / 1.5), "zone apprise")
+      mock.time = 104.5 + 0.1
+      assert(not W.State().red, "phase 0,07 : hors zone apprise")
+      mock.time = 104.5 + 0.75
+      assert(W.State().red, "phase 0,5 : dans la zone")
+      for i = 1, 25 do mock.fire("UNIT_SPELLCAST_FAILED_QUIET", "player", "c", SMITE_ID) end
+      assert(W.FailCount() == 20, "20 phases gardees")
+    end)
+  end)
+
+  check("Baguette : barre visible pendant le tir, cachee apres (2 x vitesse, fin de combat)", function()
+    wandBoot(function(n, P, W, wb)
+      assert(wb:IsShown() and wb.scripts.OnUpdate, "visible pendant le tir")
+      mock.time = 104.5 + 0.2
+      wb.scripts.OnUpdate(wb, 0.1)
+      assert(wb.red == true and wb.label.text == n.L.WAND_WAIT and near(wb.value, 0.2 / 1.5), "rouge : attends")
+      mock.time = 104.5 + 0.75
+      wb.scripts.OnUpdate(wb, 0.1)
+      assert(wb.red == false and wb.label.text == n.L.WAND_GO and near(wb.value, 0.5), "vert : GO")
+      mock.time = 104.5 + 3.5 -- plus de tir depuis plus de 2 x 1,5 s
+      wb.scripts.OnUpdate(wb, 0.1)
+      assert(not wb:IsShown() and wb.scripts.OnUpdate == nil, "plus de tir : cachee, OnUpdate retire")
+      shoot(110)
+      assert(wb:IsShown(), "nouveau tir : revient")
+      mock.fire("PLAYER_REGEN_ENABLED")
+      assert(not wb:IsShown() and wb.scripts.OnUpdate == nil, "fin de combat : cachee")
+    end)
+  end)
+
+  check("Baguette : option show.wandbar masque la barre", function()
+    wandBoot(function(n, P, W, wb)
+      assert(wb:IsShown())
+      n.db.show.wandbar = false
+      P.UpdateWand()
+      assert(not wb:IsShown() and wb.scripts.OnUpdate == nil, "option decochee")
+      shoot(106)
+      assert(not wb:IsShown(), "un tir ne la reaffiche pas")
+      SlashCmdList.PRETRECOACH("wand")
+      assert(n.db.show.wandbar == true and wb:IsShown(), "/coach wand la reaffiche")
+    end)
+  end)
+
+  check("Baguette : rien de secret, rien dans les SavedVariables", function()
+    wandBoot(function(n, P, W)
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", mock.noSecrets and "x" or mock.SECRET)
+      mock.fire("UNIT_SPELLCAST_FAILED", "player", "c", mock.noSecrets and "x" or mock.SECRET)
+      assert(W.FailCount() == 0 and near(W.Speed(), 1.5), "ids secrets ignores")
+      mock.inCombat = true
+      mock.rangedSpeed = nil
+      assert(not findSecret(PretreCoachDB, "db"), "rien de secret")
+      for k in pairs(PretreCoachDB) do assert(not tostring(k):lower():find("wand"), "rien de la baguette dans la base") end
+      mock.inCombat = false
+    end)
   end)
 end
 

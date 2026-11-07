@@ -197,6 +197,10 @@ function Rotation.Compute(ctx)
     out.text = out.text .. " | " .. L.ROT_PSCREAM
     out.reason = out.reason .. " ; monstre au contact : Cri psychique"
   end
+  -- baguette en train de tirer, phase rouge : un sort pressé maintenant risque d'échouer (raison seulement, l'ordre ne change pas)
+  if wand and keys[1] ~= "SHOOT" and type(ctx.wandWait) == "number" then
+    out.reason = out.reason .. (" ; attends la fin du tir (%.1f s)"):format(ctx.wandWait)
+  end
   if keys[1] == "SHOOT" and ctx.moving == true then
     out.text, out.stop = L.ROT_STOP, true
     out.reason = out.reason .. " ; en mouvement : s'arrêter pour tirer"
@@ -396,6 +400,7 @@ function Rotation.Context()
   else ctx.moving = S.Get(IsPlayerMoving) end
   ctx.smitesOnTarget = smites
   ctx.fiveSec = ns.Timers.FiveSecRemaining(TIMING_MARGIN)
+  ctx.wandWait = ns.Wand and ns.Wand.Wait()
   -- plus assez de mana : IsSpellUsable(Châtiment) rend (false, true), lisible en combat d'après la sonde
   local smiteID = Rotation.SpellID("SMITE")
   if smiteID and C_Spell and C_Spell.IsSpellUsable then
