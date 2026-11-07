@@ -1598,11 +1598,11 @@ local function suite(label)
     local sec = { hasHostileTarget = false, recover = true }
     sec.hpPct, sec.manaPct = nil, nil
     local corpse = merge(sec, { targetDead = true, targetCreatureType = N.L.CT_HUMANOID, cannibalUsable = true, bandageCount = 2, recentlyBandaged = false })
-    rk(corpse, "CANNIBAL,BANDAGE,DARKSAC", "secret + fenetre : cadavre, bandage, Sacrifice sombre (3 conseils max)")
+    rk(corpse, "DARKSAC", "vie secrete : jamais de soin (ni cadavre ni bandage)")
     assert(N.Rotation.Compute(rctx(corpse)).text:find(N.L.ROT_RECOVER, 1, true), "titre Recupere")
     rk(merge(sec, {}), "DARKSAC", "combat court, 0 sort a mana : pas de boire ni manger")
     rk(merge(sec, { manaCasts = 2 }), "DARKSAC", "2 sorts a mana : pas encore boire")
-    rk(merge(sec, { manaCasts = 3, longFight = true }), "DARKSAC,DRINK,EAT", "3 sorts a mana et combat long")
+    rk(merge(sec, { manaCasts = 3, longFight = true }), "DARKSAC,DRINK", "3 sorts a mana : boire ; combat long sans vie lisible : pas manger")
     local off = merge(sec, { recover = false }) rk(off, "", "fenetre close : baguette seule")
     rk(merge(sec, { inCombat = true }), "", "en combat : rien")
     assert(not N.Rotation.Compute(rctx(merge(sec, { hasHostileTarget = true }))).text:find(N.L.ROT_RECOVER, 1, true), "cible hostile : pas de carte")

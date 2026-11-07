@@ -79,16 +79,10 @@ function Rotation.Compute(ctx)
     if hp == nil or mp == nil then
       -- vie ou mana secrets : après le combat, la liste de ce qui est possible, sans seuil
       if ctx.recover == true then
-        if ctx.targetDead == true and edible[ctx.targetCreatureType] and ctx.cannibalUsable == true and ready("CANNIBAL") then
-          add("CANNIBAL", L.ROT_CANNIBAL, "cadavre humanoïde ou mort-vivant")
-        end
-        if (ctx.bandageCount or 0) > 0 and ctx.recentlyBandaged ~= true then
-          add("BANDAGE", L.ROT_BANDAGE, "bandage disponible")
-        end
+        -- vie secrète : aucun conseil de soin (bandage, manger, Cannibalisme), on ne sait pas si le joueur est blessé
         if ready("DARKSAC") then add("DARKSAC", L.ROT_DARKSAC, "Sacrifice sombre prêt") end
         -- shortcut: mana secret, seuil de 3 sorts à mana dans le combat ; à remplacer si une jauge lisible apparaît
         if (ctx.manaCasts or 0) >= 3 then add("DRINK", L.ROT_DRINK, "3 sorts à mana ou plus dans le combat") end
-        if ctx.longFight == true then add("EAT", L.ROT_EAT, "combat long") end
         out.text = L.ROT_RECOVER .. " : " .. out.text
         out.reason = "récupération après combat (vie ou mana secrets) : " .. out.reason
       elseif #keys == 0 then out.reason = "vie ou mana illisible : rien à récupérer" end
