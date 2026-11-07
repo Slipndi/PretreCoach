@@ -35,6 +35,7 @@ function FRAME.RegisterUnitEvent(self, e, unit)
   FRAME.RegisterEvent(self, e)
   self.unit[e] = unit
 end
+function FRAME.SetValue(self, v) self.value = v end
 function FRAME.SetText(self, t) mock.lastText = t self.text = t end
 function FRAME.Show(self) local was = self.shown self.shown = true if not was and self.scripts.OnShow then self.scripts.OnShow(self) end end
 function FRAME.Hide(self) self.shown = false end
@@ -68,7 +69,7 @@ end
 function mock.reset()
   mock.events, mock.timers, mock.errors, mock.printed = {}, {}, {}, {}
   mock.inCombat, mock.hasTarget, mock.rejectEvents, mock.noRegisterUnitEvent, mock.lastText = false, true, nil, false, nil
-  mock.unknown = {}
+  mock.unknown, mock.tickers, mock.actions, mock.bindings, mock.auras = {}, {}, nil, nil, nil
   mock.dead, mock.canAttack, mock.items = nil, nil, nil
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known, mock.talentList = 0, "Creature-0", nil, nil, nil, nil, nil
   SlashCmdList = {}
@@ -76,7 +77,14 @@ function mock.reset()
 end
 
 -- Minuteurs : file qu'on vide a la main.
-C_Timer = { After = function(delay, fn) mock.timers[#mock.timers + 1] = { delay = delay, fn = fn } end }
+mock.tickers = {}
+C_Timer = { After = function(delay, fn) mock.timers[#mock.timers + 1] = { delay = delay, fn = fn } end,
+  NewTicker = function(delay, fn)
+    local t = { delay = delay, fn = fn, cancelled = false }
+    t.Cancel = function(self) self.cancelled = true end
+    mock.tickers[#mock.tickers + 1] = t
+    return t
+  end }
 function mock.flushTimers()
   local q = mock.timers
   mock.timers = {}
@@ -109,7 +117,7 @@ function UnitPower() return secretNow() and mock.SECRET or 50 end
 UnitPowerMax = UnitPower
 GetPowerRegen = sec(1)
 function UnitExists() return mock.hasTarget end
-UnitCreatureType = sec("Humanoide")
+UnitCreatureType = sec("Humanoïde")
 -- mock.dead = la cible est morte ; mock.canAttack = false : cible non attaquable (allie, soi)
 function UnitIsDead() if secretNow() then return mock.SECRET end return mock.dead == true end
 function UnitCanAttack() if secretNow() then return mock.SECRET end return mock.canAttack ~= false end
@@ -163,7 +171,17 @@ C_Spell = {
   IsSpellUsable = sec(true),
   IsSpellInRange = sec(true),
 }
-C_UnitAuras = { GetAuraDataByIndex = function() return secretNow() and mock.SECRET or nil end }
+C_UnitAuras = { GetAuraDataByIndex = function() return secretNow() and mock.SECRET or nil end,
+  -- mock.auras = { [spellID] = true } : auras du joueur
+  GetPlayerAuraBySpellID = function(id)
+    if secretNow() then return mock.SECRET end
+    if mock.auras and mock.auras[id] then return { name = "Aura" .. id } end
+  end }
+-- mock.actions = { [slot] = spellID } ; mock.bindings = { [commande] = touche }
+function GetActionInfo(slot) local id = (mock.actions or {})[slot] if id then return "spell", id end end
+function GetBindingKey(cmd) return (mock.bindings or {})[cmd] end
+function GetBindingText(k) return k end
+C_Spell.GetSpellTexture = function(id) return "tex" .. id end
 C_Map = { GetBestMapForUnit = function() return 1 end, GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = "Tirisfal", parentMapID = id == 1 and 1420 or 0 } end }
 
 -- APIs incertaines sur Forever : mock.setAbsent(true) les retire toutes (passe « absente »), false les remet.
@@ -171,7 +189,7 @@ local UNCERTAIN = [[
 GetTalentTabInfo GetTalentInfo GetNumTalentTabs GetNumTalents GetNumTalentGroups GetActiveTalentGroup GetUnspentTalentPoints
 C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo GetSkillLineInfo GetNumSkillLines
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
-GetTrainerServiceLevelReq GetTrainerServiceCost GetInventoryItemID C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
+GetTrainerServiceLevelReq GetTrainerServiceCost GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end

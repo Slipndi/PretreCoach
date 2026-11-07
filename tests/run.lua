@@ -1047,6 +1047,404 @@ local function suite(label)
     PretreCoachDB = keep
   end)
 
+  ------------------------------------------------------------------------
+  -- Rotation (spec 5)
+  ------------------------------------------------------------------------
+  -- Les instances chargees par les tests precedents restent inscrites aux evenements du mock : on isole.
+  local function isolated(fn, restore)
+    local saved = mock.events
+    mock.events = {}
+    local ok, err = xpcall(fn, debug.traceback)
+    mock.events = saved
+    if restore then restore() end
+    if not ok then error(err, 0) end
+  end
+
+  local FULL = { PWS = 1, SWP = 1, SMITE = 1, MINDBLAST = 1, HOLYFIRE = 1, SHADOWFORM = 1, SWD = 1, MINDFLAY = 1,
+    PSCREAM = 1, CANNIBAL = 1, DARKSAC = 1 }
+  -- hasSWP vaut false par defaut ; swpNil = Douleur inconnue (Timers degrade) ; cdNil = recharges inconnues
+  local function rctx(o)
+    local known, cdv = o.known or FULL, o.cd or {}
+    local c = { level = 12, inCombat = false, hasHostileTarget = true, hasWand = false, hasSWP = false,
+      knows = function(k) return known[k] end, cd = function(k) return cdv[k] or 0 end }
+    for k, v in pairs(o) do if k ~= "known" and k ~= "cd" and k ~= "cdNil" and k ~= "swpNil" then c[k] = v end end
+    if o.cdNil then c.cd = function() return nil end end
+    if o.swpNil then c.hasSWP = nil end
+    return c
+  end
+  local function merge(a, b) local c = {} for k, v in pairs(a) do c[k] = v end for k, v in pairs(b) do c[k] = v end return c end
+  local function keysOf(res) return table.concat(res.keys, ",") end
+  local function rk(o, want, why)
+    local res = N.Rotation.Compute(rctx(o))
+    assert(keysOf(res) == want, (why or "") .. " : attendu " .. want .. ", recu " .. keysOf(res) .. " (" .. res.reason .. ")")
+    return res
+  end
+
+  check("Rotation : niveau illisible = aucun conseil", function()
+    local res = N.Rotation.Compute({})
+    assert(#res.keys == 0 and res.reason ~= "")
+  end)
+
+  check("Rotation : paliers 1-10 (Bouclier, Douleur, Chatiment, corps a corps)", function()
+    local K = { PWS = 1, SWP = 1, SMITE = 1 }
+    rk({ level = 8, known = K, weakenedSoul = false }, "PWS,SWP,SMITE", "avant d'engager")
+    rk({ level = 8, known = K, inCombat = true }, "SWP,SMITE,MELEE", "en combat")
+    rk({ level = 8, known = K, inCombat = true, hasSWP = true, targetHpPct = 60 }, "SMITE,MELEE", "cible haute")
+    rk({ level = 8, known = K, inCombat = true, hasSWP = true, targetHpPct = 30 }, "MELEE", "cible basse")
+    rk({ level = 8, known = K, hasSWP = true, weakenedSoul = true }, "SMITE,MELEE", "Ame affaiblie : pas de Bouclier")
+    rk({ level = 8, known = K, hasSWP = true, weakenedSoul = false, shieldUp = true }, "SMITE,MELEE", "Bouclier deja pose")
+    rk({ level = 8, known = K, hasSWP = true, weakenedSoul = false, cd = { PWS = 3 } }, "SMITE,MELEE", "Bouclier en recharge")
+    rk({ level = 8, known = K, hasSWP = true }, "SMITE,MELEE", "Ame affaiblie illisible : pas de Bouclier")
+    rk({ level = 8, known = K, hasSWP = true, cdNil = true, weakenedSoul = false }, "SMITE,MELEE", "recharge inconnue")
+  end)
+
+  check("Rotation : avant baguette, vie de la cible illisible = Chatiment x2 puis corps a corps", function()
+    local K = { SMITE = 1 }
+    for smites, want in pairs({ [0] = "SMITE,MELEE", [1] = "SMITE,MELEE", [2] = "MELEE", [3] = "MELEE" }) do
+      rk({ level = 8, known = K, hasSWP = true, inCombat = true, smitesOnTarget = smites }, want, smites .. " Chatiments")
+    end
+    local res = rk({ level = 8, known = K, hasSWP = true, inCombat = true, smitesOnTarget = 2 }, "MELEE")
+    assert(res.text ~= "" and res.reason ~= "")
+  end)
+
+  check("Rotation : paliers 10-40 avec baguette", function()
+    local o = { level = 20, hasWand = true, inCombat = true }
+    rk(o, "MINDBLAST,SWP,SHOOT", "ouverture")
+    rk(merge(o, { inCombat = false, weakenedSoul = false }), "PWS,MINDBLAST,SWP", "Bouclier puis ouverture")
+    rk(merge(o, { known = { SWP = 1, MINDBLAST = 1 }, cd = { MINDBLAST = 5 } }), "SWP,SHOOT,MINDBLAST",
+      "Attaque mentale en recharge, a la fin")
+    rk(merge(o, { cd = { MINDBLAST = 5 } }), "HOLYFIRE,SWP,SHOOT", "Flammes sacrees quand l'Attaque mentale recharge")
+    rk(merge(o, { known = { SWP = 1, HOLYFIRE = 1, MINDBLAST = 0 } }), "HOLYFIRE,SWP,SHOOT", "Attaque mentale non apprise")
+    rk(merge(o, { hasSWP = true }), "SHOOT", "mana secret : baguette")
+    rk(merge(o, { hasSWP = true, manaPct = 80 }), "MINDBLAST,SHOOT", "mana haut et lisible")
+    rk(merge(o, { hasSWP = true, manaPct = 50 }), "SHOOT", "mana moyen")
+    rk(merge(o, { manaPct = 10 }), "SHOOT", "mana tres bas : plus de sort")
+    rk(merge(o, { targetHpPct = 10 }), "SHOOT", "cible presque morte : on acheve")
+    rk(merge(o, { cdNil = true, swpNil = true }), "SHOOT", "Timers degrade : pas d'Attaque mentale supposee prete")
+    rk(merge(o, { cdNil = true, hasSWP = true, manaPct = 90 }), "SHOOT", "recharge inconnue, mana haut")
+    rk(merge(o, { hasWand = false, hasSWP = true, manaPct = 80 }), "MINDBLAST,SMITE,MELEE", "sans baguette")
+    rk(merge(o, { known = {} }), "SHOOT", "rien d'appris : baguette")
+    rk(merge(o, { known = {}, hasWand = false }), "MELEE", "rien d'appris, sans baguette")
+    rk(merge(o, { known = { MINDBLAST = 0, SWP = 0, SMITE = 0, PSCREAM = 0 }, targetMelee = true }), "SHOOT", "rang 0 = non appris")
+    local nw = merge(o, { known = { SWP = 1 }, hasSWP = true }) nw.hasWand = nil
+    rk(nw, "MELEE", "baguette inconnue : pas de tir suppose")
+  end)
+
+  check("Rotation : un sort non appris n'est jamais conseille", function()
+    local spells = {}
+    for _, sp in ipairs(N.Data.Spells) do spells[sp.key] = true end
+    for _, lvl in ipairs({ 5, 12, 25, 45, 60 }) do
+      for _, wand in ipairs({ true, false }) do
+        for _, inCombat in ipairs({ true, false }) do
+          local res = N.Rotation.Compute(rctx({ level = lvl, known = { SWP = 1 }, hasWand = wand, inCombat = inCombat,
+            manaPct = 90, targetMelee = true, shadowformActive = false, weakenedSoul = false }))
+          for _, k in ipairs(res.keys) do
+            assert(not spells[k] or k == "SWP" or k == "SHOOT", "conseille sans etre appris : " .. k)
+          end
+        end
+      end
+    end
+  end)
+
+  check("Rotation : Cri psychique au contact, jamais en premier", function()
+    local o = { level = 20, hasWand = true, inCombat = true, targetMelee = true }
+    local res = rk(o, "MINDBLAST,PSCREAM,SWP")
+    assert(res.text:find(N.L.ROT_PSCREAM, 1, true), "avertissement dans le texte")
+    rk(merge(o, { hasSWP = true }), "SHOOT,PSCREAM")
+    rk(merge(o, { hasSWP = true, targetMelee = false }), "SHOOT")
+    local nm = merge(o, { hasSWP = true }) nm.targetMelee = nil
+    rk(nm, "SHOOT", "position illisible")
+    rk(merge(o, { hasSWP = true, cd = { PSCREAM = 10 } }), "SHOOT", "en recharge")
+    rk(merge(o, { hasSWP = true, cdNil = true }), "SHOOT", "recharge inconnue")
+  end)
+
+  check("Rotation : baguette et mouvement", function()
+    local o = { level = 20, hasWand = true, inCombat = true, hasSWP = true }
+    local res = rk(merge(o, { moving = true }), "SHOOT")
+    assert(res.stop == true and res.text == N.L.ROT_STOP)
+    res = rk(merge(o, { moving = false }), "SHOOT")
+    assert(not res.stop and res.text == N.L.ROT_SHOOT)
+    assert(not rk(o, "SHOOT").stop, "mouvement inconnu")
+  end)
+
+  check("Rotation : paliers 40-60, Forme d'Ombre", function()
+    local o = { level = 40, hasWand = true }
+    rk(merge(o, { shadowformActive = false }), "SHADOWFORM,MINDBLAST,SWP", "Forme d'Ombre absente au 40")
+    rk(merge(o, { shadowformActive = true }), "MINDBLAST,SWP,SWD", "Forme d'Ombre active")
+    rk(o, "MINDBLAST,SWP,SWD", "Forme d'Ombre illisible : pas de rappel")
+    rk(merge(o, { shadowformActive = false, inCombat = true }), "MINDBLAST,SWP,SWD", "pas de rappel en combat")
+    rk(merge(o, { shadowformActive = false, known = { SWP = 1 } }), "SWP,SHOOT", "Forme d'Ombre non apprise")
+    rk(merge(o, { level = 39, shadowformActive = false }), "MINDBLAST,SWP,SHOOT", "pas avant 40")
+    rk(merge(o, { level = 45, weakenedSoul = false, shadowformActive = true }), "PWS,MINDBLAST,SWP", "Bouclier d'abord")
+    local c = merge(o, { level = 45, inCombat = true, hasSWP = true })
+    rk(c, "SWD,MINDBLAST,SHOOT", "Mort et Attaque mentale prets")
+    rk(merge(c, { manaPct = 80, cd = { MINDBLAST = 5, SWD = 5 } }), "MINDFLAY,SHOOT,MINDBLAST", "Fouet mental pour combler")
+    rk(merge(c, { cd = { MINDBLAST = 5, SWD = 5 } }), "SHOOT,MINDBLAST,SWD", "mana secret : pas de Fouet mental")
+    rk(merge(c, { cdNil = true, manaPct = 80 }), "MINDFLAY,SHOOT", "recharges inconnues")
+    rk(merge(c, { cdNil = true, hasWand = false, known = { SWP = 1 } }), "MELEE", "sans baguette, tout inconnu")
+  end)
+
+  check("Rotation : recuperation hors combat sans cible", function()
+    local base = { hasHostileTarget = false, hpPct = 100, manaPct = 100 }
+    local corpse = merge(base, { hpPct = 50, targetDead = true, targetCreatureType = N.L.CT_HUMANOID, cannibalUsable = true })
+    rk(base, "", "tout va bien")
+    rk(corpse, "CANNIBAL,EAT", "Cannibalisme")
+    rk(merge(corpse, { targetCreatureType = N.L.CT_UNDEAD }), "CANNIBAL,EAT", "mort-vivant")
+    rk(merge(corpse, { targetCreatureType = "Bete" }), "EAT", "pas un humanoide")
+    rk(merge(corpse, { cannibalUsable = false }), "EAT", "sort inutilisable")
+    rk(merge(corpse, { cd = { CANNIBAL = 40 } }), "EAT", "en recharge")
+    rk(merge(corpse, { cdNil = true }), "EAT", "recharge inconnue")
+    rk(merge(base, { manaPct = 20 }), "DARKSAC,DRINK", "Sacrifice sombre puis boire")
+    rk(merge(base, { manaPct = 20, known = { SWP = 1 } }), "DRINK", "Sacrifice sombre non appris")
+    rk(merge(base, { manaPct = 20, hpPct = 40 }), "DRINK", "vie trop basse pour le Sacrifice sombre")
+    local hurt = merge(base, { hpPct = 40, bandageCount = 2, recentlyBandaged = false })
+    rk(hurt, "BANDAGE,EAT", "bandage avant de manger")
+    rk(merge(hurt, { recentlyBandaged = true }), "EAT", "bandage recent")
+    local nb = merge(hurt, {}) nb.recentlyBandaged = nil
+    rk(nb, "EAT", "bandage recent illisible")
+    rk(merge(hurt, { bandageCount = 0 }), "EAT", "pas de bandage")
+    rk(merge(hurt, { manaPct = 20 }), "DRINK", "mana bas aussi : boire")
+    local o = merge(base, {}) o.hpPct = nil
+    rk(o, "", "vie illisible")
+    o = merge(base, { hpPct = 10 }) o.manaPct = nil
+    rk(o, "", "mana illisible")
+    rk(merge(base, { inCombat = true, manaPct = 10 }), "", "en combat sans cible")
+  end)
+
+  check("Rotation : Context lit le jeu, secret = nil", function()
+    local n = loadAddon()
+    n.State.level, n.State.wand = 12, { itemID = 11287 }
+    n.State.profs = { [129] = { rank = 30, max = 75 } }
+    mock.items = { [1251] = 3, [2581] = 4, [6452] = 5 }
+    mock.auras = { [6788] = true }
+    local c = n.Rotation.Context()
+    assert(c.level == 12 and c.inCombat == false and c.hasHostileTarget == true and c.hasWand == true)
+    assert(c.knows == n.State.Knows and c.cd == n.Timers.CooldownRemaining)
+    assert(c.manaPct == 100 and c.hpPct == 100 and c.targetHpPct == 100 and c.targetMelee == false)
+    assert(c.weakenedSoul == true and c.shieldUp == false and c.shadowformActive == false and c.smitesOnTarget == 0)
+    mock.hasTarget = false
+    c = n.Rotation.Context()
+    assert(c.hasHostileTarget == false and c.bandageCount == (GetItemCount and 3 or 0), "bandages : rang et anti-venin exclus")
+    mock.hasTarget, mock.dead = true, true
+    c = n.Rotation.Context()
+    assert(c.hasHostileTarget == false and c.targetDead == true and c.targetCreatureType == N.L.CT_HUMANOID)
+    mock.dead, mock.canAttack = nil, false
+    assert(n.Rotation.Context().hasHostileTarget == false, "cible amicale")
+    mock.canAttack = nil
+    n.State.wand = false
+    assert(n.Rotation.Context().hasWand == false)
+    n.State.wand = nil
+    assert(n.Rotation.Context().hasWand == nil)
+    mock.setCombat(true)
+    c = n.Rotation.Context()
+    assert(c.inCombat == true)
+    if not mock.noSecrets then
+      assert(c.manaPct == nil and c.hpPct == nil and c.targetHpPct == nil, "vie et mana secrets = nil")
+      assert(c.weakenedSoul == nil and c.shieldUp == nil and c.shadowformActive == nil, "auras secretes = nil")
+      assert(c.hasHostileTarget == true, "cible supposee attaquable")
+    end
+    mock.setCombat(false)
+    mock.items, mock.auras = nil, nil
+  end)
+
+  check("Rotation : compteur de Chatiments, remis a zero au changement de cible", function()
+    isolated(function()
+      local n = loadAddon()
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 585)
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 589)
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", mock.noSecrets and "x" or mock.SECRET)
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 591)
+      assert(n.Rotation.Context().smitesOnTarget == 2)
+      mock.fire("PLAYER_TARGET_CHANGED")
+      assert(n.Rotation.Context().smitesOnTarget == 0)
+    end)
+  end)
+
+  check("Rotation : ROTATION n'est emis qu'au changement, raison en debug, minuteur", function()
+    isolated(function()
+      local n = loadAddon()
+      n.db = { debug = true, show = { rotation = true } }
+      n.State.level, n.State.wand = 20, { itemID = 11287 }
+      local got = {}
+      n.Listen("ROTATION", function(_, res) got[#got + 1] = res end)
+      local Ro = n.Rotation
+      local updates, orig = 0, Ro.Update
+      Ro.Update = function(...) updates = updates + 1 return orig(...) end
+      local printed0 = #mock.printed
+      mock.hasTarget = true
+      mock.fire("PLAYER_TARGET_CHANGED")
+      assert(#got == 1 and #got[1].keys > 0, "premier calcul emis")
+      local dbg = 0
+      for i = printed0 + 1, #mock.printed do if mock.printed[i]:find("[debug]", 1, true) then dbg = dbg + 1 end end
+      assert(dbg >= 1, "debug : la raison est affichee")
+      mock.fire("PLAYER_TARGET_CHANGED")
+      mock.fire("PLAYER_REGEN_DISABLED")
+      mock.fire("PLAYER_REGEN_ENABLED")
+      mock.fire("PLAYER_STARTED_MOVING")
+      mock.fire("UNIT_AURA", "player")
+      n.Fire("TIMERS")
+      n.Fire("STATE", { "level" })
+      assert(#got == 1, "inchange : pas de nouvel evenement (" .. #got .. ")")
+      local useTicker = C_Timer and C_Timer.NewTicker
+      local function alive()
+        if useTicker then local t = mock.tickers[#mock.tickers] return t ~= nil and not t.cancelled end
+        return Ro.tickFrame ~= nil and Ro.tickFrame.scripts.OnUpdate ~= nil
+      end
+      assert(alive(), "minuteur actif avec une cible")
+      local before = updates
+      if useTicker then
+        local t = mock.tickers[#mock.tickers]
+        assert(t.delay == 0.2)
+        t.fn()
+      else
+        Ro.tickFrame.scripts.OnUpdate(Ro.tickFrame, 0.1)
+        assert(updates == before, "pas de recalcul avant 0,2 s")
+        Ro.tickFrame.scripts.OnUpdate(Ro.tickFrame, 0.15)
+      end
+      assert(updates == before + 1, "un recalcul par tic")
+      mock.hasTarget = false
+      mock.fire("PLAYER_TARGET_CHANGED")
+      assert(#got == 2 and #got[2].keys == 0, "plus de cible : resultat vide emis une fois")
+      assert(not alive(), "minuteur arrete sans cible ni combat")
+      mock.setCombat(true)
+      mock.fire("PLAYER_REGEN_DISABLED")
+      assert(alive(), "minuteur actif en combat")
+      mock.setCombat(false)
+      mock.fire("PLAYER_REGEN_ENABLED")
+      assert(not alive(), "minuteur arrete apres le combat")
+      mock.hasTarget = true
+    end, function() mock.setCombat(false) mock.hasTarget = true end)
+  end)
+
+  -- Panneau : une instance neuve, ADDON_LOADED, puis les appels de l'interface sont journalises.
+  local function panel()
+    local n = loadAddon()
+    PretreCoachDB = { show = { rotation = true } }
+    mock.fire("ADDON_LOADED", ADDON)
+    local P = n.UI.RotationPanel
+    P.log = { pulse = 0, icons = {}, gray = {} }
+    local function wrap(b, i)
+      local si, sg, sp = b.SetIcon, b.SetGrayed, b.Pulse
+      b.SetIcon = function(s, t) P.log.icons[i] = t si(s, t) end
+      b.SetGrayed = function(s, g) P.log.gray[i] = g sg(s, g) end
+      b.Pulse = function(s) P.log.pulse = P.log.pulse + 1 sp(s) end
+    end
+    wrap(P.frame.big, 1) wrap(P.frame.small[1], 2) wrap(P.frame.small[2], 3)
+    return n, P
+  end
+
+  check("RotationPanel : masque sans conseil ou si show.rotation == false, icones, grisage, pulse", function()
+    local keep = PretreCoachDB
+    isolated(function()
+      local n, P = panel()
+      assert(P.frame and not P.frame:IsShown(), "masque au depart")
+      mock.time = 400
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 8092) -- Attaque mentale : recharge 8 s
+      mock.time = 401
+      n.Fire("ROTATION", { keys = {}, text = "" })
+      assert(not P.frame:IsShown(), "masque quand keys est vide")
+      P.log.pulse = 0
+      n.Fire("ROTATION", { keys = { "MINDBLAST", "SHOOT", "SWP" }, text = "Texte" })
+      assert(P.frame:IsShown() and P.frame.text.text == "Texte", "affiche")
+      assert(P.log.icons[1] and P.log.icons[2] and P.log.icons[3], "trois icones")
+      assert(P.log.gray[1] == true and P.log.gray[2] == false and P.log.gray[3] == false, "grise si recharge en cours")
+      assert(P.log.pulse == 1)
+      n.Fire("ROTATION", { keys = { "MINDBLAST", "SHOOT" }, text = "Texte 2" })
+      assert(P.log.pulse == 1, "meme premiere icone : pas de pulse")
+      assert(not P.frame.small[2]:IsShown(), "troisieme icone masquee")
+      n.Fire("ROTATION", { keys = { "SWP" }, text = "T" })
+      assert(P.log.pulse == 2 and not P.frame.small[1]:IsShown(), "premiere icone changee : pulse")
+      n.Fire("ROTATION", { keys = {}, text = "" })
+      assert(not P.frame:IsShown())
+      n.db.show.rotation = false
+      n.Fire("ROTATION", { keys = { "SHOOT" }, text = "T" })
+      assert(not P.frame:IsShown(), "show.rotation == false")
+      n.db.show.rotation = true
+      n.Fire("ROTATION", { keys = { "SHOOT" }, text = "T" })
+      assert(P.frame:IsShown() and P.log.pulse == 3)
+      n.Fire("ROTATION", { keys = { "SHOOT" }, text = "Arrete", stop = true })
+      assert(P.log.pulse == 4, "stop : l'icone clignote")
+    end, function() PretreCoachDB = keep end)
+  end)
+
+  check("RotationPanel : barre des 5 s", function()
+    local keep = PretreCoachDB
+    isolated(function()
+      local _, P = panel()
+      local bar = P.frame.bar
+      mock.time = 100
+      assert(not bar:IsShown(), "masquee au depart")
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 585)
+      assert(bar:IsShown() and bar.value == 5 and bar.scripts.OnUpdate, "5 s lancees")
+      mock.time = 102
+      bar.scripts.OnUpdate(bar, 0.01)
+      assert(bar.value == 5, "OnUpdate limite : rien avant 0,05 s")
+      bar.scripts.OnUpdate(bar, 0.1)
+      assert(bar.value == 3, "valeur " .. tostring(bar.value))
+      mock.time = 106
+      bar.scripts.OnUpdate(bar, 0.1)
+      assert(not bar:IsShown() and bar.scripts.OnUpdate == nil, "fini : masquee, OnUpdate retire")
+      mock.time = 110
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 585)
+      assert(bar:IsShown())
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", mock.noSecrets and "x" or mock.SECRET) -- mode degrade
+      assert(not bar:IsShown() and bar.scripts.OnUpdate == nil, "mode degrade : masquee")
+    end, function() PretreCoachDB = keep end)
+  end)
+
+  check("Rotation : SpellID et Texture", function()
+    local n = loadAddon()
+    knows({ [589] = true, [594] = true })
+    if IsPlayerSpell then
+      assert(n.Rotation.SpellID("SWP") == 594 and n.Rotation.SpellID("SMITE") == nil, "plus haut rang connu")
+      assert(n.Rotation.Texture("SWP") == "tex594")
+    else
+      assert(n.Rotation.SpellID("SWP") == nil)
+    end
+    assert(n.Rotation.SpellID("MELEE") == nil and n.Rotation.Texture("MELEE") ~= nil)
+    knows(nil)
+  end)
+
+  check("Rotation : Hotkey avec et sans C_ActionBar, scan jamais en combat, cache", function()
+    local keepAB, keepGAI = C_ActionBar, GetActionInfo
+    isolated(function()
+      local n = loadAddon()
+      local want = GetBindingText and "SHIFT-3" or "S3"
+      local scans = 0
+      GetActionInfo = function(...) scans = scans + 1 return keepGAI(...) end
+      -- avec C_ActionBar.FindSpellActionButtons
+      C_ActionBar = { FindSpellActionButtons = function(id) if id == 10894 then return { 3 } end end }
+      mock.bindings = { ACTIONBUTTON3 = "SHIFT-3" }
+      assert(n.Rotation.Hotkey("SWP") == want, "raccourci via Find : " .. tostring(n.Rotation.Hotkey("SWP")))
+      assert(scans == 0, "pas de scan quand Find existe")
+      assert(n.Rotation.Hotkey("MELEE") == nil and n.Rotation.Hotkey("SMITE") == nil, "sort absent des barres")
+      mock.bindings = { ACTIONBUTTON3 = "F5" }
+      assert(n.Rotation.Hotkey("SWP") == want, "cache")
+      mock.fire("UPDATE_BINDINGS")
+      assert(n.Rotation.Hotkey("SWP") == "F5", "cache invalide sur UPDATE_BINDINGS")
+      -- sans C_ActionBar : scan de GetActionInfo, hors combat seulement
+      C_ActionBar = nil
+      mock.actions = { [26] = 594 }
+      mock.bindings = { MULTIACTIONBAR3BUTTON2 = "F2", ACTIONBUTTON1 = "1" }
+      mock.fire("ACTIONBAR_SLOT_CHANGED")
+      mock.setCombat(true)
+      assert(n.Rotation.Hotkey("SWP") == nil and scans == 0, "pas de scan en combat")
+      mock.setCombat(false)
+      assert(n.Rotation.Hotkey("SWP") == "F2", "scan hors combat, barre de droite")
+      assert(scans == 120, "120 emplacements scannes une fois : " .. scans)
+      n.Rotation.Hotkey("SWP") n.Rotation.Hotkey("SMITE")
+      assert(scans == 120, "scan reutilise")
+      mock.actions = { [1] = 585 }
+      mock.fire("ACTIONBAR_SLOT_CHANGED")
+      assert(n.Rotation.Hotkey("SMITE") == "1" and scans == 240, "cache invalide sur ACTIONBAR_SLOT_CHANGED")
+      assert(n.Rotation.Hotkey("SWP") == nil, "sort retire des barres")
+    end, function()
+      C_ActionBar, GetActionInfo = keepAB, keepGAI
+      mock.bindings, mock.actions = nil, nil
+      mock.setCombat(false)
+    end)
+  end)
+
   check("Un listener STATE qui plante ne bloque pas les autres", function()
     N.Listen("STATE", function() error("boom") end) -- en dernier : il reste inscrit
     local got = 0
