@@ -11,6 +11,10 @@ local FORBIDDEN = {
   "CreateMacro", "DeleteMacro", "PickupSpell", "PickupAction", "PlaceAction", "SendChatMessage",
   "SendAddonMessage", "C_ChatInfo", "COMBAT_LOG_EVENT_UNFILTERED", "CombatLogGetCurrentEventInfo",
   "loadstring", "RunScript", "setfenv", "getfenv", "SetCVar",
+  -- actions a la place du joueur : metiers, hotel des ventes, marchands, sacs
+  "CraftRecipe", "C_TradeSkillUI.Craft", "OpenTradeSkill", "PostAuction", "PlaceAuctionBid", "C_AuctionHouse.PostItem",
+  "C_AuctionHouse.PostCommodity", "C_AuctionHouse.PlaceBid", "C_AuctionHouse.StartCommoditiesPurchase",
+  "C_AuctionHouse.ConfirmCommoditiesPurchase", "BuyMerchantItem", "PickupContainerItem", "C_Container.PickupContainerItem",
 }
 local PREFIX_OK = { SecureHandler = true } -- SecureHandlerBaseTemplate etc. : pas de borne droite
 
@@ -62,6 +66,14 @@ end
 local fake = find_hits("fake.lua", 'local x = 1\nCastSpellByName("Heal")\n-- SetCVar ignore\nSendChatMessage("hi")\n')
 assert(#fake == 2 and fake[1]:find("fake.lua:2: CastSpellByName", 1, true)
   and fake[2]:find("fake.lua:4: SendChatMessage", 1, true), "auto-test compliance en echec")
+for _, api in ipairs({ "CraftRecipe", "C_TradeSkillUI.Craft", "OpenTradeSkill", "PostAuction", "PlaceAuctionBid", "C_AuctionHouse.PostItem",
+  "C_AuctionHouse.PostCommodity", "C_AuctionHouse.PlaceBid", "C_AuctionHouse.StartCommoditiesPurchase",
+  "C_AuctionHouse.ConfirmCommoditiesPurchase", "BuyMerchantItem", "UseContainerItem", "C_Container.UseContainerItem",
+  "PickupContainerItem", "C_Container.PickupContainerItem" }) do
+  local h = find_hits("fake.lua", "x = 1\n" .. api .. "(1)\n")
+  assert(#h >= 1 and h[1]:find("fake.lua:2: ", 1, true), "auto-test : motif non detecte : " .. api)
+end
+assert(#find_hits("fake.lua", "PostAuctionX(1)\nMyCraftRecipe(1)\n") == 0, "auto-test : bornes de mot")
 print("auto-test : detection OK")
 
 local sep = package.config:sub(1, 1)

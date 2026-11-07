@@ -301,6 +301,9 @@ local function suite(label)
       assert(ts == nil and t:find("0 sacs", 1, true) and t:find("C_AddOns.IsAddOnLoaded absente", 1, true))
     else
       assert(ts.count == 5 and #ts.recipes == 3 and ts.recipes[1].recipeID == 101 and ts.recipes[1].learned == true, "releve metier")
+      mock.recipes = 9
+      mock.fire("TRADE_SKILL_SHOW")
+      assert(ns.db.probe.tradeskill.count == 5, "un seul releve par session")
       assert(t:find("x et y lisibles (45.6, 78.9)", 1, true) and t:find("1 sacs, 1 emplacements", 1, true))
       assert(t:find("(11e valeur de C_Item.GetItemInfo) : 7", 1, true), "prix marchand")
       assert(t:find("instance 10 : Donjon10", 1, true) and not t:find("instance 11", 1, true), "10 instances")
@@ -342,7 +345,7 @@ local function suite(label)
     local t = mock.lastText
     assert(t:find("Tirisfal", 1, true) and t:find("sous-zone : Brill", 1, true) and t:find("Cible : Cible", 1, true), t)
     local p = ns.db.places
-    assert(#p == 1 and p[1].sub == "Brill" and p[1].target == "Cible" and p[1].when)
+    assert(#p == 1 and p[1].sub == "Brill" and p[1].target == nil and p[1].when, "la cible n'est pas sauvegardee")
     if not absent then
       assert(t:find("uiMapID 1", 1, true) and t:find("x 45.6, y 78.9", 1, true), t)
       assert(p[1].mapID == 1 and p[1].x == 45.6 and p[1].y == 78.9)
@@ -2985,8 +2988,8 @@ local function suite(label)
     mock.qboom, mock.ahBoom = true, true
     assert(n.Q.Available() and n.Q.Npc(375, "name") == nil and n.Q.Quest(6561, "name") == nil and n.Q.Where(375) == nil)
     assert(n.AH.Price(2589) == nil and n.AH.Age(2589) == nil)
-    assert(n.Q.StartIndex() == true); drain() -- chaque lecture plante : index vide, pas d'erreur
-    assert(#n.db.qindex.trainers.PRIEST == 0)
+    assert(n.Q.StartIndex() == true); drain() -- chaque lecture plante : pas d'erreur, index non sauvegarde, 3 essais au plus
+    assert(n.db.qindex == nil and mock.qreads <= 3 * 450 + 10, "echec : rien en cache")
     mock.qboom, mock.ahBoom = nil, nil
   end)
 
@@ -3074,6 +3077,77 @@ local function suite(label)
     assert(n.Q.Nearest("ALCHEMY", nil, 999) == nil, "ni meme zone ni capitale : rien")
   end)
 
+  check("Questie : index vide ou Questie pas pret = pas de cache, reessai plus tard, format versionne", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    mock.qboom = true
+    assert(n.Q.StartIndex()); mock.flushTimers(); mock.flushTimers(); mock.flushTimers()
+    assert(n.db.qindex == nil, "rien de sauvegarde")
+    if C_Timer then
+      assert(#mock.timers == 1, "reessai programme")
+      mock.qboom = nil
+      drain()
+      assert(n.db.qindex and #n.db.qindex.trainers.PRIEST == 3, "reessai reussi")
+    end
+    mock.qboom = nil
+    drain()
+    local saved = n.db
+    saved.qindex = saved.qindex or { ver = "1.0.11", trainers = {}, auctioneers = {} }
+    saved.qindex.fmt = nil -- ancien format
+    local n2 = qboot(saved)
+    assert(n2.Q.StartIndex() == true, "format different : reconstruit"); drain()
+    assert(n2.db.qindex.fmt == 1)
+    local n3 = qboot(n2.db)
+    mock.qver = nil -- version illisible : "?" n'est jamais reutilise
+    assert(n3.Q.StartIndex() == true); drain()
+    assert(n3.db.qindex.ver == "?")
+    local n4 = qboot(n3.db)
+    mock.qver = nil
+    assert(n4.Q.StartIndex() == true, "reconstruit a chaque session")
+    drain()
+  end)
+
+  check("Questie : Available() reessaie quand LibQuestieDB apparait", function()
+    if not LibQuestieDB then return end
+    local lib = LibQuestieDB
+    _G.LibQuestieDB = nil
+    local ok, err = pcall(function()
+      local n = qboot()
+      assert(n.Q.Available() == false)
+      _G.LibQuestieDB = lib
+      assert(n.Q.Available() == true, "la bibliotheque est apparue")
+    end)
+    _G.LibQuestieDB = lib
+    assert(ok, err)
+  end)
+
+  check("Questie : ligne de spawn sans y numerique rejetee", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    mock.qnpcs[999] = { 16, "Priest Trainer", "H", 1497, { [1497] = { { 50, "x" } } } }
+    assert(n.Q.Where(999) == nil)
+    mock.qnpcs[999] = nil
+  end)
+
+  check("Questie : Nearest memorise, vide sur QINDEX; capitales preferees", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    n.Q.StartIndex(); drain()
+    assert(n.Q.Nearest("PRIEST", nil, 85) == 377)
+    local r = mock.qreads
+    assert(n.Q.Nearest("PRIEST", nil, 85) == 377 and mock.qreads == r, "deuxieme appel sans lecture")
+    n.db.qindex.trainers.PRIEST = { 303, 375 } -- Orgrimmar puis Fossoyeuse
+    assert(n.Q.Nearest("PRIEST", nil, 85) == 377, "encore en cache")
+    n.Fire("QINDEX")
+    assert(n.Q.Nearest("PRIEST", nil, 999) == 375, "pretre : Fossoyeuse d'abord")
+    n.db.qindex.auctioneers = { 303, 304 }
+    n.Fire("QINDEX")
+    assert(n.Q.Nearest("AUCTIONEER") == 304, "hdv : Fossoyeuse d'abord")
+    n.db.qindex.trainers.COOKING = { 304, 303 }
+    n.Fire("QINDEX")
+    assert(n.Q.Nearest("COOKING") == 304, "autre role : premier trouve")
+  end)
+
   -- L15 : « Ou aller » (conversion AreaID -> uiMapID, Goto, repere de carte)
   local function gboot(withIndex)
     local n = qboot()
@@ -3092,6 +3166,27 @@ local function suite(label)
     else
       assert(n.Q.MapFor(1497) == nil, "API absente : nil, sans erreur")
     end
+  end)
+
+  check("Goto : homonymes, City avant Zone, 1414/1415 avant 946, nom pris non ecrase", function()
+    local n = gboot()
+    if not C_Map then return end
+    local T = Enum.UIMapType
+    mock.areas = { [7] = "Foo", [8] = "Bar", [9] = "Baz" }
+    mock.mapKids = { [1414] = { { mapID = 100, name = "Foo", kind = T.Zone }, { mapID = 300, name = "Baz", kind = T.Zone } },
+      [946] = { { mapID = 200, name = "Foo", kind = T.City }, { mapID = 301, name = "Baz", kind = T.Zone }, { mapID = 400, name = "Bar", kind = T.Zone } } }
+    assert(n.Q.MapFor(7) == 200, "la ville l'emporte sur la zone")
+    assert(n.Q.MapFor(9) == 300, "1414 avant 946")
+    assert(n.Q.MapFor(8) == 400)
+    mock.areas, mock.mapKids = nil, nil
+  end)
+
+  check("GuideWindow : la sous-ligne garde le niveau et ajoute Ou aller", function()
+    local n, G = gw()
+    n.Guide.Evaluate = function() return { { id = "x", text = "T", sub = "Niv. 5-9", go = "WAND", done = false } } end
+    n.ToggleGuide()
+    local t = G.rows[1].sub.text
+    assert(t:find("Niv. 5-9", 1, true) and t:find("Où aller", 1, true), t)
   end)
 
   check("Goto : For avec et sans Questie, cible inconnue", function()
@@ -3150,6 +3245,7 @@ local function suite(label)
       mock.fire("ADDON_LOADED", ADDON)
       local R = n.UI.RulesBar
       local b = R.buttons[1]
+      n.db.qindex = nil -- la base partagee peut porter l'index d'un test precedent
       b.scripts.OnClick(b)
       assert(R.detail.shown and not R.detail.go.shown, "sans coordonnees : bouton masque")
       assert(R.detail.text.text:find("Où aller", 1, true), "ligne Ou aller")

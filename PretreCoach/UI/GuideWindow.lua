@@ -119,7 +119,7 @@ local function fill(r, mode, item, y, w)
   local d = mode == "now" and not item.done and item.go and ns.Goto.For(item.go) or nil
   r.dest = d
   local can = ns.Goto.CanPlace(d)
-  if d then sub = L.GO_WHERE:format(d.text) end
+  if d then sub = (sub and sub ~= "") and (sub .. "  ·  " .. L.GO_WHERE:format(d.text)) or L.GO_WHERE:format(d.text) end
   r.go:SetShown(can)
   r.sub:ClearAllPoints()
   r.sub:SetPoint("TOPLEFT", r.text, "BOTTOMLEFT", 0, -1)

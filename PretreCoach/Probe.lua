@@ -140,8 +140,9 @@ local function Brief(v, d)
 end
 
 -- Relevé de la fenêtre de métier : nombre de recettes et 3 premières, sans valeur secrète.
+local tradeskillDone -- un seul relevé par session
 local function TakeTradeskill()
-  if not ns.db then return end
+  if not ns.db or tradeskillDone then return end
   local ids = S.Get(Resolve("C_TradeSkillUI.GetAllRecipeIDs"))
   if type(ids) ~= "table" or #ids == 0 then return end
   local rec = { when = date("%Y-%m-%d %H:%M:%S"), count = #ids, recipes = {} }
@@ -158,6 +159,7 @@ local function TakeTradeskill()
   end
   ns.db.probe = ns.db.probe or {}
   ns.db.probe.tradeskill = rec
+  tradeskillDone = true
 end
 
 ------------------------------------------------------------------------
@@ -440,7 +442,7 @@ local function CheckData(add)
 end
 
 ------------------------------------------------------------------------
--- /coach here : relève un lieu à la main (20 derniers dans ns.db.places)
+-- /coach here : relève un lieu à la main (20 derniers dans ns.db.places ; la cible reste à l'écran, jamais sauvegardée)
 ------------------------------------------------------------------------
 local MAX_PLACES = 20
 
@@ -463,7 +465,7 @@ function ns.Here()
   if ns.db then
     local places = ns.db.places or {}
     ns.db.places = places
-    places[#places + 1] = { when = date("%Y-%m-%d %H:%M:%S"), mapID = mapID, x = x, y = y, sub = sub, target = target }
+    places[#places + 1] = { when = date("%Y-%m-%d %H:%M:%S"), mapID = mapID, x = x, y = y, sub = sub }
     while #places > MAX_PLACES do table.remove(places, 1) end
     out[#out + 1] = L.HERE_SAVED:format(#places, MAX_PLACES)
   end

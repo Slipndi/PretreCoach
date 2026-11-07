@@ -294,10 +294,15 @@ C_Map = { GetPlayerMapPosition = function() if mock.pos == false then return nil
   GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = (mock.mapNames or {})[id] or "Tirisfal", parentMapID = id == 1 and 1420 or 0 } end,
   -- mock.areas = { [areaID] = nom } ; mock.mapKids = { [racine] = { { mapID, name }, ... } } (defauts : Tirisfal, Fossoyeuse, Orgrimmar sous 946)
   GetAreaInfo = function(id) return (mock.areas or { [85] = "Tirisfal", [1497] = "Fossoyeuse", [1637] = "Orgrimmar" })[id] end,
-  GetMapChildrenInfo = function(root)
-    return (mock.mapKids or { [946] = { { mapID = 1420, name = "Tirisfal" }, { mapID = 1458, name = "Fossoyeuse" }, { mapID = 1411, name = "Orgrimmar" } } })[root] or {}
+  -- une entree peut porter kind (Enum.UIMapType) : elle n'est rendue que pour ce type
+  GetMapChildrenInfo = function(root, kind)
+    local out = {}
+    for _, m in ipairs((mock.mapKids or { [946] = { { mapID = 1420, name = "Tirisfal" }, { mapID = 1458, name = "Fossoyeuse" }, { mapID = 1411, name = "Orgrimmar" } } })[root] or {}) do
+      if m.kind == nil or m.kind == kind then out[#out + 1] = m end
+    end
+    return out
   end }
-Enum = { UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, Dungeon = 4, Micro = 5, Orphan = 6 },
+Enum = { UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, City = 10, Dungeon = 4, Micro = 5, Orphan = 6 },
   TradeskillRelativeDifficulty = { Optimal = 0, Medium = 1, Easy = 2, Trivial = 3 } }
 
 -- mock.waypoint = dernier repere pose ; mock.superTracked = dernier appel de suivi ; mock.canWaypoint = false : carte refusee
