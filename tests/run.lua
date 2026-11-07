@@ -1327,7 +1327,7 @@ local function suite(label)
     local n, G = gw()
     n.SetCompact(true)
     assert(n.db.guide.compact == true and G.card:IsShown() and not (G.win and G.win:IsShown()))
-    assert(G.card.text.text:find(n.Guide.Goals()[1].text, 1, true), "texte de l'objectif XP")
+    assert(G.card.rows[1].text.text:find(n.Guide.Goals()[1].text, 1, true), "texte de l'objectif XP")
     n.Fire("GUIDE")
     n.ToggleGuide()
     assert(not G.card:IsShown(), "ToggleGuide ferme la carte")
@@ -1338,7 +1338,7 @@ local function suite(label)
     G.card:Hide()
     n.State.level = 80
     n.SetCompact(true)
-    assert(G.card.text.text ~= nil, "niveau hors plage : texte de repli")
+    assert(G.card.rows[1].text.text ~= nil, "niveau hors plage : texte de repli")
   end)
 
   check("GuideWindow : show.guide respecte au chargement", function()
@@ -3757,10 +3757,24 @@ local function suite(label)
     n.State.profs = { [182] = { rank = 10, max = 75 }, [171] = { rank = 10, max = 75 } }
     local goals = n.Guide.Goals()
     n.SetCompact(true)
-    local text = G.card.text.text
-    assert(text:find("XP : ", 1, true) and text:find("Herboristerie : ", 1, true) and text:find("Alchimie : ", 1, true), text)
-    local _, lines = text:gsub("\n", "\n")
-    assert(lines + 1 == #goals, "une ligne par categorie")
+    local rows = G.card.rows
+    assert(G.card.used == #goals, "une rangee par categorie")
+    local want = { "Expérience", "Herboristerie", "Alchimie" }
+    for i, g in ipairs(goals) do
+      assert(rows[i].shown and rows[i].label.text == want[i], "libelle " .. i)
+      assert(rows[i].text.text:find(g.text, 1, true) and not rows[i].text.text:find(" : ", 1, true), "texte sans prefixe " .. i)
+      assert(rows[i].go.shown ~= true or i == 1, "Repere seulement sur XP")
+    end
+    assert(rows[2].icon.tex == "tex2366", "icone du metier via C_Spell.GetSpellTexture")
+    assert(G.card.height and G.card.height > 0, "hauteur de la carte calculee")
+    n.State.profs = { [182] = { rank = 10, max = 75 } } -- moins d'entrees : pas de rangee en trop
+    n.Fire("GUIDE")
+    assert(G.card.used == 2 and rows[2].shown and not rows[3].shown, "rangee en trop masquee")
+    n.State.profs = { [182] = { rank = 10, max = 75 }, [171] = { rank = 10, max = 75 } }
+    n.Fire("GUIDE")
+    local pool = #rows
+    n.Fire("GUIDE")
+    assert(#rows == pool and rows[3].shown, "pool reutilise")
     n.SetCompact(false)
     n.ToggleGuide()
     G.win.tabs[1].scripts.OnClick(G.win.tabs[1])

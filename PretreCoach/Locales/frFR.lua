@@ -99,6 +99,7 @@ ns.L = {
   GW_EXPAND = "Ouvrir le guide complet",
   GW_NEXT_TITLE = "Prochain objectif",
   GUIDE_XP = "XP",
+  GW_XP_LABEL = "Expérience",
   GUIDE_XP_ZONE = "Monte de niveau à %s",
   GUIDE_XP_KEEP = "Continue de monter en niveau",
   GUIDE_XP_NEXT = "prochain niveau dans ~%s",

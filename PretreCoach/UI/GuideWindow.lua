@@ -237,21 +237,132 @@ local function refreshWin()
   content:SetSize(w, y + 8)
 end
 
+-- Carte : une rangee par entree de Goals (icone, libelle colore, texte, + barre/Ou aller/Repere pour l'XP).
+local CARD_W, CARD_TEXT_W, ICON = 260, 206, 24
+-- Icones et sorts de metier : a verifier en jeu (spellID Vanilla, chemins de repli classiques).
+local XP_ICON = "Interface\\Icons\\XP_Icon"
+local PROF_ICON = {
+  [182] = { spell = 2366, tex = "Interface\\Icons\\Trade_Herbalism", color = { 0.45, 0.9, 0.45 } },
+  [171] = { spell = 2259, tex = "Interface\\Icons\\Trade_Alchemy", color = { 0.4, 0.75, 1 } },
+  [129] = { spell = 3273, tex = "Interface\\Icons\\Spell_Holy_SealOfSacrifice", color = { 1, 0.5, 0.5 } },
+}
+local PROF_DEFAULT = { tex = "Interface\\Icons\\INV_Misc_Gear_01", color = { 0.85, 0.8, 0.6 } }
+local cardRows = {}
+local function secret(v) return issecretvalue ~= nil and issecretvalue(v) end -- absent en forme Classic
+
+local function newCardRow()
+  local r = CreateFrame("Frame", nil, card)
+  r.sep = r:CreateTexture(nil, "BORDER")
+  r.sep:SetColorTexture(1, 1, 1, 0.08)
+  r.sep:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 3)
+  r.sep:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, 3)
+  r.sep:SetHeight(1)
+  r.icon = r:CreateTexture(nil, "ARTWORK")
+  r.icon:SetSize(ICON, ICON)
+  r.icon:SetPoint("TOPLEFT", r, "TOPLEFT", 0, -6)
+  r.label = fontString(r, UI.font.small)
+  r.label:SetPoint("TOPLEFT", r, "TOPLEFT", ICON + 8, -6)
+  r.text = fontString(r, UI.font.text)
+  r.text:SetPoint("TOPLEFT", r.label, "BOTTOMLEFT", 0, -1)
+  r.text:SetWidth(CARD_TEXT_W)
+  setColor(r.text, C.white)
+  r.back = r:CreateTexture(nil, "ARTWORK")
+  r.back:SetColorTexture(1, 1, 1, 0.08)
+  r.back:SetHeight(4)
+  r.bar = CreateFrame("StatusBar", nil, r)
+  r.bar:SetAllPoints(r.back)
+  r.bar:SetStatusBarTexture(WHITE)
+  r.bar:SetStatusBarColor(C.accent[1], C.accent[2], C.accent[3])
+  r.bar:SetMinMaxValues(0, 1)
+  r.where = fontString(r, UI.font.small)
+  setColor(r.where, { 0.65, 0.65, 0.7 })
+  r.go = textButton(r, L.GO_PLACE, 44, 14)
+  r.go:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 0, 4)
+  r.go:SetScript("OnClick", function() ns.Goto.Place(r.dest) end)
+  r.go:Hide()
+  -- case manuelle : meme mecanisme que l'onglet Maintenant
+  r.box = CreateFrame("Button", nil, r)
+  r.box:SetSize(14, 14)
+  r.box:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, -6)
+  r.box.bg = r.box:CreateTexture(nil, "BACKGROUND")
+  r.box.bg:SetAllPoints(r.box)
+  r.box.bg:SetTexture("Interface\\Buttons\\UI-CheckBox-Up")
+  r.box.check = r.box:CreateTexture(nil, "ARTWORK")
+  r.box.check:SetAllPoints(r.box)
+  r.box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+  r.box:SetScript("OnClick", function()
+    local e = r.entry
+    if e and e.manual then Guide.SetManual(e.id, not e.done) end
+  end)
+  r.box:Hide()
+  return r
+end
+
+local function goalIcon(g)
+  if g.kind == "xp" then return XP_ICON, C.accent end
+  local p = PROF_ICON[g.line] or PROF_DEFAULT
+  local ok, tex = false, nil
+  if p.spell and C_Spell and C_Spell.GetSpellTexture then ok, tex = pcall(C_Spell.GetSpellTexture, p.spell) end
+  if not (ok and tex and not secret(tex)) then tex = p.tex end
+  return tex, p.color
+end
+
+local function fillCardRow(r, g, i, y)
+  local tex, color = goalIcon(g)
+  r.entry = g.e
+  r.icon:SetTexture(tex)
+  r.label:SetText(g.kind == "xp" and L.GW_XP_LABEL or g.label)
+  setColor(r.label, color)
+  r.text:SetText((g.e and g.e.unknown and "? " or "") .. g.text)
+  r.sep:SetShown(i > 1)
+  r.box:SetShown(g.e ~= nil and g.e.manual == true)
+  r.box.check:SetShown(g.e ~= nil and g.e.done == true)
+  local h = 6 + 13 + (r.text:GetStringHeight() or 14) + 1
+  local frac, d, can
+  if g.kind == "xp" then
+    frac = ns.Pace and ns.Pace.Fraction()
+    if not (type(frac) == "number" and not secret(frac)) then frac = nil end
+    d = g.e and not g.e.done and g.e.go and ns.Goto.For(g.e.go) or nil
+    can = ns.Goto.CanPlace(d)
+  end
+  r.dest = d
+  r.back:ClearAllPoints()
+  r.back:SetPoint("TOPLEFT", r.text, "BOTTOMLEFT", 0, -4)
+  r.back:SetWidth(CARD_TEXT_W)
+  r.back:SetShown(frac ~= nil)
+  r.bar:SetShown(frac ~= nil)
+  if frac then r.bar:SetValue(frac) h = h + 8 end
+  r.where:ClearAllPoints()
+  r.where:SetPoint("TOPLEFT", frac and r.back or r.text, "BOTTOMLEFT", 0, -3)
+  r.where:SetWidth(CARD_TEXT_W - (can and 48 or 0))
+  r.where:SetText(d and L.GO_WHERE:format(d.text) or "")
+  r.where:SetShown(d ~= nil)
+  r.go:SetShown(can == true)
+  if d then h = h + 3 + math.max(r.where:GetStringHeight() or 12, can and 14 or 0) end
+  h = h + 6
+  r:ClearAllPoints()
+  r:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -y)
+  r:SetSize(CARD_W - 20, h)
+  r:Show()
+  return h
+end
+
 local function refreshCard()
   local goals = Guide.Goals()
-  local lines = {}
-  for i, g in ipairs(goals) do lines[i] = L.GW_GOAL:format(g.label, (g.e and g.e.unknown and "? " or "") .. g.text) end
-  card.text:SetText(table.concat(lines, "\n"))
-  local e = goals[1] and goals[1].e -- « Où aller » et Repère : objectif XP seulement
-  local d = e and not e.done and e.go and ns.Goto.For(e.go) or nil
-  card.dest = d
-  local can = ns.Goto.CanPlace(d)
-  card.where:SetText(d and L.GO_WHERE:format(d.text) or "")
-  card.go:SetShown(can)
+  local y, shown = 22, 0
+  for i, g in ipairs(goals) do
+    local r = cardRows[i]
+    if not r and not InCombatLockdown() then r = newCardRow() cardRows[i] = r end
+    if not r then waiting = true break end -- pas de creation de cadre en combat : reprise apres le combat
+    y = y + fillCardRow(r, g, i, y)
+    shown = i
+  end
+  for i = shown + 1, #cardRows do cardRows[i]:Hide() cardRows[i].entry = nil end
+  card.rows, card.used = cardRows, shown
   local count = ns.Training.CountText()
   card.count:SetText(count)
-  card:SetHeight(30 + (card.text:GetStringHeight() or 14) + (d and ((card.where:GetStringHeight() or 12) + 2) or 0)
-    + ((count ~= "" or can) and 14 or 0))
+  card.count:SetShown(count ~= "")
+  card:SetHeight(y + (count ~= "" and 18 or 4))
 end
 
 local function request()
@@ -362,7 +473,7 @@ end
 local function buildCard()
   card = UI.Panel(CARD_NAME, UIParent)
   G.card = card
-  card:SetSize(260, 56)
+  card:SetSize(CARD_W, 56)
   card:SetPoint("TOP", UIParent, "TOP", 0, -140)
   card:SetFrameStrata("MEDIUM")
   card:Hide()
@@ -371,16 +482,6 @@ local function buildCard()
   title:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -7)
   title:SetText(L.GW_NEXT_TITLE)
   setColor(title, C.accent)
-  card.text = fontString(card, UI.font.text)
-  card.text:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -22)
-  card.text:SetWidth(240)
-  card.where = fontString(card, UI.font.small)
-  card.where:SetPoint("TOPLEFT", card.text, "BOTTOMLEFT", 0, -2)
-  card.where:SetWidth(240)
-  card.go = textButton(card, L.GO_PLACE, 48, 16)
-  card.go:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -6, 5)
-  card.go:SetScript("OnClick", function() ns.Goto.Place(card.dest) end)
-  card.go:Hide()
   card.count = fontString(card, UI.font.small)
   card.count:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 10, 6)
   setColor(card.count, C.accent)
