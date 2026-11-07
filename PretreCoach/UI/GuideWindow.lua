@@ -5,7 +5,7 @@ local UI, L, Guide = ns.UI, ns.L, ns.Guide
 local C = UI.color
 
 local WIN_NAME, CARD_NAME = "PretreCoachGuideFrame", "PretreCoachCompactFrame"
-local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell", "gold" }
+local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell", "gold", "route" }
 local BADGE = { -- statut de zone -> couleur
   adaptee = { 0.75, 0.95, 0.8 }, bientot = C.warn, verte = C.bad, haute = C.warn, neutre = { 0.6, 0.6, 0.65 },
 }
@@ -197,6 +197,7 @@ local function items()
     return "now", rowsNow, L.GW_NOW_EMPTY
   end
   if t == "next" then return "next", Guide.Milestones(), L.GW_EMPTY end
+  if t == "route" then return "ref", ns.Quests and ns.Quests.Rows() or {}, L.GW_ROUTE_EMPTY end
   if t == "sell" then return "ref", ns.Sell.Rows(), L.GW_SELL_EMPTY end
   if t == "gold" then return "ref", ns.Gold.Rows(), L.GW_GOLD_EMPTY end
   return "ref", Guide.Reference(t), L.GW_EMPTY

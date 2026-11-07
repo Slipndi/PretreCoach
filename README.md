@@ -16,7 +16,7 @@ L'addon lit et affiche, il n'agit jamais à la place du joueur : aucun lancement
 
 ## Dépendances optionnelles
 
-- **Questie** : positions des maîtres et des PNJ de ville, lues en direct.
+- **QuestieDB** (la base de données seule, `LibQuestieDB`) : positions des maîtres et des PNJ de ville, quêtes de la zone, itinéraire optimisé et repères sur la carte du monde (« ! » à prendre, « ? » à rendre, point d'objectif, anneau numéroté sur l'itinéraire). L'addon Questie lui-même n'est plus nécessaire.
 - **Auctionator** : prix pour les conseils de métiers et de vente.
 
 Sans elles, l'addon fonctionne seul (conseils plus pauvres).

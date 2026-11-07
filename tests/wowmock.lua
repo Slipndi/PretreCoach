@@ -115,6 +115,8 @@ function mock.reset()
   PretreCoachDB = nil
   mock.registered, mock.opened = nil, nil
   mock.waypoint, mock.superTracked, mock.canWaypoint, mock.areas, mock.mapKids, mock.mapNames = nil, nil, nil, nil, nil, nil
+  mock.worldMap, mock.hooked, mock.grouped = nil, nil, nil
+  if WorldMapFrame then WorldMapFrame.shown = false end
   if mock.qinit then mock.qinit() end
   mock.recipeInfo, mock.schematics, mock.tsNotReady = nil, nil, nil
   mock.bagInfo, mock.itemClass, mock.itemSub, mock.itemInfo = nil, nil, nil, nil
@@ -373,6 +375,21 @@ C_Map = { GetPlayerMapPosition = function(mapID, unit) assert(type(mapID) == "nu
 Enum = { UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, City = 10, Dungeon = 4, Micro = 5, Orphan = 6 },
   TradeskillRelativeDifficulty = { Optimal = 0, Medium = 1, Easy = 2, Trivial = 3 } }
 
+-- Carte du monde minimale : mock.worldMap = uiMapID affiche ; WorldMapFrame:Show() l'ouvre ; mock.hooked = hooksecurefunc ;
+-- WorldMapFrame.hooks = HookScript ; mock.grouped = IsInGroup
+function FRAME.GetWidth(self) return self.width end
+function FRAME.GetHeight(self) return self.height end
+WorldMapFrame = newFrame()
+WorldMapFrame.GetMapID = function() return mock.worldMap end
+WorldMapFrame.ScrollContainer = { Child = newFrame() }
+WorldMapFrame.ScrollContainer.Child.width, WorldMapFrame.ScrollContainer.Child.height = 1000, 500
+function hooksecurefunc(obj, name, fn)
+  assert(type(obj[name]) == "function", "hooksecurefunc : fonction inconnue " .. tostring(name))
+  mock.hooked = mock.hooked or {}
+  mock.hooked[name] = fn
+end
+function IsInGroup() return mock.grouped == true end
+
 -- mock.waypoint = dernier repere pose ; mock.superTracked = dernier appel de suivi ; mock.canWaypoint = false : carte refusee
 UiMapPoint = { CreateFromCoordinates = function(mapID, x, y) return { mapID = mapID, x = x, y = y } end }
 C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) mock.superTracked = v end }
@@ -383,7 +400,7 @@ C_Traits C_ClassTalents C_SpecializationInfo GetNumSpecGroups GetNumUnspentTalen
 C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
-UiMapPoint C_SuperTrack Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
+UiMapPoint C_SuperTrack WorldMapFrame hooksecurefunc Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
 EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator UnitXP UnitXPMax RegisterUnitWatch UnitInRange
 ]]
 local saved = {}

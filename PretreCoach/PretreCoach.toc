@@ -6,7 +6,7 @@
 ## Version: 0.9.0
 ## Category: WoW Forever
 ## IconTexture: Interface\Icons\Spell_Shadow_ShadowWordPain
-## OptionalDeps: Questie, QuestieDB, Auctionator
+## OptionalDeps: QuestieDB, Auctionator
 ## SavedVariablesPerCharacter: PretreCoachDB
 ## AddonCompartmentFunc: PretreCoach_OnCompartmentClick
 
@@ -47,6 +47,7 @@ UI\Toast.lua
 UI\Minimap.lua
 UI\MinimapMenu.lua
 UI\GuideWindow.lua
+UI\QuestPins.lua
 UI\RotationPanel.lua
 UI\RulesBar.lua
 UI\ProgressBar.lua

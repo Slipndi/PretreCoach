@@ -557,7 +557,7 @@ local function ExtraSections(add, section)
 
   run("Addons optionnels", function()
     local isLoaded = Resolve("C_AddOns.IsAddOnLoaded")
-    for _, name in ipairs({ "Questie", "QuestieDB", "Auctionator" }) do
+    for _, name in ipairs({ "QuestieDB", "Auctionator" }) do
       local v = S.Get(isLoaded, name)
       add("%s : %s", name, type(isLoaded) ~= "function" and "C_AddOns.IsAddOnLoaded absente"
         or (v == true and "chargé" or "non installé (ou non chargé)"))

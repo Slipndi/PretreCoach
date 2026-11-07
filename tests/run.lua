@@ -311,7 +311,7 @@ local function suite(label)
       assert(t:find("(11e valeur de C_Item.GetItemInfo) : 7", 1, true), "prix marchand")
       assert(t:find("instance 10 : Donjon10", 1, true) and not t:find("instance 11", 1, true), "10 instances")
       assert(t:find("2 paliers (courant : 1)", 1, true))
-      assert(t:find("Questie : non installé", 1, true) and t:find("Auctionator : non installé", 1, true))
+      assert(t:find("QuestieDB : non installé", 1, true) and t:find("Auctionator : non installé", 1, true))
       assert(t:find("LibQuestieDB : non installé", 1, true) and t:find("Auctionator.API.v1.GetAuctionPriceByItemID : non installé", 1, true))
     end
     LibQuestieDB, Auctionator = lib, ah
@@ -334,7 +334,7 @@ local function suite(label)
     assert(t:find("RequireContract(4) : true", 1, true) and t:find("QuestDB.Get(6561) : name Pierre", 1, true), "questie")
     assert(t:find("requiredLevel 5", 1, true) and t:find("NpcDB.Get(3000, spawns) : {85={", 1, true), "pnj")
     assert(t:find("(2589, étoffe de lin) : 123", 1, true), "prix")
-    if not absent then assert(t:find("Questie : chargé", 1, true) and t:find("Auctionator : chargé", 1, true)) end
+    if not absent then assert(t:find("QuestieDB : chargé", 1, true) and t:find("Auctionator : chargé", 1, true)) end
     _G.Auctionator.API.v1.GetAuctionPriceByItemID = function() error("boom") end
     _G.LibQuestieDB.RequireContract = function() error("boom") end
     t = probeText()
@@ -1225,7 +1225,7 @@ local function suite(label)
     setState(n, { level = 12 })
     return n, n.UI.GuideWin
   end
-  local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell" }
+  local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell", "gold", "route" }
 
   check("GuideWindow : ToggleGuide ouvre et ferme, Echap, /coach guide", function()
     local n, G = gw()
@@ -2842,7 +2842,7 @@ local function suite(label)
     -- onglet : totaux, puis une ligne par pile avec icone
     n.ToggleGuide()
     local G = n.UI.GuideWin
-    G.win.tabs[#TABS].scripts.OnClick(G.win.tabs[#TABS])
+    for i, key in ipairs(TABS) do if key == "sell" then G.win.tabs[i].scripts.OnClick(G.win.tabs[i]) end end
     assert(n.db.guide.tab == "sell" and G.used == 6, "onglet Vente : totaux + 5 piles")
     assert(G.rows[1].text.text:find("À l'HdV : 23" .. MI.a .. "  ·  Au marchand : 75" .. MI.c, 1, true), G.rows[1].text.text)
     assert(G.rows[2].text.text:find("Hôtel des ventes", 1, true) and G.rows[3].sub.text:find("prix ancien", 1, true))
@@ -4691,7 +4691,7 @@ local function suite(label)
     bags(n)
     n.ToggleGuide()
     local idx
-    for i, k in ipairs({ "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell", "gold" }) do if k == "gold" then idx = i end end
+    for i, k in ipairs({ "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell", "gold", "route" }) do if k == "gold" then idx = i end end
     assert(G.win.tabs[idx].label.text == "Or", "onglet Or a cote de Vente")
     G.win.tabs[idx].scripts.OnClick(G.win.tabs[idx])
     assert(n.db.guide.tab == "gold" and G.used == 4, "3 actions puis la session : " .. G.used)
@@ -4918,7 +4918,7 @@ local function suite(label)
     mock.qlog = { { questID = 201, title = "En cours", objectives = LOUPS }, { questID = 202, title = "Finie", complete = true } }
     n.Quests.Refresh()
     local b = n.Quests.Best()
-    assert(b.kind == "turnin" and b.text == "Rends « Finie »" and b.go == nil and b.detail == nil, b.text)
+    assert(b.kind == "turnin" and b.text == "Rends « Finie »" and b.go == nil and b.detail == "arrêt 1/2", b.text)
     mock.qlog = { { questID = 201, title = "En cours", objectives = LOUPS } }
     n.Quests.Refresh()
     b = n.Quests.Best()
@@ -5001,6 +5001,146 @@ local function suite(label)
     end)
   end)
 
+  ------------------------------------------------------------------------
+  -- Itineraire optimise (Quests.Order / Route) et reperes de la carte du monde (UI.QuestPins)
+  ------------------------------------------------------------------------
+  check("Itineraire : plus proche voisin + 2-opt raccourcit, sans jamais allonger", function()
+    local n = fresh().n
+    math.randomseed(7)
+    local better = 0
+    for _ = 1, 60 do
+      local stops = {}
+      for i = 1, 9 do stops[i] = { kind = "pickup", questID = i, x = math.random(0, 100), y = math.random(0, 100) } end
+      local plain = n.Quests.Order(stops, 50, 50, true)
+      local opt = n.Quests.Order(stops, 50, 50)
+      assert(#opt == 9 and #plain == 9)
+      local lp, lo = n.Quests.PathLength(plain, 50, 50), n.Quests.PathLength(opt, 50, 50)
+      assert(lo <= lp + 1e-9, "2-opt allonge le chemin")
+      if lo < lp - 1e-9 then better = better + 1 end
+      assert(opt[1] == plain[1], "premier arret inchange")
+    end
+    assert(better > 0, "2-opt n'ameliore jamais")
+    local many = {}
+    for i = 1, 30 do many[i] = { kind = "pickup", questID = i, x = i, y = 0 } end
+    assert(#n.Quests.Order(many, 0, 0) == 12, "au plus 12 arrets")
+  end)
+
+  check("Itineraire : prendre avant rendre, sans lieu a la fin", function()
+    local n = fresh().n
+    local o = n.Quests.Order({ { kind = "turnin", questID = 1, x = 51, y = 50 }, { kind = "pickup", questID = 1, x = 90, y = 90 },
+      { kind = "progress", questID = 1, x = 52, y = 50 } }, 50, 50)
+    assert(o[1].kind == "pickup" and o[2].kind == "progress" and o[3].kind == "turnin", "ordre par quete")
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    n = questN()
+    mock.qquests = { [201] = { name = "Ici", startedBy = { { 9001 } }, objectives = { { { 9001, "Loup" } } } } }
+    mock.qlog = { { questID = 202, title = "Loin", objectives = LOUPS }, { questID = 201, title = "Ici", objectives = LOUPS } }
+    n.Quests.Refresh()
+    local r = n.Quests.Route()
+    assert(#r == 2 and r[1].questID == 201 and r[1].x and r[2].questID == 202 and r[2].x == nil, "sans lieu a la fin")
+    local b = n.Quests.Best()
+    assert(b.questID == r[1].questID and b.detail:find("arrêt 1/2", 1, true), b.detail)
+  end)
+
+  check("Itineraire : onglet, rien en combat, rien de stocke", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN()
+    local before = {}
+    for k in pairs(n.db) do before[k] = true end
+    mock.qquests = { [202] = { name = "Finie", startedBy = { { 9001 } }, finishedBy = { { 9003 } } } }
+    mock.qlog = { { questID = 202, title = "Finie", complete = true } }
+    n.Quests.Refresh()
+    n.ToggleGuide()
+    local G = n.UI.GuideWin
+    for i, key in ipairs(TABS) do if key == "route" then G.win.tabs[i].scripts.OnClick(G.win.tabs[i]) end end
+    assert(n.db.guide.tab == "route" and G.used == #n.Quests.Rows() and G.used == 1, "onglet Itineraire")
+    assert(n.Quests.Rows()[1].text:find("1. ", 1, true) and n.Quests.Rows()[1].go == "N9003")
+    mock.inCombat = true
+    mock.qlog = nil
+    n.Quests.Refresh()
+    assert(#n.Quests.Route() == 1, "en combat : le dernier itineraire")
+    mock.inCombat = false
+    assert(not findSecret(n.db, "db"))
+    for k in pairs(n.db) do assert(before[k] or k == "guide", "cle ajoutee a la base : " .. tostring(k)) end
+  end)
+
+  check("Reperes de carte : types, bonne carte, option, clic, pool borne", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN()
+    n.db.qindex = {}
+    mock.qquests = {
+      [201] = { name = "En cours", startedBy = { { 9003 } }, objectives = { { { 9001, "Loup" } } } },
+      [202] = { name = "Finie", startedBy = { { 9001 } }, finishedBy = { { 9003 } } },
+      [301] = { name = "Nouvelle", startedBy = { { 9003 } }, requiredLevel = 15, questLevel = 18 },
+    }
+    mock.qlog = { { questID = 201, title = "En cours", objectives = LOUPS }, { questID = 202, title = "Finie", complete = true } }
+    assert(n.Quests.StartIndex() == true)
+    for _ = 1, 5 do mock.flushTimers() end
+    local P = n.UI.QuestPins
+    mock.worldMap = 1420
+    WorldMapFrame:Show()
+    P.Update()
+    assert(type(WorldMapFrame.hooks.OnShow) == "function" and mock.hooked.OnMapChanged, "accroches de la carte")
+    local kinds = {}
+    for i = 1, P.shown do local p = P.pins[i] assert(p.shown) kinds[p.data.kind] = p end
+    assert(P.shown == 3 and kinds.pickup and kinds.turnin and kinds.progress, "un repere par type : " .. P.shown)
+    assert(kinds.turnin.data.questID == 202 and kinds.turnin.data.x == 80 and kinds.progress.data.x == 52)
+    assert(kinds.turnin.data.n and kinds.turnin.ring.shown, "arret de l'itineraire : anneau numerote")
+    -- clic gauche : repere utilisateur
+    mock.waypoint = nil
+    kinds.turnin.scripts.OnClick(kinds.turnin)
+    assert(mock.waypoint and mock.waypoint.mapID == 1420, "le clic pose le repere")
+    -- changement de carte : autre carte sans quete, puis retour
+    mock.worldMap = 1458
+    mock.hooked.OnMapChanged()
+    assert(P.shown == 0 and not kinds.turnin.shown, "autre carte : rien")
+    mock.worldMap = 1420
+    mock.hooked.OnMapChanged()
+    assert(P.shown == 3 and P.pins[1].shown)
+    -- option
+    n.db.show.questpins = false
+    P.Update()
+    assert(P.shown == 0 and not P.pins[1].shown, "option decochee : rien")
+    n.db.show.questpins = true
+    WorldMapFrame:Hide()
+    WorldMapFrame.hooks.OnHide()
+    assert(P.shown == 0, "carte fermee")
+    WorldMapFrame:Show()
+    WorldMapFrame.hooks.OnShow()
+    assert(P.shown == 3)
+    -- combat : rien ne bouge
+    mock.inCombat = true
+    mock.qlog = nil
+    P.Update()
+    assert(P.shown == 3, "combat : etat garde")
+    mock.inCombat = false
+    -- pool borne
+    local log = {}
+    for i = 1, 70 do
+      mock.qquests[400 + i] = { name = "Q" .. i, startedBy = { { 9001 } }, finishedBy = { { 9003 } } }
+      log[i] = { questID = 400 + i, title = "Q" .. i, complete = true }
+    end
+    mock.qlog = log
+    n.Quests.Refresh()
+    P.Update()
+    P.Update()
+    assert(P.shown == 60 and #P.pins == 60, "pool de 60 : " .. P.shown .. "/" .. #P.pins)
+    assert(not findSecret(n.db, "db") and n.db.questpins == nil)
+  end)
+
+  check("Reperes de carte : sans LibQuestieDB, aucun repere", function()
+    if not C_QuestLog then return end
+    local lib = _G.LibQuestieDB
+    _G.LibQuestieDB = nil
+    local n = questN()
+    mock.qlog = { { questID = 202, title = "Finie", complete = true } }
+    mock.worldMap = 1420
+    WorldMapFrame:Show()
+    n.Quests.Refresh()
+    n.UI.QuestPins.Update()
+    local shown = n.UI.QuestPins.shown
+    _G.LibQuestieDB = lib
+    assert(shown == 0, "sans base : aucun repere")
+  end)
 end
 
 suite("presentes")
