@@ -30,6 +30,11 @@ local ALLOW = { [HEAL] = { SecureUnitButtonTemplate = true, SecureActionButtonTe
 -- macrotext et UseContainerItem restent interdits partout, ce fichier compris.
 local CONS = "PretreCoach/UI/ConsumablesBar.lua"
 ALLOW[CONS] = { SecureActionButtonTemplate = true, SetAttribute = true }
+-- Exception approuvee par l'utilisateur (2026-11-07, « Ouvre le metier ») : la fenetre Craft lance le sort du metier
+-- (type1="spell") pour ouvrir la fenetre de metier. OpenRecipe/SetRecipeSelected (simple selection d'UI) ne sont pas interdits ;
+-- OpenTradeSkill, CraftRecipe, C_TradeSkillUI.Craft et macrotext restent interdits partout, ce fichier compris.
+local CRAFT = "PretreCoach/UI/CraftPopup.lua"
+ALLOW[CRAFT] = { SecureActionButtonTemplate = true, SetAttribute = true }
 
 -- Retire les commentaires Lua en gardant les chaines et les numeros de ligne.
 local function strip(src)
@@ -95,6 +100,15 @@ assert(#find_hits(CONS, secure) == 0, "auto-test : exception CONS non appliquee"
 assert(#find_hits("PretreCoach/UI/Other.lua", secure) == 2, "auto-test : exception CONS trop large")
 assert(#find_hits(CONS, 'b:SetAttribute("macrotext", "/cast X")\n') == 1, "auto-test : macrotext doit rester interdit")
 assert(#find_hits(CONS, "UseContainerItem(0, 1)\n") == 1, "auto-test : UseContainerItem doit rester interdit")
+-- Exception CRAFT : permise dans ce seul fichier ; fabrication, macrotext et OpenTradeSkill toujours refuses ; selection d'UI permise.
+secure = 'CreateFrame("Button", nil, f, "SecureActionButtonTemplate")\nb:SetAttribute("type1", "spell")\n'
+assert(#find_hits(CRAFT, secure) == 0, "auto-test : exception CRAFT non appliquee")
+assert(#find_hits(CONS, secure) == 0 and #find_hits("PretreCoach/UI/Other.lua", secure) == 2, "auto-test : exception CRAFT trop large")
+assert(#find_hits(HEAL .. "x", secure) == 2, "auto-test : exception CRAFT limitee a son fichier")
+for _, api in ipairs({ "CraftRecipe(1)", "C_TradeSkillUI.Craft(1)", 'b:SetAttribute("macrotext", "/x")', "OpenTradeSkill(1)" }) do
+  assert(#find_hits(CRAFT, api .. "\n") >= 1, "auto-test : doit rester interdit dans CRAFT : " .. api)
+end
+assert(#find_hits("PretreCoach/UI/Other.lua", "C_TradeSkillUI.OpenRecipe(1)\nC_TradeSkillUI.SetRecipeSelected(1)\n") == 0, "auto-test : selection d'UI non interdite")
 print("auto-test : detection OK")
 
 local sep = package.config:sub(1, 1)

@@ -52,6 +52,7 @@ function FRAME.SetScale(self, s) self.scale = s end
 function FRAME.SetHeight(self, h) self.height = h end
 function FRAME.SetWidth(self, w) self.width = w end
 function FRAME.SetScript(self, name, fn) self.scripts[name] = fn end
+function FRAME.HookScript(self, name, fn) self.hooks = self.hooks or {} self.hooks[name] = fn end
 function FRAME.CreateTexture() return newFrame() end
 function FRAME.CreateAnimationGroup() return newFrame() end
 function FRAME.CreateAnimation() return newFrame() end
@@ -230,6 +231,9 @@ C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { profes
     return t
   end,
   GetRecipeSchematic = function(id, isRecraft) assert(isRecraft == false) return (mock.schematics or {})[id] or {} end,
+  -- mock.selected = liste des recettes presélectionnées ; mock.crafted = fabrications (doit rester vide)
+  OpenRecipe = function(id) mock.selected = mock.selected or {} mock.selected[#mock.selected + 1] = id end,
+  Craft = function(id) mock.crafted = (mock.crafted or 0) + 1 end,
   IsTradeSkillReady = function() return not mock.tsNotReady end,
   GetTradeSkillLine = function() return 171, "Alchimie", 50, 75 end,
   GetBaseProfessionInfo = function() return { professionID = 171, skillLevel = 50, maxSkillLevel = 75 } end }

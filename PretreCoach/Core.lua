@@ -70,7 +70,7 @@ end
 
 -- Valeurs par défaut des réglages : complétées sans jamais écraser ce que le joueur a déjà.
 ns.DEFAULTS = {
-  show = { guide = true, rotation = true, rules = true, toasts = true, minimap = true, progress = true, heal = true, cons = true, mana = true },
+  show = { guide = true, rotation = true, rules = true, toasts = true, minimap = true, progress = true, heal = true, cons = true, craft = true, mana = true },
   pace = { levels = {} },
   heal = { spells = { ["1"] = "LESSERHEAL", ["2"] = "RENEW", ["shift-1"] = "PWS" } }, -- sort de chaque bouton de souris (cles de Data/Spells)
   guide = { manual = {}, done = {}, tab = "now", compact = false },
@@ -140,6 +140,7 @@ local commands = {
     if ns.UI.HealFrames then ns.UI.HealFrames.Render() end
   end,
   conso = function() if ns.ToggleCons then ns.ToggleCons() end end,
+  craft = function() if ns.ToggleCraft then ns.ToggleCraft() end end,
   debug = function()
     ns.db.debug = not ns.db.debug
     ns.Print(ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)
