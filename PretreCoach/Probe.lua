@@ -30,7 +30,7 @@ local APIS = {
   "C_UnitAuras.GetAuraDataByIndex", "C_UnitAuras.GetPlayerAuraBySpellID", "C_UnitAuras.GetAuraDataBySpellName",
   "GetInventoryItemID", "GetInventoryItemLink",
   "C_Item.GetItemInfo", "C_Item.GetItemInfoInstant", "GetItemInfo", "GetItemInfoInstant",
-  "GetUnitSpeed", "IsPlayerMoving",
+  "GetUnitSpeed", "IsPlayerMoving", "C_TradeSkillUI.GetBaseProfessionInfo", "C_TradeSkillUI.GetProfessionInfoBySkillLineID",
   "GetProfessions", "GetProfessionInfo", "GetNumSkillLines", "GetSkillLineInfo",
   "GetNumTalentTabs", "GetTalentTabInfo", "GetTalentInfo", "GetNumTalents",
   "GetUnspentTalentPoints", "UnitCharacterPoints",
@@ -63,8 +63,17 @@ local function Resolve(path)
   return v
 end
 
+-- état d'une table rendue par une API (jamais « table: 0x… »)
+local function TableState(v)
+  for _, k in ipairs({ "spellId", "name", "startTime", "duration", "isActive" }) do
+    if S.IsSecret(v[k]) then return "SECRET (champs)" end
+  end
+  return "lisible (table" .. (v.spellId and (" spellId=" .. tostring(v.spellId)) or "") .. ")"
+end
+
 local function Show(v)
   if S.IsSecret(v) then return "SECRET" end
+  if type(v) == "table" then return TableState(v) end
   return tostring(v)
 end
 
@@ -88,12 +97,7 @@ local function Status(path, ...)
   local ok, v = pcall(fn, ...)
   if not ok then return "erreur" end
   if S.IsSecret(v) then return "SECRET" end
-  if type(v) == "table" then
-    for _, k in ipairs({ "spellId", "name", "startTime", "duration", "isActive" }) do
-      if S.IsSecret(v[k]) then return "SECRET (champs)" end
-    end
-    return "lisible (table" .. (v.spellId and (" spellId=" .. tostring(v.spellId)) or "") .. ")"
-  end
+  if type(v) == "table" then return TableState(v) end
   return "lisible (" .. tostring(v) .. ")"
 end
 
@@ -107,6 +111,7 @@ end
 ------------------------------------------------------------------------
 local function Snapshot()
   local hasTarget = S.Get(UnitExists, "target")
+  local prof1 = S.Get(GetProfessions)
   local t = {
     { "Vie joueur", Status("UnitHealth", "player") },
     { "Vie max joueur", Status("UnitHealthMax", "player") },
@@ -119,6 +124,7 @@ local function Snapshot()
     { "Buff joueur n°1", Status("C_UnitAuras.GetAuraDataByIndex", "player", 1, "HELPFUL") },
     { "Vitesse joueur", Status("GetUnitSpeed", "player") },
     { "Utilisable Cannibalisme", Status("C_Spell.IsSpellUsable", 20577) },
+    { "Métier n°1 (GetProfessionInfo)", prof1 and Status("GetProfessionInfo", prof1) or "aucun métier (GetProfessions)" },
   }
   if hasTarget then
     local more = {
@@ -137,7 +143,7 @@ local function Snapshot()
   else
     t[#t + 1] = { "Cible", "aucune (cible un monstre pour tester la cible)" }
   end
-  return { lines = t, when = date("%H:%M:%S"), target = hasTarget and true or false }
+  return { lines = t, when = date("%Y-%m-%d %H:%M:%S"), target = hasTarget and true or false }
 end
 
 local function Discover()
@@ -167,24 +173,37 @@ local function Discover()
 end
 
 local function SlotLine(slot)
-  local id = S.Get(GetInventoryItemID, "player", slot)
-  if not id then return ("emplacement %d : vide (ou illisible)"):format(slot) end
+  local id, st = S.Get(GetInventoryItemID, "player", slot)
+  local head = ("emplacement %d : %s | lien : %s"):format(slot,
+    id and ("objet " .. tostring(id)) or (st == "nil" and "vide" or st), Dump("GetInventoryItemLink", "player", slot))
+  if not id then return head end
   local instant = (C_Item and C_Item.GetItemInfoInstant) and "C_Item.GetItemInfoInstant" or "GetItemInfoInstant"
   local info = (C_Item and C_Item.GetItemInfo) and "C_Item.GetItemInfo" or "GetItemInfo"
-  return ("emplacement %d : objet %s | instant : %s | infos : %s"):format(slot, tostring(id), Dump(instant, id), Dump(info, id))
+  return head .. (" | instant : %s | infos : %s"):format(Dump(instant, id), Dump(info, id))
 end
 
 ------------------------------------------------------------------------
 -- suivi des événements (compteurs de session + dernier sort lancé)
 ------------------------------------------------------------------------
 local reg, seen, lastCast, trainerDump = {}, {}, "aucun", nil
+local UNIT_EVENTS = { UNIT_SPELLCAST_SUCCEEDED = true, UNIT_HEALTH = true }
 
 for _, ev in ipairs(EVENTS) do
-  reg[ev] = ns.On(ev, function(e, unit, _, spellID)
+  local on = UNIT_EVENTS[ev] and function(e, fn) return ns.OnUnit(e, "player", fn) end or ns.On
+  reg[ev] = on(ev, function(e, _, _, spellID)
     seen[e] = (seen[e] or 0) + 1
-    if e == "UNIT_SPELLCAST_SUCCEEDED" and unit == "player" then
-      lastCast = S.IsSecret(spellID) and "SECRET" or (tostring(spellID) .. " " .. SpellName(spellID))
-      if InCombatLockdown() then lastCast = lastCast .. " (en combat)" end
+    if e == "UNIT_SPELLCAST_SUCCEEDED" then
+      local secret = S.IsSecret(spellID)
+      lastCast = secret and "SECRET" or (tostring(spellID) .. " " .. SpellName(spellID))
+      if InCombatLockdown() then
+        lastCast = lastCast .. " (en combat)"
+        -- la question clé : le spellID reste-t-il lisible en combat ? Mémorisé à part, le hors-combat ne l'écrase pas.
+        if ns.db then
+          ns.db.probe = ns.db.probe or {}
+          ns.db.probe.lastCombatCast = { id = secret and "SECRET" or spellID, name = secret and "?" or SpellName(spellID),
+            when = date("%Y-%m-%d %H:%M:%S") }
+        end
+      end
     elseif e == "TRAINER_SHOW" then
       trainerDump = { "services : " .. Dump("GetNumTrainerServices") }
       for i = 1, 3 do
@@ -196,17 +215,22 @@ for _, ev in ipairs(EVENTS) do
   end)
 end
 
+-- Un relevé sans cible n'écrase pas un relevé en combat qui avait une cible. Rend true si mémorisé.
+local function StoreCombat(snap)
+  local old = ns.db.probe.combat
+  if snap.target or not (old and old.target) then ns.db.probe.combat = snap return true end
+end
+
 ns.On("PLAYER_REGEN_DISABLED", function()
   local function take(announce)
     if not InCombatLockdown() then return end
     ns.db.probe = ns.db.probe or {}
     local snap = Snapshot()
-    local old = ns.db.probe.combat
-    if snap.target or not (old and old.target) then ns.db.probe.combat = snap end
-    if announce and snap.target then ns.Print(L.PROBE_COMBAT_SAVED) end
+    StoreCombat(snap)
+    if announce and snap.target then ns.Print(L.PROBE_COMBAT_SAVED); ns.probeAnnounced = true end
   end
   ns.After(2, function() take(false) end)
-  ns.After(5, function() take(not ns.probeAnnounced); ns.probeAnnounced = true end)
+  ns.After(5, function() take(not ns.probeAnnounced) end)
 end)
 
 ------------------------------------------------------------------------
@@ -276,7 +300,7 @@ function ns.Probe()
   local db = ns.db
   db.probe = db.probe or {}
   if InCombatLockdown() then
-    db.probe.combat = Snapshot()
+    StoreCombat(Snapshot())
   else
     db.probe.outside = Snapshot()
   end
@@ -317,13 +341,15 @@ function ns.Probe()
   section("Zone")
   local mapID = S.Get(C_Map and C_Map.GetBestMapForUnit, "player")
   local info = mapID and S.Get(C_Map.GetMapInfo, mapID)
-  add("uiMapID : %s | nom : %s | GetRealZoneText : %s", tostring(mapID), info and tostring(info.name) or "?", Dump("GetRealZoneText"))
+  add("uiMapID : %s | nom : %s | GetRealZoneText : %s", tostring(mapID), info and Show(info.name) or "?", Dump("GetRealZoneText"))
 
   section("Événements (depuis le dernier /reload)")
   for _, ev in ipairs(EVENTS) do
     add("%s : %s, reçu %d fois", ev, reg[ev] and "inscrit" or "REFUSÉ", seen[ev] or 0)
   end
   add("Dernier sort lancé (UNIT_SPELLCAST_SUCCEEDED) : %s", lastCast)
+  local lc = db.probe.lastCombatCast
+  add("Dernier sort lancé EN COMBAT (spellID lisible ?) : %s", lc and ("%s %s (%s)"):format(tostring(lc.id), tostring(lc.name), tostring(lc.when)) or "aucun")
 
   section("Talents et double spécialisation")
   add("GetNumTalentTabs : %s", Dump("GetNumTalentTabs"))
@@ -348,18 +374,25 @@ function ns.Probe()
   add("Touche ACTIONBUTTON1 : %s", Dump("GetBindingKey", "ACTIONBUTTON1"))
 
   section("Métiers")
+  local PROFS = { [182] = "Herboristerie", [171] = "Alchimie", [129] = "Secourisme" } -- par skillLine
   add("GetProfessions : %s", Dump("GetProfessions"))
+  add("GetProfessionInfo rend (nom, icône, niveau, max, nbCapacités, décalage, skillLine, ...) ; skillLine = 7e valeur, à vérifier")
   if GetProfessions then
     local ok, p1, p2, p3, p4, p5 = pcall(GetProfessions)
     local profs = { p1, p2, p3, p4, p5 } -- des trous possibles : on parcourt les 5 index
     for i = 1, 5 do
-      if ok and profs[i] and not S.IsSecret(profs[i]) then add("  %s", Dump("GetProfessionInfo", profs[i])) end
+      local id = profs[i]
+      if ok and not S.IsSecret(id) and id then
+        local r = { S.GetAll(GetProfessionInfo, id) }
+        add("  %s%s", Dump("GetProfessionInfo", id), PROFS[r[8]] and (" <- " .. PROFS[r[8]]) or "")
+      end
     end
   end
+  add("GetSkillLineInfo ne voit pas les en-têtes repliés (compétences d'une catégorie fermée absentes)")
   local n = S.Get(GetNumSkillLines)
   for i = 1, math.min(n or 0, 40) do
-    local ok, name, header, _, rank = pcall(GetSkillLineInfo, i)
-    if ok and not header then add("  compétence : %s %s", Show(name), Show(rank)) end
+    local st, name, header, _, rank = S.GetAll(GetSkillLineInfo, i)
+    if st == "lisible" and not header then add("  compétence : %s %s", Show(name), Show(rank)) end
   end
 
   section("Quêtes")

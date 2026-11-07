@@ -9,5 +9,10 @@ if (Test-Path $dst) {
     Write-Host "Already there: $dst"
     exit 0
 }
-New-Item -ItemType Junction -Path $dst -Target $src | Out-Null
+$addons = Split-Path $dst -Parent
+if (-not (Test-Path $addons)) {
+    Write-Host "AddOns folder not found: $addons (check -WowPath: $WowPath)"
+    exit 1
+}
+New-Item -ItemType Junction -Path $dst -Target $src -ErrorAction Stop | Out-Null
 Write-Host "Linked: $dst -> $src"

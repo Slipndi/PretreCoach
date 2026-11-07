@@ -2,8 +2,14 @@
 local ADDON, ns = ...
 local L = ns.L
 
+-- Un argument secret fait échouer format : on affiche alors le texte du format seul.
 function ns.Print(fmt, ...)
-  print(L.PREFIX .. " " .. (select("#", ...) > 0 and fmt:format(...) or fmt))
+  local text = fmt
+  if select("#", ...) > 0 then
+    local ok, res = pcall(string.format, fmt, ...)
+    if ok then text = res end
+  end
+  print(L.PREFIX .. " " .. text)
 end
 
 function ns.Debug(fmt, ...)
@@ -18,11 +24,17 @@ ns.After = (C_Timer and C_Timer.After) or function(_, fn) fn() end
 local frame = CreateFrame("Frame")
 local handlers = {}
 
+local function run(fn, event, ...)
+  local ok, err = pcall(fn, event, ...)
+  if not ok then geterrorhandler()(err) end
+end
+
 function ns.On(event, fn)
   local list = handlers[event]
   if not list then
     -- un événement inconnu ou interdit sur Forever fait planter RegisterEvent : on le signale
-    if not pcall(frame.RegisterEvent, frame, event) then return false end
+    local ok, res = pcall(frame.RegisterEvent, frame, event)
+    if not ok or res == false then return false end
     list = {}
     handlers[event] = list
   end
@@ -31,11 +43,18 @@ function ns.On(event, fn)
 end
 
 frame:SetScript("OnEvent", function(_, event, ...)
-  for _, fn in ipairs(handlers[event]) do
-    local ok, err = pcall(fn, event, ...)
-    if not ok then geterrorhandler()(err) end
-  end
+  for _, fn in ipairs(handlers[event]) do run(fn, event, ...) end
 end)
+
+-- Événement filtré sur une unité : RegisterUnitEvent (un cadre par couple), sinon repli sur le bus avec filtre.
+function ns.OnUnit(event, unit, fn)
+  local f = CreateFrame("Frame")
+  if pcall(f.RegisterUnitEvent, f, event, unit) then
+    f:SetScript("OnEvent", function(_, e, ...) run(fn, e, ...) end)
+    return true
+  end
+  return ns.On(event, function(e, u, ...) if u == unit then return fn(e, u, ...) end end)
+end
 
 ns.On("ADDON_LOADED", function(_, name)
   if name ~= ADDON then return end

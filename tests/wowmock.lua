@@ -1,5 +1,5 @@
 -- Fausse API WoW minimale : seulement ce que PretreCoach appelle. Charger avec dofile, rend le module `mock`.
-local mock = { errors = {}, printed = {}, events = {}, timers = {}, inCombat = false, hasTarget = true }
+local mock = { errors = {}, printed = {}, events = {}, timers = {}, inCombat = false, hasTarget = true, noSecrets = false }
 
 -- Valeur secrete simulee : toute operation autre que issecretvalue leve une erreur.
 local function deny(op) return function() error("attempt to " .. op .. " a secret value", 2) end end
@@ -11,34 +11,53 @@ function mock.isSecret(v) return type(v) == "table" and getmetatable(v) == SECRE
 
 issecretvalue = mock.isSecret
 -- en combat les API de vie, mana, auras, recharges rendent la valeur secrete
-local function sec(v) return function() if mock.inCombat then return mock.SECRET end return v end end
+-- (sans issecretvalue, forme Classic, le jeu ne rend jamais de secret : mock.noSecrets)
+local function secretNow() return mock.inCombat and not mock.noSecrets end
+local function sec(v) return function() if secretNow() then return mock.SECRET end return v end end
 
 -- Cadre : toute methode inconnue est une fonction vide.
 local FRAME = {}
 local frameMT = { __index = function(_, k) return FRAME[k] or function() end end }
 local function newFrame()
-  local f = setmetatable({ scripts = {}, registered = {} }, frameMT)
+  local f = setmetatable({ scripts = {}, registered = {}, unit = {} }, frameMT)
   return f
 end
 function FRAME.RegisterEvent(self, e)
   if mock.rejectEvents and mock.rejectEvents[e] then error("unknown event " .. e) end
   self.registered[e] = true
-  mock.events[e] = self
+  mock.events[e] = mock.events[e] or {}
+  table.insert(mock.events[e], self)
 end
+function FRAME.RegisterUnitEvent(self, e, unit)
+  if mock.noRegisterUnitEvent then error("RegisterUnitEvent indisponible") end
+  FRAME.RegisterEvent(self, e)
+  self.unit[e] = unit
+end
+function FRAME.SetText(_, t) mock.lastText = t end
 function FRAME.SetScript(self, name, fn) self.scripts[name] = fn end
 function FRAME.CreateTexture() return newFrame() end
 function FRAME.CreateFontString() return newFrame() end
 function FRAME.GetVerticalScroll() return 0 end
 function FRAME.GetVerticalScrollRange() return 0 end
-function CreateFrame() return newFrame() end
+function CreateFrame(_, name) local f = newFrame() if name then _G[name] = f end return f end
 UIParent = newFrame()
 ChatFontNormal = {}
 
--- Envoie un evenement a tous les cadres inscrits (le gestionnaire OnEvent n'a pas de filtre propre).
+-- Envoie un evenement a tous les cadres inscrits ; un cadre inscrit par unite ne recoit que cette unite.
 function mock.fire(event, ...)
-  local f = mock.events[event]
-  assert(f, "aucun cadre inscrit a " .. event)
-  f.scripts.OnEvent(f, event, ...)
+  local list = mock.events[event]
+  assert(list, "aucun cadre inscrit a " .. event)
+  for _, f in ipairs(list) do
+    if not f.unit[event] or f.unit[event] == (...) then f.scripts.OnEvent(f, event, ...) end
+  end
+end
+
+-- Remet le mock a zero entre deux chargements de l'addon.
+function mock.reset()
+  mock.events, mock.timers, mock.errors, mock.printed = {}, {}, {}, {}
+  mock.inCombat, mock.hasTarget, mock.rejectEvents, mock.noRegisterUnitEvent, mock.lastText = false, true, nil, false, nil
+  SlashCmdList = {}
+  PretreCoachDB = nil
 end
 
 -- Minuteurs : file qu'on vide a la main.
@@ -71,7 +90,7 @@ function UnitClass() return "Pretre", "PRIEST", 5 end
 function UnitRace() return "Mort-vivant", "Scourge" end
 function UnitLevel() return 12 end
 UnitHealth, UnitHealthMax = sec(100), sec(100)
-function UnitPower() return mock.inCombat and mock.SECRET or 50 end
+function UnitPower() return secretNow() and mock.SECRET or 50 end
 UnitPowerMax = UnitPower
 GetPowerRegen = sec(1)
 function UnitExists() return mock.hasTarget end
@@ -80,19 +99,49 @@ function CheckInteractDistance() return false end
 function GetUnitSpeed() return 0 end
 function IsPlayerMoving() return false end
 function GetInventoryItemID() return nil end
+function GetInventoryItemLink() return nil end
 function IsPlayerSpell() return true end
 function IsSpellKnown() return true end
 function GetNumTalentTabs() return 3 end
-function GetProfessions() return nil end
-function GetNumSkillLines() return 0 end
+function GetProfessions() return 1, 2 end
+function GetProfessionInfo(i) return i == 1 and "Herboristerie" or "Alchimie", 0, 100, 300, 0, 0, i == 1 and 182 or 171 end
+function GetNumSkillLines() return 2 end
+function GetSkillLineInfo(i) return "Competence" .. i, false, 0, 50 end
+function GetTalentTabInfo(i) return "Onglet" .. i, 0, 0 end
+function GetTalentInfo() return "Talent", 0, 1, 1, 0, 5 end
+function GetNumTalentGroups() return 1 end
+function GetActiveTalentGroup() return 1 end
+function GetUnspentTalentPoints() return 0 end
+function GetNumTrainerServices() return 3 end
+function GetTrainerServiceInfo(i) return "Sort" .. i, "", "available" end
+function GetTrainerServiceLevelReq() return 10 end
+function GetTrainerServiceCost() return 100 end
+C_SpellBook = { IsSpellKnown = function() return true end }
+C_QuestLog = { IsQuestFlaggedCompleted = function() return false end }
+C_ActionBar = { FindSpellActionButtons = function() return nil end }
+Settings = { RegisterCanvasLayoutCategory = function() end, RegisterAddOnCategory = function() end }
 GetSpellCooldown = sec(0)
 C_Spell = {
   GetSpellName = function(id) return "Sort" .. id end,
-  GetSpellCooldown = function() return mock.inCombat and mock.SECRET or { startTime = 0, duration = 0, isEnabled = true } end,
+  GetSpellCooldown = function() return secretNow() and mock.SECRET or { startTime = 0, duration = 0, isEnabled = true } end,
   IsSpellUsable = sec(true),
   IsSpellInRange = sec(true),
 }
-C_UnitAuras = { GetAuraDataByIndex = function() return mock.inCombat and mock.SECRET or nil end }
+C_UnitAuras = { GetAuraDataByIndex = function() return secretNow() and mock.SECRET or nil end }
 C_Map = { GetBestMapForUnit = function() return 1 end, GetMapInfo = function() return { name = "Tirisfal" } end }
+
+-- APIs incertaines sur Forever : mock.setAbsent(true) les retire toutes (passe « absente »), false les remet.
+local UNCERTAIN = [[
+GetTalentTabInfo GetTalentInfo GetNumTalentTabs GetNumTalentGroups GetActiveTalentGroup GetUnspentTalentPoints
+C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo GetSkillLineInfo GetNumSkillLines
+C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
+GetTrainerServiceLevelReq GetTrainerServiceCost GetInventoryItemID C_ActionBar issecretvalue
+]]
+local saved = {}
+for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end
+function mock.setAbsent(absent)
+  for n, v in pairs(saved) do _G[n] = (not absent) and v or nil end
+  mock.noSecrets = absent
+end
 
 return mock
