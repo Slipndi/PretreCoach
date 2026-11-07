@@ -142,6 +142,8 @@ local function suite(label)
   end)
   check("Minimap : clic sans ToggleGuide, avec ToggleGuide", function()
     local b = ns.minimapButton
+    local real = ns.ToggleGuide
+    ns.ToggleGuide = nil
     b.scripts.OnClick(b, "LeftButton"); b.scripts.OnClick(b, "RightButton"); b.scripts.OnEnter(b)
     PretreCoach_OnCompartmentClick("x", "LeftButton")
     local n = 0
@@ -149,6 +151,7 @@ local function suite(label)
     b.scripts.OnClick(b, "LeftButton")
     ns.ToggleGuide = nil
     assert(n == 1 and #mock.printed >= 1)
+    ns.ToggleGuide = real
   end)
   check("UI.Icon : Pulse, grise, raccourci", function()
     local i = ns.UI.Icon(UIParent, 40)
@@ -911,6 +914,137 @@ local function suite(label)
     setState(n, {})
     h = n.Guide.Header()
     assert(h.level == nil and h.progress == 0 and h.tier == nil and h.zoneStatus == "neutre")
+  end)
+
+  -- Fenetre Guide : un ns neuf, niveau 12 (objectif « legacy_toa » inconnu, a cocher a la main).
+  local function gw()
+    local o = fresh()
+    local n = o.n
+    n.db.guide.tab, n.db.guide.compact = "now", false
+    setState(n, { level = 12 })
+    return n, n.UI.GuideWin
+  end
+  local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead" }
+
+  check("GuideWindow : ToggleGuide ouvre et ferme, Echap, /coach guide", function()
+    local n, G = gw()
+    n.ToggleGuide()
+    assert(G.win:IsShown() and G.count == 1, "ouverte et dessinee")
+    n.ToggleGuide()
+    assert(not G.win:IsShown(), "fermee")
+    local found
+    for _, name in ipairs(UISpecialFrames) do if name == "PretreCoachGuideFrame" then found = true end end
+    assert(found, "Echap")
+    SlashCmdList.PRETRECOACH("guide")
+    assert(G.win:IsShown())
+  end)
+
+  check("GuideWindow : chaque onglet se dessine, l'onglet est memorise", function()
+    local n, G = gw()
+    n.ToggleGuide()
+    for i, key in ipairs(TABS) do
+      G.win.tabs[i].scripts.OnClick(G.win.tabs[i])
+      assert(n.db.guide.tab == key, "onglet memorise : " .. key)
+    end
+    G.win.tabs[1].scripts.OnClick(G.win.tabs[1])
+    assert(G.used == #n.Guide.Evaluate() and G.used > 0, "Maintenant : une ligne par objectif")
+    G.win.tabs[2].scripts.OnClick(G.win.tabs[2])
+    assert(G.used == #n.Guide.Milestones(), "Etapes : une ligne par jalon")
+    G.win.tabs[3].scripts.OnClick(G.win.tabs[3])
+    assert(G.used == #n.Guide.Reference("talents") and G.rows[1].text.text == n.Guide.Reference("talents")[1].text)
+    -- niveau illisible : tout se dessine encore
+    setState(n, {})
+    for i = 1, #TABS do G.win.tabs[i].scripts.OnClick(G.win.tabs[i]) end
+  end)
+
+  check("GuideWindow : clic sur un objectif inconnu appelle SetManual", function()
+    local n, G = gw()
+    n.ToggleGuide()
+    local calls = {}
+    local real = n.Guide.SetManual
+    n.Guide.SetManual = function(id, v) calls[#calls + 1] = { id, v } return real(id, v) end
+    local row
+    for i = 1, G.used do if G.rows[i].entry.id == "legacy_toa" then row = G.rows[i] end end
+    assert(row and row.entry.unknown, "ligne inconnue")
+    row.box.scripts.OnClick(row.box)
+    assert(#calls == 1 and calls[1][1] == "legacy_toa" and calls[1][2] == true, "SetManual(id, true)")
+    assert(n.db.guide.manual.legacy_toa == true, "coche memorisee")
+    for i = 1, G.used do if G.rows[i].entry.id == "legacy_toa" then row = G.rows[i] end end
+    assert(row.entry.done and not row.entry.unknown, "ligne redessinee (GUIDE)")
+    row.box.scripts.OnClick(row.box)
+    assert(calls[2][2] == false, "decoche a la main")
+    row.box.scripts.OnEnter(row.box); row.box.scripts.OnLeave(row.box)
+  end)
+
+  check("GuideWindow : GUIDE fenetre fermee, aucun rafraichissement, puis a l'ouverture", function()
+    local n, G = gw()
+    n.ToggleGuide(); n.ToggleGuide()
+    local c = G.count
+    n.Fire("GUIDE")
+    n.Fire("STATE", { "level" })
+    assert(G.count == c, "rien tant que fermee")
+    n.ToggleGuide()
+    assert(G.count == c + 1, "rafraichie a l'ouverture")
+    n.Fire("GUIDE")
+    assert(G.count == c + 2, "ouverte : rafraichie sur GUIDE")
+  end)
+
+  check("GuideWindow : STATE en combat reporte a PLAYER_REGEN_ENABLED", function()
+    local n, G = gw()
+    n.ToggleGuide()
+    local c = G.count
+    mock.setCombat(true)
+    n.Fire("STATE", { "level" })
+    n.Fire("GUIDE")
+    assert(G.count == c, "rien en combat")
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED")
+    assert(G.count == c + 1, "un seul rafraichissement apres le combat")
+  end)
+
+  check("GuideWindow : le pool de lignes ne grossit pas", function()
+    local n, G = gw()
+    n.ToggleGuide()
+    G.win.tabs[3].scripts.OnClick(G.win.tabs[3])
+    local size = #G.rows
+    for _ = 1, 5 do n.Fire("GUIDE") end
+    assert(#G.rows == size, "pool stable")
+    G.win.tabs[1].scripts.OnClick(G.win.tabs[1])
+    local small = #G.rows
+    for _ = 1, 5 do n.Fire("GUIDE") end
+    assert(#G.rows == small and small >= size, "pool stable apres retour")
+  end)
+
+  check("GuideWindow : mode compact affiche Next(), memorise, /coach compact", function()
+    local n, G = gw()
+    n.SetCompact(true)
+    assert(n.db.guide.compact == true and G.card:IsShown() and not (G.win and G.win:IsShown()))
+    assert(G.card.text.text == n.Guide.Next().text or G.card.text.text == "? " .. n.Guide.Next().text, "texte de Next()")
+    n.Fire("GUIDE")
+    n.ToggleGuide()
+    assert(not G.card:IsShown(), "ToggleGuide ferme la carte")
+    SlashCmdList.PRETRECOACH("compact")
+    assert(n.db.guide.compact == false and G.win:IsShown() and not G.card:IsShown(), "retour a la fenetre")
+    SlashCmdList.PRETRECOACH("compact")
+    assert(n.db.guide.compact == true and G.card:IsShown())
+    G.card:Hide()
+    n.State.level = 80
+    n.SetCompact(true)
+    assert(G.card.text.text ~= nil, "niveau hors plage : texte de repli")
+  end)
+
+  check("GuideWindow : show.guide respecte au chargement", function()
+    local keep = PretreCoachDB
+    for _, case in ipairs({ { false, false }, { true, true }, { false, true } }) do
+      local n = loadAddon()
+      PretreCoachDB = { show = { guide = case[2] }, guide = { manual = {}, done = {}, compact = case[1] } }
+      mock.fire("ADDON_LOADED", ADDON)
+      local G = n.UI.GuideWin
+      local shown = (G.win and G.win:IsShown()) or (G.card and G.card:IsShown()) or false
+      assert(shown == case[2], "show.guide=" .. tostring(case[2]))
+      assert(not case[2] or (case[1] and G.card:IsShown()) or (not case[1] and G.win:IsShown()), "bonne vue")
+    end
+    PretreCoachDB = keep
   end)
 
   check("Un listener STATE qui plante ne bloque pas les autres", function()

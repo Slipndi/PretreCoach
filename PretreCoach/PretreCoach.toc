@@ -28,4 +28,5 @@ Guide.lua
 UI\Style.lua
 UI\Toast.lua
 UI\Minimap.lua
+UI\GuideWindow.lua
 Probe.lua

@@ -35,7 +35,11 @@ function FRAME.RegisterUnitEvent(self, e, unit)
   FRAME.RegisterEvent(self, e)
   self.unit[e] = unit
 end
-function FRAME.SetText(_, t) mock.lastText = t end
+function FRAME.SetText(self, t) mock.lastText = t self.text = t end
+function FRAME.Show(self) local was = self.shown self.shown = true if not was and self.scripts.OnShow then self.scripts.OnShow(self) end end
+function FRAME.Hide(self) self.shown = false end
+function FRAME.SetShown(self, b) if b then FRAME.Show(self) else FRAME.Hide(self) end end
+function FRAME.IsShown(self) return self.shown == true end
 function FRAME.SetScript(self, name, fn) self.scripts[name] = fn end
 function FRAME.CreateTexture() return newFrame() end
 function FRAME.CreateAnimationGroup() return newFrame() end

@@ -71,7 +71,7 @@ end
 -- Valeurs par défaut des réglages : complétées sans jamais écraser ce que le joueur a déjà.
 ns.DEFAULTS = {
   show = { guide = true, rotation = true, rules = true, toasts = true },
-  guide = { manual = {}, done = {} },
+  guide = { manual = {}, done = {}, tab = "now", compact = false },
   locked = false, opacity = 0.9, scale = 1, frames = {}, minimap = { angle = 220 },
 }
 
@@ -95,6 +95,8 @@ end)
 
 local commands = {
   probe = function() ns.Probe() end,
+  guide = function() if ns.ToggleGuide then ns.ToggleGuide() end end,
+  compact = function() if ns.SetCompact then ns.SetCompact() end end,
   debug = function()
     ns.db.debug = not ns.db.debug
     ns.Print(ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)
