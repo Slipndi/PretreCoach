@@ -14,6 +14,32 @@ Le joueur est développeur (PHP/Laravel, Python) mais ne connaît pas forcément
 
 ## 1. Contexte technique : à lire avant d'écrire une ligne
 
+### 0. Règle essentielle : conformité Blizzard (aucun risque de bannissement)
+
+Le compte du joueur ne doit jamais pouvoir être banni à cause de l'addon. Cette règle passe avant toutes les autres.
+
+**Permis** : l'API Lua officielle de l'interface, pour lire et afficher ; des minuteurs sur ses propres sorts.
+
+**Interdit dans l'addon** (vérifié par `tests/compliance.lua`) :
+- lancer ou cibler à la place du joueur (`CastSpell*`, `UseAction`, `TargetUnit`, etc.) ;
+- fonctions protégées et cadres sécurisés (`SecureActionButtonTemplate`, `SetAttribute`) ;
+- toucher aux raccourcis, macros ou barres (`SetBinding*`, `EditMacro`, `CreateMacro`, `PickupSpell`, `PlaceAction`) ;
+- envoyer des messages de chat ou d'addon (`SendChatMessage`, `C_ChatInfo.SendAddonMessage`) ;
+- `COMBAT_LOG_EVENT_UNFILTERED` et tout contournement des valeurs secrètes ;
+- code obscurci (`loadstring`, `RunScript`, `setfenv`) ;
+- publicité ou demande de dons ;
+- toute sortie destinée à une machine : carrés de couleur ou pixels codant le conseil pour être lus par un programme externe.
+
+**Interdit au joueur** : brancher un logiciel externe sur l'addon (AutoHotkey, macro souris ou clavier qui appuie sur la touche conseillée, lecteur de pixels, lecteur de mémoire, « unlockers »). C'est ce qui fait bannir.
+
+**Sources officielles** (relevées le 2026-11-07) :
+- EULA Blizzard, section 1.C.ii : interdit les « bots; i.e. any code and/or software, not expressly authorized by Blizzard, that allows the automated control of a Game », les « hacks » et les « cheats » ; section 1.C.vi : logiciels non autorisés qui interceptent ou « mine » des informations. https://www.blizzard.com/en-us/legal/fba4d00f-c7e4-4883-b8b9-1b4500a402ea/blizzard-end-user-license-agreement
+- UI Add-On Development Policy (2009) : gratuit, code non obscurci, ni pub ni demande de dons en jeu, aucune nuisance (chat, disque, framerate). https://us.forums.blizzard.com/en/wow/t/24534
+- « Combat Philosophy and Addon Disarmament in Midnight » : « Addons should no longer offer a competitive advantage in WoW combat » ; les infos de combat sont des « secret values ». http://worldofwarcraft.blizzard.com/en-us/news/24246290
+- WoW Forever : aucune politique propre trouvée.
+
+**Honnêteté** : Blizzard garde le jugement final (« sole determination »). Respecter ces règles réduit le risque au minimum, mais ne donne aucune garantie juridique absolue.
+
 WoW Forever (sorti le 4 novembre 2026) a le contenu de Vanilla (niveau max 60, rangs de sorts, maître de classe), mais tourne sur le **moteur et l'API modernes de WoW Retail (branche 12.x, époque Midnight 12.1.5)**. Ça change tout :
 
 - **Dossier des addons** : `World of Warcraft/_forever_/Interface/AddOns/` (sous Windows, souvent `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns\`).

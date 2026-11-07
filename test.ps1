@@ -5,7 +5,7 @@ if (-not $lj) { $lj = Join-Path $env:LOCALAPPDATA "Programs\LuaJIT\bin\luajit.ex
 if (-not (Test-Path $lj)) { Write-Host "luajit introuvable (winget install DEVCOM.LuaJIT)"; exit 2 }
 Set-Location $PSScriptRoot
 $rc = 0
-foreach ($s in "tests\lint.lua", "tests\run.lua") {
+foreach ($s in "tests\compliance.lua", "tests\lint.lua", "tests\run.lua") {
     Write-Host "== $s"
     & $lj $s
     if ($LASTEXITCODE -ne 0) { $rc = 1 }
