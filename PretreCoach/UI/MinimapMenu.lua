@@ -21,6 +21,7 @@ local ENTRIES = {
   { label = L.MENU_PROGRESS, cmd = "progress", check = function() return db().show and db().show.progress ~= false end },
   { label = L.MENU_HEAL, cmd = "heal", check = function() return db().show and db().show.heal ~= false end },
   { label = L.MENU_CONS, cmd = "conso", check = function() return db().show and db().show.cons ~= false end },
+  { label = L.MENU_MANA, cmd = "mana", check = function() return db().show and db().show.mana ~= false end },
   "sep",
   { label = L.MENU_CLOSE },
 }

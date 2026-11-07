@@ -199,8 +199,8 @@ local function suite(label)
     local function row(i) return m.rows and m.rows[i] end
     ns.ToggleMinimapMenu(b)
     local btns = N.UI.MenuRows()
-    assert(#btns == 12, "12 lignes cliquables")
-    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", "heal", "conso", nil }
+    assert(#btns == 13, "13 lignes cliquables")
+    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", "heal", "conso", "mana", nil }
     for i, e in ipairs(expect) do
       calls = {}
       if not m:IsShown() then ns.ToggleMinimapMenu(b) end
@@ -2953,7 +2953,7 @@ local function suite(label)
     n.db.show.heal = false; H.Render()
     assert(not H.frame:IsShown(), "option masquer")
     n.db.show.heal = true; mock.hasTarget = false; H.Render()
-    assert(not H.frame:IsShown(), "pas de groupe : masque, sans erreur")
+    assert(H.frame:IsShown(), "seul : le cadre reste visible (bouton du joueur), sans erreur")
     mock.hasTarget = true; H.Render()
     -- combat : la vie secrete va telle quelle aux StatusBar, aucun SetAttribute, changement differe
     local calls = mock.attrCalls
@@ -3765,6 +3765,40 @@ local function suite(label)
     local open = 0
     for _, e in ipairs(n.Guide.Evaluate()) do if not e.done then open = open + 1 end end
     assert(G.used == #goals and G.used < open, "Maintenant : seulement les entrees de Goals")
+  end)
+
+  check("Barre de mana : valeur secrete telle quelle, barre des 5 s, regen., option, /coach mana", function()
+    mock.reset()
+    local n = loadAddon()
+    mock.fire("ADDON_LOADED", ADDON)
+    local M = n.UI.ManaBar
+    assert(M.frame.shown and M.frame.mana.value ~= nil, "affichee, mana donne au StatusBar")
+    if not mock.noSecrets then
+      assert(mock.isSecret(M.frame.mana.value), "valeur secrete passee telle quelle")
+    end
+    mock.vitalsReadable = true
+    mock.fire("UNIT_POWER_UPDATE", "player")
+    assert(M.frame.mana.value == 100, "UNIT_POWER_UPDATE relit le mana")
+    mock.mana = 40
+    mock.fire("UNIT_MAXPOWER", "player")
+    assert(M.frame.mana.value == 40, "UNIT_MAXPOWER relit le mana")
+    assert(M.frame.five.text.text == "régén." and M.frame.five.value == 5, "regen. a 0")
+    mock.time = 100
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 585)
+    assert(M.frame.five.value == 0 and M.frame.five.text.text == "5 s : 5,0" and M.frame.five.scripts.OnUpdate, "decompte demarre")
+    mock.time = 102
+    M.frame.five.scripts.OnUpdate(M.frame.five, 0.1)
+    assert(M.frame.five.value == 2 and M.frame.five.text.text == "5 s : 3,0", "suit FiveSecRemaining")
+    mock.time = 106
+    M.frame.five.scripts.OnUpdate(M.frame.five, 0.1)
+    assert(M.frame.five.value == 5 and M.frame.five.text.text == "régén." and M.frame.five.scripts.OnUpdate == nil, "fin : regen., OnUpdate retire")
+    n.db.show.mana = false
+    M.Render()
+    assert(not M.frame.shown, "option masquer")
+    SlashCmdList.PRETRECOACH("mana")
+    assert(n.db.show.mana == true and M.frame.shown, "/coach mana reaffiche")
+    SlashCmdList.PRETRECOACH("mana")
+    assert(not M.frame.shown, "/coach mana masque")
   end)
 end
 

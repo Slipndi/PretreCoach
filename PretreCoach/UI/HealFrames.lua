@@ -116,7 +116,7 @@ end
 function H.Render()
   if not built then return end
   if not InCombatLockdown() then -- masquage hors combat seulement (le cadre contient des boutons securises)
-    frame:SetShown((ns.db.show or {}).heal ~= false and S.Get(UnitExists, "party1") == true)
+    frame:SetShown((ns.db.show or {}).heal ~= false) -- visible aussi seul : le bouton du joueur reste la
     if not RegisterUnitWatch then
       for _, b in ipairs(H.buttons) do b:SetShown(S.Get(UnitExists, b.unit) == true) end
     end

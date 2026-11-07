@@ -48,5 +48,6 @@ UI\RulesBar.lua
 UI\ProgressBar.lua
 UI\HealFrames.lua
 UI\ConsumablesBar.lua
+UI\ManaBar.lua
 UI\Options.lua
 Probe.lua
