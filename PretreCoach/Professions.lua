@@ -290,12 +290,13 @@ function Prof.Steps(line)
   local function add(kind, text, done) todo[#todo + 1] = { kind = kind, text = text, done = done } end
   local adv = Get(line)
 
-  -- Rang suivant a prendre (disponible) ou pas encore (niveau trop bas) quand on approche du plafond.
+  -- Rang suivant a prendre des qu'il est disponible (pris tot, rien n'est perdu au plafond) ; sinon, pres du plafond,
+  -- le niveau qu'il faudra.
   local lock, goKey
-  if rank >= max - 5 then
-    for _, t in ipairs(Calc.ProfessionTodo(State.level, State.profs, D.Professions) or {}) do
-      if t.skillLine == line then lock = t.rank end
-    end
+  for _, t in ipairs(Calc.ProfessionTodo(State.level, State.profs, D.Professions) or {}) do
+    if t.skillLine == line then lock = t.rank end
+  end
+  if lock or rank >= max - 5 then
     if lock then
       goKey = GOKEY[line]
       local ok, d = false, nil
@@ -303,7 +304,8 @@ function Prof.Steps(line)
       local where = ok and type(d) == "table" and d.x and d.text or plan.masters and plan.masters[lock.name]
       add("rank", where and L.PROF_STEP_RANK:format(lock.name, where) or L.PROF_STEP_RANK_ANY:format(lock.name), false)
       if rank >= max then title = L.PROF_STEP_TITLE_RANK:format(pname, rank, max, lock.name)
-      else title = L.PROF_STEP_TITLE_SOON:format(pname, rank, max, max - rank, lock.name) end
+      elseif rank >= max - 5 then title = L.PROF_STEP_TITLE_SOON:format(pname, rank, max, max - rank, lock.name)
+      else title = L.PROF_STEP_TITLE_AVAIL:format(pname, rank, max, lock.name) end
     else
       for _, r in ipairs(D.Professions[line] and D.Professions[line].ranks or {}) do
         if r.max > max then

@@ -251,6 +251,7 @@ ns.L = {
   PROF_STEP_TITLE_NOTE = "%s %d/%d : choisis ta recette",
   PROF_STEP_TITLE_RANK = "%s %d/%d : va prendre %s",
   PROF_STEP_TITLE_SOON = "%s %d/%d : encore %d points possibles, puis maître (%s)",
+  PROF_STEP_TITLE_AVAIL = "%s %d/%d : %s disponible, va le prendre chez le maître",
   PROF_STEP_RANK = "Va voir le maître pour le rang %s : %s",
   PROF_STEP_RANK_ANY = "Va voir le maître de ton métier pour le rang %s",
   PROF_STEP_RANK_LEVEL = "%s au niveau %d : continue",

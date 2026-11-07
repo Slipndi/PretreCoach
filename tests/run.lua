@@ -3773,11 +3773,12 @@ local function suite(label)
 
   check("Guide : Goals, repli XP et repli metier (rang chez le maitre, Prof.Text)", function()
     local n = fresh().n
-    setState(n, { level = 12, profs = { [182] = { rank = 60, max = 75 }, [171] = { rank = 10, max = 75 } } })
-    n.Guide.Evaluate = function() return {} end -- tout est fait
+    setState(n, { level = 9, profs = { [182] = { rank = 60, max = 75 }, [171] = { rank = 10, max = 75 } } })
+    n.Guide.Evaluate = function() return {} end -- tout est fait -- niveau 9 : Compagnon pas encore disponible
     local goals = n.Guide.Goals()
     assert(goals[1].e == nil and (goals[1].text:find("Monte de niveau", 1, true) or goals[1].text:find("Continue", 1, true)), goals[1].text)
     assert(goals[2].e == nil and goals[2].text:find("Cueille", 1, true), "plan de montee : " .. goals[2].text)
+    n.State.level = 12
     n.State.profs[182].rank = 72
     assert(n.Guide.Goals()[2].text:find("rang Compagnon", 1, true), "rang a prendre chez le maitre : " .. n.Guide.Goals()[2].text)
     assert(goals[3].text == n.Prof.StepsText(171) and goals[3].text:find("Réunis", 1, true), "plan alchimie : " .. goals[3].text)
@@ -4124,12 +4125,13 @@ local function suite(label)
 
   check("Prof.Steps : etape choisie selon le rang, titre, maitre quand le plafond bloque", function()
     local n = fresh().n
-    planState(n, { [171] = { rank = 52, max = 75 } })
+    planState(n, { [171] = { rank = 52, max = 75 } }, 9) -- niveau 9 : Compagnon pas encore disponible
     local s = n.Prof.Steps(171)
     assert(s.title == "Alchimie 52/75 : fais Élixir de défense mineure", s.title)
     assert(not kinds(s):find("rank", 1, true), "plafond loin : pas de maitre")
     n.State.profs[171] = { rank = 3, max = 75 }
     assert(n.Prof.Steps(171).title:find("Élixir arcanique mineur", 1, true), "debut de tranche")
+    n.State.level = 40
     n.State.profs[171] = { rank = 72, max = 75 }
     s = n.Prof.Steps(171)
     assert(s.todo[1].kind == "rank" and s.todo[1].text:find("Compagnon", 1, true) and s.todo[1].text:find("Docteur Marsh", 1, true) and s.todo[1].done == false, "maitre d'abord : " .. todoText(s))
@@ -4145,7 +4147,7 @@ local function suite(label)
 
   check("Prof.Steps : recette a acheter, connue ou non, ligne En direct", function()
     local n = fresh().n
-    planState(n, { [171] = { rank = 200, max = 225 } })
+    planState(n, { [171] = { rank = 200, max = 225 } }, 34)
     local s = n.Prof.Steps(171)
     assert(kinds(s):find("^buy"), kinds(s))
     assert(s.todo[1].text:find("Achète « Recette : Potion de protection contre la nature » chez Bronk", 1, true) and s.todo[1].done == nil, s.todo[1].text)
@@ -4494,7 +4496,9 @@ local function suite(label)
     assert(s.alert and s.title == "Herboristerie 72/75 : encore 3 points possibles, puis maître (Compagnon)", s.title)
     assert(s.todo[1].kind == "rank" and not s.todo[2].held, "presque : le reste n'est pas masque")
     n.State.profs[182].rank = 60
-    assert(not n.Prof.Steps(182).alert, "loin du plafond")
+    assert(n.Prof.Steps(182).alert and n.Prof.Steps(182).title == "Herboristerie 60/75 : Compagnon disponible, va le prendre chez le maître", "disponible des 50 : a prendre tout de suite")
+    n.State.profs[182].rank = 40
+    assert(not n.Prof.Steps(182).alert, "sous 50 : rien a prendre")
     n.State.profs[182] = { rank = 300, max = 300 }
     assert(not n.Prof.Steps(182).alert, "dernier rang : rien a prendre")
   end)
