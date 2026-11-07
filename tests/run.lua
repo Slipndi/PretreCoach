@@ -1221,7 +1221,7 @@ local function suite(label)
     setState(n, { level = 12 })
     return n, n.UI.GuideWin
   end
-  local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead" }
+  local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell" }
 
   check("GuideWindow : ToggleGuide ouvre et ferme, Echap, /coach guide", function()
     local n, G = gw()
@@ -2783,6 +2783,65 @@ local function suite(label)
     assert(n.Prof.Money(12000) == "1 po 20 pa" and n.Prof.Money(0) == "0 pc" and n.Prof.Money(5) == "5 pc")
     GetCoinTextureString = g
     mock.recipes = nil
+  end)
+
+  check("Vente L17a : conseils, tri, totaux, prix ancien, sans Auctionator, combat, API absente, onglet", function()
+    local o = fresh()
+    local n = o.n
+    setState(n, { level = 12, profs = { [171] = { rank = 50, max = 75 } } })
+    n.db.guide.tab, n.db.guide.compact = "now", false
+    local function scan() mock.fire("BAG_UPDATE_DELAYED") mock.flushTimers() end
+    if not C_Container then
+      scan() -- API absente : aucune erreur, rien de lu
+      assert(#n.Sell.Lines == 0 and n.Sell.scanned and #n.Sell.Rows() >= 0)
+      return
+    end
+    local function it(id, q, quality, bound) return { itemID = id, stackCount = q, quality = quality, isBound = bound } end
+    -- 100 gris, 101 cher a l'HdV, 102 lie, 103 sans prix, 104 prix ancien, 105 blanc a prix marchand, 106 bien de metier, 1251 bandage
+    mock.bagInfo = { it(100, 3, 0), it(101, 2, 1), it(102, 1, 0, true), it(103, 1, 1), it(104, 1, 2), it(105, 1, 1), it(106, 1, 1), it(1251, 1, 1) }
+    mock.sellPrice = { [100] = 10, [101] = 100, [102] = 10, [104] = 20, [105] = 40, [106] = 5, [1251] = 30 }
+    mock.itemClass = { [106] = 7 }
+    mock.ah = { [101] = { 1000, 2 }, [104] = { 300, 10 } }
+    local function ids() local t = {} for i, l in ipairs(n.Sell.Lines) do t[i] = l.itemID .. ":" .. l.advice end return table.concat(t, ",") end
+    -- combat : aucune lecture, reprise a la fin du combat
+    mock.setCombat(true)
+    scan()
+    assert(not n.Sell.scanned and n.Sell.Scan() == false, "aucune lecture en combat")
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED") mock.flushTimers()
+    assert(n.Sell.scanned, "lecture apres le combat")
+    assert(ids() == "101:ah,104:ah,105:merchant,100:merchant,106:merchant", "tri par gain, lie/sans prix/bandage ecartes : " .. ids())
+    assert(n.Sell.Totals.ah == 2300 and n.Sell.Totals.merchant == 75, "totaux")
+    assert(n.Sell.Lines[2].old and not n.Sell.Lines[1].old, "prix ancien (10 j) seulement")
+    assert(n.Sell.Lines[5].maybe and not n.Sell.Lines[4].maybe, "bien de metier signale, pas ecarte")
+    assert(n.db.sell == nil and not findSecret(n.db, "db"), "rien de stocke")
+    -- onglet : totaux, puis une ligne par pile avec icone
+    n.ToggleGuide()
+    local G = n.UI.GuideWin
+    G.win.tabs[#TABS].scripts.OnClick(G.win.tabs[#TABS])
+    assert(n.db.guide.tab == "sell" and G.used == 6, "onglet Vente : totaux + 5 piles")
+    assert(G.rows[1].text.text:find("À l'HdV : COIN:2300  ·  Au marchand : COIN:75", 1, true), G.rows[1].text.text)
+    assert(G.rows[2].text.text:find("Hôtel des ventes", 1, true) and G.rows[3].sub.text:find("prix ancien", 1, true))
+    assert(G.rows[6].sub.text:find("sert peut-être à ton métier", 1, true))
+    -- sans Auctionator : seuls les conseils Marchand, et la note
+    local ah = Auctionator
+    Auctionator = nil
+    scan()
+    assert(ids() == "101:merchant,105:merchant,100:merchant,104:merchant,106:merchant", "sans HdV : marchand seul : " .. ids())
+    assert(n.Sell.Rows()[1].text:find("Installe Auctionator", 1, true) == nil and n.Sell.Rows()[2].text:find("Installe Auctionator", 1, true), "note apres les totaux")
+    Auctionator = ah
+    -- au plus 15 piles
+    local many = {}
+    for i = 1, 20 do many[i] = it(200 + i, 1, 0) end
+    mock.bagInfo, mock.sellPrice = many, 3
+    scan()
+    assert(#n.Sell.Lines == 20 and #n.Sell.Rows() == 16, "15 piles + totaux")
+    -- API de sac qui plante : pas d'erreur
+    local c = C_Container.GetContainerNumSlots
+    C_Container.GetContainerNumSlots = function() error("boom") end
+    scan()
+    C_Container.GetContainerNumSlots = c
+    assert(#n.Sell.Lines == 0)
   end)
 
   ------------------------------------------------------------------------

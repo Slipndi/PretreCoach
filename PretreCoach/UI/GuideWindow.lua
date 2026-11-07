@@ -5,7 +5,7 @@ local UI, L, Guide = ns.UI, ns.L, ns.Guide
 local C = UI.color
 
 local WIN_NAME, CARD_NAME = "PretreCoachGuideFrame", "PretreCoachCompactFrame"
-local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead" }
+local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell" }
 local BADGE = { -- statut de zone -> couleur
   adaptee = { 0.75, 0.95, 0.8 }, bientot = C.warn, verte = C.bad, haute = C.warn, neutre = { 0.6, 0.6, 0.65 },
 }
@@ -61,6 +61,9 @@ local function newRow()
   r.dot:SetPoint("TOPLEFT", r, "TOPLEFT", 5, -8)
   r.text = fontString(r, UI.font.text)
   r.sub = fontString(r, UI.font.small)
+  r.icon = r:CreateTexture(nil, "ARTWORK")
+  r.icon:SetSize(20, 20)
+  r.icon:SetPoint("TOPLEFT", r, "TOPLEFT", 6, -4)
 
   local b = CreateFrame("Button", nil, r)
   b:SetSize(16, 16)
@@ -100,7 +103,7 @@ end
 
 -- Pose la ligne à la hauteur y ; rend sa hauteur. mode : "now" (case), "next" (point de frise), "ref" (surlignage).
 local function fill(r, mode, item, y, w)
-  local tx = mode == "ref" and 8 or 28
+  local tx = item.icon and 30 or (mode == "ref" and 8 or 28)
   r.entry = mode == "now" and item or nil
   r:ClearAllPoints()
   r:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
@@ -109,6 +112,8 @@ local function fill(r, mode, item, y, w)
   r.box.check:SetAlpha(1)
   r.box:SetShown(mode == "now")
   r.dot:SetShown(mode == "next")
+  r.icon:SetShown(item.icon ~= nil)
+  if item.icon then r.icon:SetTexture(item.icon) end
   r.hl:SetShown(mode == "ref" and item.highlight == true)
   r.text:ClearAllPoints()
   r.text:SetPoint("TOPLEFT", r, "TOPLEFT", tx, -4)
@@ -189,6 +194,7 @@ local function items()
     return "now", todo, L.GW_NOW_EMPTY
   end
   if t == "next" then return "next", Guide.Milestones(), L.GW_EMPTY end
+  if t == "sell" then return "ref", ns.Sell.Rows(), L.GW_SELL_EMPTY end
   return "ref", Guide.Reference(t), L.GW_EMPTY
 end
 
@@ -248,6 +254,7 @@ end
 
 ns.Listen("GUIDE", request)
 ns.Listen("STATE", request)
+ns.Listen("SELL", request)
 ns.Listen("QINDEX", request) -- les lieux "Ou aller" dependent de l'index
 ns.On("PLAYER_REGEN_ENABLED", function()
   if waiting then
@@ -262,6 +269,7 @@ end)
 local function setTab(key)
   if ns.db and ns.db.guide then ns.db.guide.tab = key end
   if scroll then scroll:SetVerticalScroll(0) end
+  if key == "sell" then ns.Sell.Scan() end -- lecture des sacs hors combat seulement
   if win and win:IsShown() then refreshWin() end
 end
 
@@ -271,7 +279,7 @@ local function setOpen(v) if ns.db and ns.db.guide then ns.db.guide.open = v end
 local function buildWin()
   win = UI.Panel(WIN_NAME, UIParent)
   G.win = win
-  win:SetSize(390, 440)
+  win:SetSize(390, 460)
   win:SetPoint("CENTER")
   win:SetFrameStrata("DIALOG")
   win:Hide()
@@ -321,7 +329,7 @@ local function buildWin()
 
   -- ScrollFrame simple, sans modèle (certains modèles Retail manquent sur Forever)
   scroll = CreateFrame("ScrollFrame", nil, win)
-  scroll:SetPoint("TOPLEFT", win, "TOPLEFT", 10, -128)
+  scroll:SetPoint("TOPLEFT", win, "TOPLEFT", 10, -150)
   scroll:SetPoint("BOTTOMRIGHT", win, "BOTTOMRIGHT", -10, 18)
   scroll:EnableMouseWheel(true)
   scroll:SetScript("OnMouseWheel", function(self, d)

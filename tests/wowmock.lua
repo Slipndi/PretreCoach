@@ -83,6 +83,7 @@ function mock.reset()
   mock.waypoint, mock.superTracked, mock.canWaypoint, mock.areas, mock.mapKids, mock.mapNames = nil, nil, nil, nil, nil, nil
   if mock.qinit then mock.qinit() end
   mock.recipeInfo, mock.schematics, mock.tsNotReady = nil, nil, nil
+  mock.bagInfo, mock.itemClass = nil, nil
   mock.pos, mock.recipes, mock.bag, mock.addons, mock.sellPrice, mock.sub, mock.ejSelected = nil, nil, nil, nil, nil, nil, nil
 end
 
@@ -176,9 +177,9 @@ function GetItemCount(id) return (mock.items or {})[id] or 0 end
 -- 11287 = baguette (classe 2, sous-classe 19) ; les autres IDs : un objet quelconque
 C_Item = { GetItemInfoInstant = function(id)
   if (mock.unknown.item or {})[id] then return nil end
-  return id, "Arme", "Baguette", "", 0, 2, id == 11287 and 19 or 0
+  return id, "Arme", "Baguette", "", 0, (mock.itemClass or {})[id] or 2, id == 11287 and 19 or 0
 end,
-  GetItemInfo = function(id) if mock.uncached then return nil end return "Baguette " .. id, "lien", 1, 1, 5, 0, "x", 1, "", 0, mock.sellPrice end }
+  GetItemInfo = function(id) if mock.uncached then return nil end return "Baguette " .. id, "lien", 1, 1, 5, 0, "x", 1, "", 0, type(mock.sellPrice) == "table" and mock.sellPrice[id] or (type(mock.sellPrice) == "number" and mock.sellPrice or nil) end }
 -- mock.recipes = nombre de recettes (0 par defaut)
 C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { professionName = "Metier" .. id } end,
   GetAllRecipeIDs = function() local t = {} for i = 1, mock.recipes or 0 do t[i] = 100 + i end return t end,
@@ -196,9 +197,10 @@ C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { profes
 function GetRealZoneText() return "Tirisfal" end
 function GetSubZoneText() return mock.sub or "Brill" end
 function UnitName() if secretNow() then return mock.SECRET end return "Cible" end
-C_Container = { GetContainerNumSlots = function(bag) return bag == 0 and 4 or 0 end,
+-- mock.bagInfo = { [slot] = infos de GetContainerItemInfo } dans le sac 0 (remplace mock.bag) ; mock.itemClass = { [id] = classID }
+C_Container = { GetContainerNumSlots = function(bag) return bag == 0 and (mock.bagInfo and 20 or 4) or 0 end,
   GetContainerItemID = function(bag, slot) return bag == 0 and (mock.bag or { 2589 })[slot] or nil end,
-  GetContainerItemInfo = function() return { itemID = 2589 } end }
+  GetContainerItemInfo = function(bag, slot) if mock.bagInfo then return bag == 0 and mock.bagInfo[slot] or nil end return { itemID = 2589 } end }
 -- mock.addons = { Questie = true } ; mock.sellPrice = prix de vente (11e valeur de GetItemInfo)
 C_AddOns = { IsAddOnLoaded = function(n) return (mock.addons or {})[n] == true end,
   GetAddOnMetadata = function(n, f) if n == "QuestieDB" and f == "Version" then return mock.qver end end }
