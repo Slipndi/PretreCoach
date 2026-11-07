@@ -50,6 +50,7 @@ function FRAME.SetShown(self, b) if b then FRAME.Show(self) else FRAME.Hide(self
 function FRAME.IsShown(self) return self.shown == true end
 function FRAME.SetScale(self, s) self.scale = s end
 function FRAME.SetHeight(self, h) self.height = h end
+function FRAME.SetWidth(self, w) self.width = w end
 function FRAME.SetScript(self, name, fn) self.scripts[name] = fn end
 function FRAME.CreateTexture() return newFrame() end
 function FRAME.CreateAnimationGroup() return newFrame() end

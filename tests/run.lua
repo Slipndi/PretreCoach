@@ -3799,7 +3799,7 @@ local function suite(label)
     assert(G.used == #goals and G.used < open, "Maintenant : seulement les entrees de Goals")
   end)
 
-  check("Barre de mana : valeur secrete telle quelle, barre des 5 s, regen., option, /coach mana", function()
+  check("Barre de mana : valeur secrete telle quelle, decompte des 5 s, option, /coach mana", function()
     mock.reset()
     local n = loadAddon()
     mock.fire("ADDON_LOADED", ADDON)
@@ -3814,16 +3814,17 @@ local function suite(label)
     mock.mana = 40
     mock.fire("UNIT_MAXPOWER", "player")
     assert(M.frame.mana.value == 40, "UNIT_MAXPOWER relit le mana")
-    assert(M.frame.five.alpha == 0 and M.frame.five.text.text == "", "barre des 5 s effacee a 0")
+    local F = M.frame
+    assert(not F.five.shown and F.text.text == "", "couche des 5 s cachee a 0")
     mock.time = 100
     mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 585)
-    assert(M.frame.five.value == 0 and M.frame.five.text.text == "5,0 s" and M.frame.five.alpha == 1 and M.frame.five.scripts.OnUpdate, "decompte demarre")
+    assert(F.five.shown and F.five.width == 1 and F.text.text == "5,0 s" and F.mana.scripts.OnUpdate, "decompte demarre")
     mock.time = 102
-    M.frame.five.scripts.OnUpdate(M.frame.five, 0.1)
-    assert(M.frame.five.value == 2 and M.frame.five.text.text == "3,0 s", "suit FiveSecRemaining")
+    F.mana.scripts.OnUpdate(F.mana, 0.1)
+    assert(F.five.shown and F.five.width == 96 and F.text.text == "3,0 s", "suit FiveSecRemaining")
     mock.time = 106
-    M.frame.five.scripts.OnUpdate(M.frame.five, 0.1)
-    assert(M.frame.five.value == 5 and M.frame.five.text.text == "" and M.frame.five.alpha == 0 and M.frame.five.scripts.OnUpdate == nil, "fin : barre effacee, OnUpdate retire")
+    F.mana.scripts.OnUpdate(F.mana, 0.1)
+    assert(not F.five.shown and F.text.text == "" and F.mana.scripts.OnUpdate == nil, "fin : couche cachee, OnUpdate retire")
     n.db.show.mana = false
     M.Render()
     assert(not M.frame.shown, "option masquer")
