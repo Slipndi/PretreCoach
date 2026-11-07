@@ -2473,7 +2473,14 @@ local function suite(label)
       local C = n.UI.color
       assert(B.buttons[1].bg.color[1] == C.bad[1] and B.buttons[3].bg.color[1] == C.good[1], "rouge puis vert")
       assert(B.buttons[6].bg.color[1] == 0.45, "gris pour inconnu")
-      for i = 1, 8 do assert(B.buttons[i].shown, "hors combat : pastille " .. i) end
+      -- niveau 12 : Brassenoire (24-32) et double spe (40) masquees
+      for i = 1, 8 do assert(B.buttons[i].shown == (i ~= 7 and i ~= 8), "niveau 12 : pastille " .. i) end
+      n.State.level = 41 B.Render()
+      assert(not B.buttons[7].shown and B.buttons[8].shown, "niveau 41 : 7 masquee, 8 visible")
+      n.State.level = 28 B.Render()
+      for i = 1, 8 do assert(B.buttons[i].shown == (i ~= 8), "niveau 28 : pastille " .. i) end
+      n.State.level = nil B.Render()
+      for i = 1, 8 do assert(B.buttons[i].shown, "niveau illisible : tout visible " .. i) end
       mock.setCombat(true)
       mock.fire("PLAYER_REGEN_DISABLED")
       for i = 1, 4 do assert(B.buttons[i].shown, "combat : pastille " .. i) end

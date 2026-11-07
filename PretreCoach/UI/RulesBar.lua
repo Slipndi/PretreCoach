@@ -56,12 +56,21 @@ function B.Render()
     return
   end
   local inCombat = InCombatLockdown() and true or false
+  local n = 0
   for i, btn in ipairs(B.buttons) do
     local c = COLOR[(status(i))]
     btn.bg:SetColorTexture(c[1], c[2], c[3], 0.9)
-    if i > 4 and inCombat then btn:Hide() else btn:Show() end
+    if (i > 4 and inCombat) or not ns.Rules.Relevant(i) then
+      btn:Hide()
+      if picked == i then picked = nil detail:Hide() end
+    else
+      btn:ClearAllPoints()
+      btn:SetPoint("TOPLEFT", frame, "TOPLEFT", GAP + n * (SIZE + GAP), -GAP) -- carrés visibles tassés à gauche
+      n = n + 1
+      btn:Show()
+    end
   end
-  if inCombat and picked and picked > 4 then picked = nil detail:Hide() end
+  frame:SetWidth(math.max(n, 1) * (SIZE + GAP) + GAP)
   frame:Show()
 end
 

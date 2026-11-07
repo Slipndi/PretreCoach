@@ -21,6 +21,14 @@ local EMERGENCY = { LESSERHEAL = true, HEAL = true, GREATERHEAL = true, FLASHHEA
 local ASHENVALE = 1440
 local BFD_LEVELS = { from = 24, to = 32 }
 
+-- Tranche de niveaux où une règle sert (absente = toujours) : hors tranche, son carré est masqué.
+local WHEN = { [1] = { 5, 60 }, [7] = { BFD_LEVELS.from, BFD_LEVELS.to }, [8] = { 40, 60 } }
+function Rules.Relevant(i)
+  local w, level = WHEN[i], ns.State and ns.State.level
+  if not w or type(level) ~= "number" then return true end
+  return level >= w[1] and level <= w[2]
+end
+
 local cur = {}
 for i = 1, 8 do cur[i] = { state = "unknown", reason = "" } end
 
