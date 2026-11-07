@@ -86,8 +86,9 @@ function Rotation.Compute(ctx)
           add("BANDAGE", L.ROT_BANDAGE, "bandage disponible")
         end
         if ready("DARKSAC") then add("DARKSAC", L.ROT_DARKSAC, "Sacrifice sombre prêt") end
-        add("DRINK", L.ROT_DRINK, "boire")
-        add("EAT", L.ROT_EAT, "manger")
+        -- shortcut: mana secret, seuil de 3 sorts à mana dans le combat ; à remplacer si une jauge lisible apparaît
+        if (ctx.manaCasts or 0) >= 3 then add("DRINK", L.ROT_DRINK, "3 sorts à mana ou plus dans le combat") end
+        if ctx.longFight == true then add("EAT", L.ROT_EAT, "combat long") end
         out.text = L.ROT_RECOVER .. " : " .. out.text
         out.reason = "récupération après combat (vie ou mana secrets) : " .. out.reason
       elseif #keys == 0 then out.reason = "vie ou mana illisible : rien à récupérer" end
@@ -297,6 +298,7 @@ local holyGuids, holyThisTarget = {}, false
 -- hystérésis (mémoire de l'état « mana haut ») ; Compute les reçoit par ctx
 local mbHigh, flayHigh
 local recoverUntil -- GetTime() de la fin de la carte « Récupère » ; nil = pas de carte
+local fightStart, lastFightSecs -- durée du dernier combat (le mana et la vie étant secrets)
 
 local function hyst(flag, mana, on, off)
   if mana == nil then return flag end
@@ -358,7 +360,7 @@ local function bandages()
   local p = profs[FIRST_AID]
   local n = 0
   for _, b in ipairs(p and ns.Data.Professions[FIRST_AID].bandages or {}) do
-    if b.name:find("^Bandage") and b.skill <= (p.rank or 0) then n = n + (S.Get(GetItemCount, b.itemID) or 0) end
+    if b.name:find("^Bandage") and b.skill <= (p.rank or 0) then n = n + (S.Get((C_Item and C_Item.GetItemCount) or GetItemCount, b.itemID) or 0) end
   end
   return n
 end
@@ -401,6 +403,8 @@ function Rotation.Context()
   end
   if ctx.hasHostileTarget then recoverUntil = nil end
   ctx.recover = not ctx.inCombat and not ctx.hasHostileTarget and recoverUntil ~= nil and GetTime() < recoverUntil
+  ctx.manaCasts = ns.Timers.manaCasts
+  ctx.longFight = lastFightSecs ~= nil and lastFightSecs >= 20
   -- récupération : seulement hors combat, sans cible hostile, avec une vie lisible et basse (ou la carte « Récupère »)
   if not ctx.inCombat and not ctx.hasHostileTarget then
     if ctx.recover or (ctx.hpPct ~= nil and ctx.hpPct < HP_LOW) then
@@ -467,9 +471,10 @@ on("PLAYER_TARGET_CHANGED", function()
   smites, holyThisTarget, tgtT = 0, false, now
   if reset or timersT ~= now then update() end
 end)
-on("PLAYER_REGEN_DISABLED", function() recoverUntil = nil update() end)
+on("PLAYER_REGEN_DISABLED", function() recoverUntil = nil fightStart = GetTime() update() end)
 on("PLAYER_REGEN_ENABLED", function()
   holyGuids = {}
+  lastFightSecs = fightStart and GetTime() - fightStart
   recoverUntil = GetTime() + RECOVER_SECS
   ns.After(RECOVER_SECS + 0.5, update)
   if Rotation.dirty then Rotation.Rescan() else update() end

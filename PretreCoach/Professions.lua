@@ -104,7 +104,7 @@ local function enrich(e)
       local id, q = num(field(r, "itemID")), num(field(s, "quantityRequired"))
       local p = id and q and price(id)
       if p and cost then cost = cost + p * q else cost = nil end -- une fois nil, cost reste nil
-      local have = id and S.Get(GetItemCount, id)
+      local have = id and S.Get((C_Item and C_Item.GetItemCount) or GetItemCount, id)
       if id and q and type(have) == "number" and have < q then missing[#missing + 1] = { itemID = id, n = q - have } end
     end
   end

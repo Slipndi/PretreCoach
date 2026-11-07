@@ -8,7 +8,8 @@
 local _, ns = ...
 local S = ns.S
 
-local T = { degraded = false }
+local T = { degraded = false, manaCasts = 0 } -- manaCasts : sorts à mana lancés pendant le dernier combat
+ns.On("PLAYER_REGEN_DISABLED", function() T.manaCasts = 0 end)
 ns.Timers = T
 
 local LAST_TTL = 30 -- secondes de mémoire du dernier sort lancé sur une cible
@@ -47,7 +48,10 @@ ns.OnUnit("UNIT_SPELLCAST_SUCCEEDED", "player", function(_, _, _, spellID)
   end
   local now = GetTime()
   prune(now)
-  if sp.manaCost then fiveEnd = now + 5 end
+  if sp.manaCost then
+    fiveEnd = now + 5
+    if InCombatLockdown() then T.manaCasts = T.manaCasts + 1 end
+  end
   if sp.cooldown then cdEnd[sp.key] = now + sp.cooldown end
   local repeatedShoot = false
   -- UnitCanAttack absente : cible traitée comme attaquable (seul « false » l'exclut)

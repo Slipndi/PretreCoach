@@ -36,7 +36,11 @@ local byName, areaMap = nil, {}
 local function mapIndex()
   if byName then return byName end
   local idx, T = {}, (Enum and Enum.UIMapType) or {}
-  for _, kind in ipairs({ T.City, T.Zone }) do
+  -- Enum.UIMapType n'a pas de City sur le moteur Retail (les capitales sont des Zone) : la filtrer evite une liste a trou
+  local kinds = {}
+  for _, k in ipairs({ "City", "Zone" }) do if T[k] then kinds[#kinds + 1] = T[k] end end
+  if #kinds == 0 then kinds[1] = 3 end -- Enum.UIMapType.Zone
+  for _, kind in ipairs(kinds) do
     for _, root in ipairs({ 1414, 1415, 946 }) do
       local kids = S.Get(C_Map and C_Map.GetMapChildrenInfo, root, kind, true)
       for _, m in ipairs(type(kids) == "table" and kids or {}) do
