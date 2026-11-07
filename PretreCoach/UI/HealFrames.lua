@@ -16,7 +16,7 @@ local UNITS = { "player", "party1", "party2", "party3", "party4" }
 local SLOTS = { "1", "2", "shift-1" } -- bouton de souris : clic gauche, clic droit, maj + clic gauche
 local CHOICES = { "LESSERHEAL", "HEAL", "GREATERHEAL", "FLASHHEAL", "RENEW", "PWS", "PWF", "DISPEL", "CUREDISEASE",
   "ABOLISHDISEASE", "FEARWARD", "SHADOWPROT", "RESURRECTION" } -- cles de Data/Spells.lua proposees dans les options
-local W, HT, GAP, PAD, HEAD, MANA = 130, 28, 2, 4, 12, 4
+local W, HT, GAP, PAD, HEAD, MANA = 200, 20, 2, 4, 12, 3
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 
 H.SLOTS = SLOTS
