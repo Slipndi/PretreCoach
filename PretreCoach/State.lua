@@ -3,7 +3,7 @@
 -- Les demandes sont groupées (un seul ns.After(0.2) en attente) et ne relisent que la partie concernée.
 -- Une lecture qui échoue (nil) garde la valeur précédente. State.Refresh() relit tout, mais avec ce délai.
 -- QUEST_TURNED_IN ne relit rien : STATE avec changed = { "quests" } (à interroger via State.QuestDone).
--- State.Knows(key) : cache invalidé sur SPELLS_CHANGED / LEARNED_SPELL_IN_TAB / PLAYER_LEVEL_UP (sans message STATE) ;
+-- State.Knows(key) : cache invalidé sur SPELLS_CHANGED / LEARNED_SPELL_IN_TAB (qui émettent STATE { "spells" }) / PLAYER_LEVEL_UP ;
 -- nil (inconnu) si aucun rang du sort n'existe dans le client (pas de nom), sans pouvoir être « à apprendre ».
 local _, ns = ...
 local S = ns.S
@@ -134,6 +134,7 @@ local function refresh()
     keep("specGroups", S.Get(GetNumTalentGroups) or S.Get(GetNumSpecGroups))
   end
   if w.profs then keep("profs", readProfs()) end
+  if w.spells then changed[#changed + 1] = "spells" end
   if #changed > 0 then ns.Fire("STATE", changed) end
 end
 
@@ -167,8 +168,13 @@ from("PLAYER_EQUIPMENT_CHANGED", { wand = true })
 from("CHARACTER_POINTS_CHANGED", { talents = true })
 from("PLAYER_TALENT_UPDATE", { talents = true })
 from("SKILL_LINES_CHANGED", { profs = true })
-on("SPELLS_CHANGED", invalidateKnows)
-on("LEARNED_SPELL_IN_TAB", invalidateKnows)
+-- sorts appris : le cache est invalidé et un STATE { "spells" } est émis (groupé par le délai de 0,2 s)
+local function spellsChanged()
+  invalidateKnows()
+  request({ spells = true })
+end
+on("SPELLS_CHANGED", spellsChanged)
+on("LEARNED_SPELL_IN_TAB", spellsChanged)
 on("QUEST_TURNED_IN", function() ns.Fire("STATE", { "quests" }) end)
 
 -- UnitLevel peut être en retard : on prend le niveau de l'événement.

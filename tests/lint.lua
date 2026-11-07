@@ -13,7 +13,7 @@ UnitClass UnitRace CheckInteractDistance GetUnitSpeed IsPlayerMoving GetInventor
 IsPlayerSpell IsSpellKnown GetSpellInfo GetSpellCooldown GetLocale GetBuildInfo GetRealZoneText
 GetNumTalentTabs GetProfessions GetProfessionInfo GetNumSkillLines GetSkillLineInfo
 GetTime GetNumTalents GetTalentInfo GetNumTalentGroups GetNumSpecGroups GetUnspentTalentPoints
-Minimap GameTooltip GetCursorPosition GetItemInfo GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED
+Minimap GameTooltip GetCursorPosition GetItemInfo GetItemCount GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED
 ]]):gmatch("%S+") do READ_OK[w] = true end
 
 local bad = 0

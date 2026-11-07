@@ -71,6 +71,7 @@ end
 -- Valeurs par défaut des réglages : complétées sans jamais écraser ce que le joueur a déjà.
 ns.DEFAULTS = {
   show = { guide = true, rotation = true, rules = true, toasts = true },
+  guide = { manual = {}, done = {} },
   locked = false, opacity = 0.9, scale = 1, frames = {}, minimap = { angle = 220 },
 }
 

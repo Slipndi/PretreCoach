@@ -361,8 +361,12 @@ local function suite(label)
       assert(St.talents == nil and St.unspentTalents == nil and St.specGroups == nil and St.profs == nil and St.wand == nil)
     end
     local n = #msgs
-    mock.fire("SPELLS_CHANGED")
-    assert(#msgs == n, "rien de change : pas de message")
+    mock.fire("SPELLS_CHANGED"); mock.fire("LEARNED_SPELL_IN_TAB"); mock.flushTimers()
+    -- sans minuteur, ns.After est immediat : un STATE par evenement
+    local k = C_Timer and 1 or 2
+    assert(#msgs == n + k and msgs[#msgs] == "spells", "STATE { spells } groupe par le delai")
+    mock.fire("PLAYER_EQUIPMENT_CHANGED"); mock.flushTimers()
+    assert(#msgs == n + k, "rien de change : pas de message")
   end)
 
   check("State : baguette, cache et GET_ITEM_INFO_RECEIVED", function()
@@ -581,6 +585,21 @@ local function suite(label)
     assert(T.LastCastOn("S") == k0, "un Bouclier ne pose rien meme sur cible attaquable")
   end)
 
+  check("Timers : UnitCanAttack absente = cible attaquable", function()
+    local T = N.Timers
+    local saved = UnitCanAttack
+    UnitCanAttack = nil
+    mock.time, mock.guid = 640, "NOCA"
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 589) -- Douleur
+    UnitCanAttack = saved
+    assert(T.LastCastOn("NOCA") == "SWP", "sort offensif suivi sans UnitCanAttack")
+    mock.time, mock.guid = 641, "NOCA2"
+    mock.canAttack = false
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 589)
+    mock.canAttack = nil
+    assert(T.LastCastOn("NOCA2") == nil, "UnitCanAttack present et faux : cible exclue")
+  end)
+
   check("Timers : cible morte, changement de cible, mort du joueur", function()
     local T = N.Timers
     mock.time, mock.guid = 700, "D"
@@ -622,6 +641,276 @@ local function suite(label)
     mock.setCombat(false)
     mock.fire("PLAYER_REGEN_ENABLED")
     assert(not findSecret(PretreCoachDB, "PretreCoachDB") and not findSecret(St, "State"))
+  end)
+
+  -- Guide : un ns neuf par scenario, ses fonctions lisent State a la main (pas d'evenement du jeu).
+  local FIELDS = { "level", "mapID", "zone", "wand", "talents", "unspentTalents", "specGroups", "profs" }
+  local function fresh(db)
+    local n = loadAddon()
+    n.db = db or { show = { toasts = true }, guide = { manual = {}, done = {} } }
+    local out = { n = n, toasts = {}, gui = 0 }
+    n.Toast = function(text, opts) out.toasts[#out.toasts + 1] = { text = text, key = opts and opts.key } return true end
+    n.Listen("GUIDE", function() out.gui = out.gui + 1 end)
+    return out
+  end
+  local function setState(n, t) for _, k in ipairs(FIELDS) do n.State[k] = t[k] end end
+  local function ev(n, id) for _, e in ipairs(n.Guide.Evaluate()) do if e.id == id then return e end end end
+  local function st(e) return not e and "absent" or e.unknown and "unknown" or e.done and "done" or "todo" end
+  -- change les sorts connus du mock et invalide le cache de Knows (SPELLS_CHANGED atteint tous les ns charges)
+  local function knows(ids) mock.known = ids mock.fire("SPELLS_CHANGED") mock.flushTimers() end
+
+  check("Guide : checks prof, profRank, wand, wandItem", function()
+    local n = fresh().n
+    setState(n, { level = 5 })
+    assert(st(ev(n, "learn_prof")) == "unknown" and st(ev(n, "wand_equip")) == "unknown")
+    n.State.profs, n.State.wand = {}, false
+    assert(st(ev(n, "learn_prof")) == "todo" and st(ev(n, "wand_equip")) == "todo")
+    n.State.profs, n.State.wand = { [182] = { rank = 1, max = 75 }, [171] = { rank = 1, max = 75 } }, { itemID = 11287 }
+    assert(st(ev(n, "learn_prof")) == "done" and st(ev(n, "wand_equip")) == "done")
+    n.State.profs = { [182] = { rank = 1, max = 75 } }
+    assert(st(ev(n, "learn_prof")) == "todo", "une seule profession")
+    n.State.level, n.State.profs = 12, nil
+    assert(st(ev(n, "rank_comp")) == "unknown")
+    n.State.profs = { [182] = { rank = 100, max = 150 }, [171] = { rank = 10, max = 75 } }
+    assert(st(ev(n, "rank_comp")) == "todo")
+    n.State.profs[171].max = 150
+    assert(st(ev(n, "rank_comp")) == "done")
+    n.State.level, n.State.wand = 14, nil
+    assert(st(ev(n, "wand_sup")) == "unknown")
+    n.State.wand = false
+    assert(st(ev(n, "wand_sup")) == "todo")
+    n.State.wand = { itemID = 11287, reqLevel = 5 }
+    assert(st(ev(n, "wand_sup")) == "todo", "baguette inferieure")
+    n.State.wand = { itemID = 11287 }
+    assert(st(ev(n, "wand_sup")) == "unknown", "niveau requis illisible")
+    n.State.wand = { itemID = 11288 }
+    assert(st(ev(n, "wand_sup")) == "done")
+    n.State.wand = { itemID = 7001, reqLevel = 18 }
+    assert(st(ev(n, "wand_sup")) == "done", "baguette au moins aussi haute")
+  end)
+
+  check("Guide : checks talent, specGroups, herbZone", function()
+    local n = fresh().n
+    setState(n, { level = 12 })
+    assert(st(ev(n, "spirittap")) == "unknown")
+    n.State.talents = {}
+    assert(st(ev(n, "spirittap")) == "todo")
+    n.State.talents = { [3] = { [1] = { [3] = 4 } } }
+    assert(st(ev(n, "spirittap")) == "todo")
+    n.State.talents[3][1][3] = 5
+    assert(st(ev(n, "spirittap")) == "done")
+    n.State.level, n.State.talents = 41, { [1] = { [1] = { [2] = 2 } } }
+    assert(st(ev(n, "wandspec2")) == "done" and ev(n, "wandspec") == nil, "plan de 41+ : meme position")
+    n.State.talents = {}
+    assert(st(ev(n, "wandspec2")) == "todo")
+    assert(st(ev(n, "dualspec")) == "unknown")
+    n.State.specGroups = 1
+    assert(st(ev(n, "dualspec")) == "todo")
+    n.State.specGroups = 2
+    assert(st(ev(n, "dualspec")) == "done")
+    n.State.level = 12
+    assert(st(ev(n, "herb_zone")) == "unknown")
+    n.State.mapID, n.State.zone, n.State.profs = 1, 1421, {}
+    assert(st(ev(n, "herb_zone")) == "todo", "herboristerie non apprise")
+    n.State.profs = { [182] = { rank = 50, max = 75 } }
+    assert(st(ev(n, "herb_zone")) == "todo", "herbes de la zone trop hautes")
+    n.State.profs[182].rank = 80
+    assert(st(ev(n, "herb_zone")) == "done")
+    n.State.zone = nil
+    assert(st(ev(n, "herb_zone")) == "done", "zone sans herbes listees")
+  end)
+
+  check("Guide : checks spells, known, quest, items", function()
+    local n = fresh().n
+    setState(n, { level = 32 })
+    local anyApi = IsPlayerSpell or IsSpellKnown or (C_SpellBook and C_SpellBook.IsSpellInSpellBook)
+    local swd, div
+    for _, sp in ipairs(n.Data.Spells) do
+      if sp.key == "SWD" then swd = sp end
+      if sp.key == "DIVSPIRIT" then div = sp end
+    end
+    if anyApi then
+      knows({})
+      assert(st(ev(n, "spells")) == "todo" and st(ev(n, "divspirit")) == "todo" and st(ev(n, "swd")) == "todo")
+      knows({ [swd.ranks[1].id] = true })
+      assert(st(ev(n, "swd")) == "done")
+      knows(nil)
+      assert(st(ev(n, "spells")) == "done", "tout connu : rien a apprendre")
+      knows({ [div.ranks[1].id] = true })
+      assert(st(ev(n, "divspirit")) == "done")
+      knows(nil)
+    else
+      assert(st(ev(n, "spells")) == "unknown" and st(ev(n, "swd")) == "unknown")
+    end
+    -- quete 6561 : visible de 24 a 32
+    if C_QuestLog then
+      assert(st(ev(n, "bfd_quest")) == "todo")
+      local orig = C_QuestLog.IsQuestFlaggedCompleted
+      C_QuestLog.IsQuestFlaggedCompleted = function(id) return id == 6561 end
+      assert(st(ev(n, "bfd_quest")) == "done")
+      C_QuestLog.IsQuestFlaggedCompleted = orig
+    else
+      assert(st(ev(n, "bfd_quest")) == "unknown")
+    end
+    n.State.level = 12
+    if GetItemCount then
+      mock.items = {}
+      assert(st(ev(n, "bandages")) == "todo")
+      mock.items = { [1251] = 6, [2581] = 4 } -- bandages de Data/Professions.lua
+      assert(st(ev(n, "bandages")) == "done")
+      mock.items = nil
+    else
+      assert(st(ev(n, "bandages")) == "unknown")
+    end
+  end)
+
+  check("Guide : manuel, inconnu cochable et memorise", function()
+    local o = fresh()
+    local n = o.n
+    setState(n, { level = 12 })
+    local e = ev(n, "legacy_toa")
+    assert(e.unknown and e.manual and not e.done, "check manual : inconnu")
+    assert(n.Guide.SetManual("legacy_toa", true) and o.gui == 1)
+    e = ev(n, "legacy_toa")
+    assert(e.done and e.manual and not e.unknown and n.db.guide.manual.legacy_toa == true)
+    assert(#o.toasts == 0, "pas de toast pour une case cochee")
+    -- un objectif dont l'API ne repond pas se coche aussi
+    n.State.level, n.State.profs = 6, nil
+    assert(st(ev(n, "learn_prof")) == "unknown")
+    assert(n.Guide.SetManual("learn_prof", true) and ev(n, "learn_prof").done)
+    -- memorise : un autre chargement avec la meme base
+    local again = fresh(n.db).n
+    setState(again, { level = 12 })
+    assert(ev(again, "legacy_toa").done, "memorise dans ns.db.guide.manual")
+    n.State.level = 12
+    assert(n.Guide.SetManual("legacy_toa", false) and st(ev(n, "legacy_toa")) == "unknown" and n.db.guide.manual.legacy_toa == nil)
+    assert(not n.Guide.SetManual("inconnu", true))
+    assert(not findSecret(n.db, "db"))
+  end)
+
+  check("Guide : toast unique, rien au premier chargement, rien si deja fait", function()
+    local o = fresh()
+    local n = o.n
+    setState(n, { level = 12, talents = { [3] = { [1] = { [3] = 3 } } } })
+    n.Fire("STATE", { "level" })
+    assert(#o.toasts == 0 and o.gui == 0, "premiere evaluation : silence")
+    n.State.talents[3][1][3] = 5
+    n.Fire("STATE", { "talents" })
+    assert(#o.toasts == 1 and o.gui == 1, "un seul toast, recu " .. #o.toasts)
+    assert(o.toasts[1].text == "Connexion spirituelle 5/5 : bien joué" and o.toasts[1].key == "obj:spirittap")
+    assert(n.db.guide.done.spirittap == true, "id fait memorise")
+    n.Fire("STATE", { "talents" })
+    assert(#o.toasts == 1 and o.gui == 1, "pas de doublon")
+    n.State.talents[3][1][3] = 4; n.Fire("STATE", {})
+    n.State.talents[3][1][3] = 5; n.Fire("STATE", {})
+    assert(#o.toasts == 1, "deja annonce : memorise")
+    local o2 = fresh(n.db) -- rechargement : objectif deja fait, aucune annonce
+    setState(o2.n, { level = 12, talents = { [3] = { [1] = { [3] = 5 } } } })
+    o2.n.Fire("STATE", {})
+    assert(#o2.toasts == 0 and o2.gui == 0)
+    local o3 = fresh() -- base neuve mais objectif deja fait au premier passage
+    setState(o3.n, { level = 12, talents = { [3] = { [1] = { [3] = 5 } } } })
+    o3.n.Fire("STATE", {})
+    assert(#o3.toasts == 0 and o3.n.db.guide.done.spirittap == true)
+  end)
+
+  check("Guide : toast de palier avec les 3 priorites, report en combat", function()
+    local o = fresh()
+    local n = o.n
+    knows({})
+    setState(n, { level = 39, specGroups = 1, talents = {} })
+    n.Fire("STATE", { "level" })
+    assert(#o.toasts == 0, "premier chargement : silence")
+    n.State.level = 41
+    n.Fire("STATE", { "level" })
+    assert(#o.toasts == 1 and o.gui == 1, "un toast de palier, recu " .. #o.toasts)
+    local t = o.toasts[1]
+    assert(t.key == "tier:40-50" and t.text:find("^Nouveau palier : 40%-50"), t.text)
+    local lines = 0
+    for _ in t.text:gmatch("\n%- ([^\n]+)") do lines = lines + 1 end
+    assert(lines == 3, "3 priorites, recu " .. lines .. " : " .. t.text)
+    assert(t.text:find("Forme d'Ombre", 1, true) and t.text:find("Double spécialisation", 1, true))
+    -- en combat : rien ; a la sortie : l'evaluation
+    mock.setCombat(true)
+    n.State.talents = { [1] = { [1] = { [2] = 2 } } }
+    n.Fire("STATE", { "talents" })
+    assert(#o.toasts == 1, "rien en combat")
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED")
+    assert(#o.toasts == 2 and o.toasts[2].key == "obj:wandspec2", "evalue a la sortie de combat")
+    knows(nil)
+  end)
+
+  check("Guide : Next, Evaluate (ordre des priorites), Milestones", function()
+    local n = fresh().n
+    setState(n, { level = nil })
+    assert(#n.Guide.Evaluate() == 0 and n.Guide.Next() == nil)
+    for _, m in ipairs(n.Guide.Milestones()) do assert(m.state == "futur") end
+    setState(n, { level = 12, talents = {}, profs = {} })
+    local list = n.Guide.Evaluate()
+    assert(list[1].id == "wandspec" and list[2].id == "spirittap" and list[3].id == "rank_comp", "priorites d'abord : " .. list[1].id)
+    assert(n.Guide.Next().id == "wandspec")
+    local ms = n.Guide.Milestones()
+    assert(#ms == #n.Data.Milestones)
+    local seen = {}
+    for _, m in ipairs(ms) do
+      seen[m.state] = true
+      if m.to < 12 then assert(m.state == "passe") elseif m.from <= 12 then assert(m.state == "courant") else assert(m.state == "futur") end
+    end
+    assert(seen.passe and seen.courant and seen.futur)
+    setState(n, { level = 60 })
+    assert(#n.Guide.Evaluate() > 0)
+  end)
+
+  check("Guide : Reference par onglet", function()
+    local n = fresh().n
+    local G, D2 = n.Guide, n.Data
+    setState(n, { level = 20, profs = { [182] = { rank = 10, max = 75 } } })
+    assert(#G.Reference("inconnu") == 0)
+    local r = G.Reference("talents")
+    assert(#r == #D2.TalentPlan and r[1].text and r[1].sub)
+    r = G.Reference("zones")
+    assert(#r == 20 and r[1].sub == "niveaux 1-10", "zones triees par niveau")
+    local hl = 0
+    for _, z in ipairs(r) do if z.highlight then hl = hl + 1 end end
+    assert(hl > 0, "zones du niveau en evidence")
+    r = G.Reference("dungeons")
+    local inRange = 0
+    for _, d in ipairs(D2.Dungeons) do if d.min <= 20 and 20 <= d.max then inRange = inRange + 1 end end
+    assert(#r == inRange + #D2.DungeonTips and r[1].highlight and not r[#r].highlight
+      and r[#r].text == D2.DungeonTips[#D2.DungeonTips], "donjons de la tranche puis conseils")
+    r = G.Reference("profs")
+    assert(#r == 3, "trois metiers")
+    local byText = {}
+    for _, p in ipairs(r) do byText[p.text] = p end
+    assert(byText["Herboristerie"].sub == "10/75" and byText["Alchimie"].sub == "non apprise" and byText["Alchimie"].highlight)
+    r = G.Reference("undead")
+    assert(#r == #D2.Undead and r[1].highlight and r[#r].highlight == (20 >= D2.Undead[#D2.Undead].level))
+    local anyApi = IsPlayerSpell or IsSpellKnown or (C_SpellBook and C_SpellBook.IsSpellInSpellBook)
+    knows({})
+    r = G.Reference("spells")
+    assert(#r >= #D2.Spells)
+    if anyApi then
+      assert(r[1].highlight and r[1].text:find("(rang ", 1, true), "sort a apprendre en premier avec son rang : " .. r[1].text)
+    else
+      assert(not r[1].highlight)
+    end
+    knows(nil)
+  end)
+
+  check("Guide : Header, zone sans plage", function()
+    local n = fresh().n
+    setState(n, { level = 12, mapID = 99 })
+    local h = n.Guide.Header()
+    assert(h.level == 12 and h.progress == 12 / 60 and h.tier == "10-20", "niveau, progression, palier")
+    assert(h.zoneStatus == "neutre" and h.nextZone == nil, "zone sans plage")
+    assert(h.zoneName == (C_Map and "Tirisfal" or nil), "nom lu sur la carte")
+    setState(n, { level = 10, mapID = 1, zone = 1420 })
+    h = n.Guide.Header()
+    assert(h.zoneStatus == "bientot" and h.zoneName == "Clairières de Tirisfal" and h.nextZone == n.Data.Zones[1421][3])
+    setState(n, {})
+    h = n.Guide.Header()
+    assert(h.level == nil and h.progress == 0 and h.tier == nil and h.zoneStatus == "neutre")
   end)
 
   check("Un listener STATE qui plante ne bloque pas les autres", function()

@@ -65,7 +65,7 @@ function mock.reset()
   mock.events, mock.timers, mock.errors, mock.printed = {}, {}, {}, {}
   mock.inCombat, mock.hasTarget, mock.rejectEvents, mock.noRegisterUnitEvent, mock.lastText = false, true, nil, false, nil
   mock.unknown = {}
-  mock.dead, mock.canAttack = nil, nil
+  mock.dead, mock.canAttack, mock.items = nil, nil, nil
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known, mock.talentList = 0, "Creature-0", nil, nil, nil, nil, nil
   SlashCmdList = {}
   PretreCoachDB = nil
@@ -142,6 +142,8 @@ function GetTrainerServiceLevelReq() return 10 end
 function GetTrainerServiceCost() return 100 end
 C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
 C_QuestLog = { IsQuestFlaggedCompleted = function() return false end, GetTitleForQuestID = function() return "Titre" end }
+-- mock.items = { [itemID] = nombre porte }
+function GetItemCount(id) return (mock.items or {})[id] or 0 end
 -- 11287 = baguette (classe 2, sous-classe 19) ; les autres IDs : un objet quelconque
 C_Item = { GetItemInfoInstant = function(id)
   if (mock.unknown.item or {})[id] then return nil end
@@ -165,7 +167,7 @@ local UNCERTAIN = [[
 GetTalentTabInfo GetTalentInfo GetNumTalentTabs GetNumTalents GetNumTalentGroups GetActiveTalentGroup GetUnspentTalentPoints
 C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo GetSkillLineInfo GetNumSkillLines
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
-GetTrainerServiceLevelReq GetTrainerServiceCost GetInventoryItemID C_ActionBar issecretvalue C_TradeSkillUI
+GetTrainerServiceLevelReq GetTrainerServiceCost GetInventoryItemID C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end

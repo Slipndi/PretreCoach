@@ -50,7 +50,9 @@ ns.OnUnit("UNIT_SPELLCAST_SUCCEEDED", "player", function(_, _, _, spellID)
   if sp.manaCost then fiveEnd = now + 5 end
   if sp.cooldown then cdEnd[sp.key] = now + sp.cooldown end
   local repeatedShoot = false
-  if sp.harmful and S.Get(UnitCanAttack, "player", "target") == true then
+  -- UnitCanAttack absente : cible traitée comme attaquable (seul « false » l'exclut)
+  local canAttack, cst = S.Get(UnitCanAttack, "player", "target")
+  if sp.harmful and (canAttack == true or cst == "absente") then
     local guid = S.Get(UnitGUID, "target")
     if guid then
       local prev = lastOn[guid]

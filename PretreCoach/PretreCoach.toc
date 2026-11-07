@@ -17,11 +17,14 @@ Data\Gear.lua
 Data\Professions.lua
 Data\Spells.lua
 Data\Talents.lua
+Data\Objectives.lua
+Data\Undead.lua
 Secrets.lua
 Core.lua
 Calc.lua
 State.lua
 Timers.lua
+Guide.lua
 UI\Style.lua
 UI\Toast.lua
 UI\Minimap.lua
