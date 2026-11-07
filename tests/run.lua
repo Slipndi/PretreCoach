@@ -652,7 +652,14 @@ local function suite(label)
     local n = loadAddon()
     n.db = db or { show = { toasts = true }, guide = { manual = {}, done = {} } }
     local out = { n = n, toasts = {}, gui = 0 }
-    n.Toast = function(text, opts) out.toasts[#out.toasts + 1] = { text = text, key = opts and opts.key } return true end
+    -- les toasts des regles d'or (cle "r<n>...") vont dans out.rtoasts : les tests du guide ne comptent que les leurs
+    out.rtoasts = {}
+    n.Toast = function(text, opts)
+      local key = opts and opts.key
+      local list = (key and key:find("^r%d")) and out.rtoasts or out.toasts
+      list[#list + 1] = { text = text, key = key, cooldown = opts and opts.cooldown }
+      return true
+    end
     n.Listen("GUIDE", function() out.gui = out.gui + 1 end)
     return out
   end
@@ -1443,6 +1450,367 @@ local function suite(label)
       mock.bindings, mock.actions = nil, nil
       mock.setCombat(false)
     end)
+  end)
+
+  ------------------------------------------------------------------------
+  -- L7 : regles d'or (ns.Rules) et bandeau (UI/RulesBar)
+  ------------------------------------------------------------------------
+  local function rule(n, i) return n.Rules.Status()[i] end
+  local function count(list, key) local c = 0 for _, t in ipairs(list) do if t.key == key then c = c + 1 end end return c end
+  -- mouvement detectable (ou non) quel que soit le mock
+  local function withMoving(known, fn)
+    local keepS, keepM = GetUnitSpeed, IsPlayerMoving
+    if known then GetUnitSpeed, IsPlayerMoving = function() return 0 end, function() return false end
+    else GetUnitSpeed, IsPlayerMoving = nil, nil end
+    local ok, err = pcall(fn)
+    GetUnitSpeed, IsPlayerMoving = keepS, keepM
+    if not ok then error(err, 0) end
+  end
+  local function rcleanup() mock.guid, mock.dead, mock.inCombat = "Creature-0", nil, false end
+
+  check("Regles : 8 regles avec textes, etat initial inconnu", function()
+    isolated(function()
+      local n = fresh().n
+      assert(#n.Rules.list == 8)
+      for i, r in ipairs(n.Rules.list) do
+        assert(r.id == i and r.title and r.title ~= "" and r.explain and r.explain ~= "", "regle " .. i)
+      end
+      for i = 1, 8 do assert(rule(n, i).state == "unknown") end
+    end)
+  end)
+
+  check("R1 baguette : niveaux 4/5, depassee a -10, illisible, toast, combat, message RULES, debug", function()
+    isolated(function()
+      local o = fresh()
+      local n = o.n
+      local fired = 0
+      n.Listen("RULES", function() fired = fired + 1 end)
+      n.State.level, n.State.wand = 4, false
+      n.Rules.Evaluate()
+      assert(rule(n, 1).state == "ok" and #o.rtoasts == 0, "niveau 4 sans baguette : rien")
+      n.State.level = 5
+      n.db.debug = true
+      n.Rules.Evaluate()
+      assert(rule(n, 1).state == "bad" and count(o.rtoasts, "r1:none") == 1, "niveau 5 : rouge et toast")
+      local dbg = false
+      for _, line in ipairs(mock.printed) do if line:find("R1 bad", 1, true) then dbg = true end end
+      assert(dbg, "debug : R1 bad")
+      local f = fired
+      n.Rules.Evaluate()
+      assert(fired == f, "inchange : pas de nouveau RULES")
+      n.State.level, n.State.wand = 20, { itemID = 1, reqLevel = 10 }
+      n.Rules.Evaluate()
+      assert(rule(n, 1).state == "warn" and count(o.rtoasts, "r1:old") == 1, "req = niveau - 10 : depassee")
+      n.State.level = 19
+      n.Rules.Evaluate()
+      assert(rule(n, 1).state == "ok", "req = niveau - 9 : ok")
+      n.State.wand = nil
+      n.Rules.Evaluate()
+      assert(rule(n, 1).state == "unknown")
+      n.State.level, n.State.wand = nil, false
+      n.Rules.Evaluate()
+      assert(rule(n, 1).state == "unknown", "niveau illisible")
+      -- evaluee en combat, mais sans toast
+      local c = #o.rtoasts
+      mock.setCombat(true)
+      n.State.level = 12
+      n.Rules.Evaluate()
+      mock.setCombat(false)
+      assert(rule(n, 1).state == "bad" and #o.rtoasts == c, "R1 en combat : etat oui, toast non")
+      n.State.wand = { itemID = 1, reqLevel = 5 }
+      n.Fire("STATE", { "wand" })
+      assert(rule(n, 1).state == "ok", "STATE relance l'evaluation")
+    end, rcleanup)
+  end)
+
+  check("R2 achevement : une mort par GUID, 70 %, conseil, mort illisible", function()
+    isolated(function()
+      local o = fresh()
+      local n = o.n
+      mock.time = 10
+      -- lance un sort sur le monstre `guid`, puis il meurt ; `how` = evenement qui detecte la mort
+      local function kill(guid, spellID, how)
+        mock.guid, mock.dead = guid, false
+        mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", spellID)
+        mock.dead = true
+        if how == "UNIT_HEALTH" then mock.fire(how, "target") else mock.fire(how) end
+      end
+      kill("G1", 5019, "UNIT_HEALTH")
+      local k = n.Rules.KillStats()
+      assert(k.total == 1 and k.wand == 1 and rule(n, 2).state == "ok", "1/1")
+      mock.fire("UNIT_HEALTH", "target"); mock.fire("PLAYER_TARGET_CHANGED"); mock.fire("PLAYER_REGEN_ENABLED")
+      assert(n.Rules.KillStats().total == 1, "une seule fois par GUID")
+      mock.guid, mock.dead = "Inconnu", true -- jamais attaque par nous
+      mock.fire("PLAYER_TARGET_CHANGED")
+      assert(n.Rules.KillStats().total == 1, "monstre sans sort lance : ignore")
+      for i = 2, 7 do kill("S" .. i, 5019, "PLAYER_TARGET_CHANGED") end
+      for i = 1, 3 do kill("M" .. i, 585, "PLAYER_REGEN_ENABLED") end
+      k = n.Rules.KillStats()
+      assert(k.total == 10 and k.wand == 7 and rule(n, 2).state == "ok", "7/10 = 70 % : ok")
+      kill("M4", 585, "UNIT_HEALTH")
+      assert(rule(n, 2).state == "warn", "7/11 : orange")
+      n.Rotation.current = { keys = { "SHOOT" } }
+      n.Rules.Evaluate()
+      assert(rule(n, 2).reason:find("Connexion spirituelle", 1, true), "le conseil s'affiche")
+      assert(not findSecret(n.db, "db"))
+    end, rcleanup)
+  end)
+
+  check("R2 : mort jamais lisible = inconnu, conseil seul", function()
+    isolated(function()
+      local keep = UnitIsDead
+      UnitIsDead = function() if mock.noSecrets then return nil end return mock.SECRET end
+      local ok, err = pcall(function()
+        local n = fresh().n
+        mock.guid = "G9"
+        mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 5019)
+        mock.fire("PLAYER_TARGET_CHANGED"); mock.fire("PLAYER_REGEN_ENABLED")
+        assert(n.Rules.KillStats().total == 0 and rule(n, 2).state == "unknown")
+        assert(rule(n, 2).reason:find("illisible", 1, true), rule(n, 2).reason)
+        n.Rotation.current = { keys = { "SHOOT" } }
+        n.Rules.Evaluate()
+        assert(rule(n, 2).state == "unknown" and rule(n, 2).reason:find("Connexion spirituelle", 1, true), "conseil seul")
+      end)
+      UnitIsDead = keep
+      if not ok then error(err, 0) end
+    end, rcleanup)
+  end)
+
+  check("R3 5 s : sort couteux dans la fenetre, soin d'urgence, expiration, degrade, ordre des ecouteurs", function()
+    for _, reverse in ipairs({ false, true }) do
+      isolated(function()
+        local o = fresh()
+        local n = o.n
+        if reverse then -- ordre d'appel inverse entre Timers et GoldenRules : meme resultat
+          local l, r = mock.events.UNIT_SPELLCAST_SUCCEEDED, {}
+          for i = #l, 1, -1 do r[#r + 1] = l[i] end
+          mock.events.UNIT_SPELLCAST_SUCCEEDED = r
+        end
+        local function cast(id, t) mock.time = t mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", id) end
+        cast(585, 100)
+        assert(count(o.rtoasts, "r3") == 0 and rule(n, 3).state == "ok", "premier sort : rien")
+        cast(585, 102)
+        assert(count(o.rtoasts, "r3") == 1 and rule(n, 3).state == "warn", "relance dans les 5 s")
+        local t = o.rtoasts[#o.rtoasts]
+        assert(t.cooldown == 60 and t.text:find("regen", 1, true), t.text)
+        cast(2052, 104) -- soin d'urgence dans la fenetre
+        assert(count(o.rtoasts, "r3") == 1, "soin d'urgence : pas de toast")
+        cast(585, 111) -- fenetre close
+        assert(count(o.rtoasts, "r3") == 1 and rule(n, 3).state == "warn", "hors fenetre : pas de toast, orange tient 30 s")
+        mock.time = 133
+        mock.flushTimers()
+        n.Rules.Evaluate() -- sans C_Timer (passe absentes) ns.After ne reporte rien
+        assert(rule(n, 3).state == "ok", "l'orange s'eteint")
+        cast(585, 200)
+        cast(17, 202) -- Bouclier = urgence
+        assert(count(o.rtoasts, "r3") == 1)
+        mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", mock.noSecrets and "x" or mock.SECRET)
+        assert(rule(n, 3).state == "unknown", "mode degrade : inconnu")
+      end, rcleanup)
+    end
+  end)
+
+  check("R4 arrete-toi : stop, combat, rappel unique si mouvement indetectable", function()
+    withMoving(true, function()
+      isolated(function()
+        local o = fresh()
+        local n = o.n
+        n.Rotation.current = { keys = { "SHOOT" }, stop = true }
+        n.Fire("ROTATION", n.Rotation.current)
+        assert(rule(n, 4).state == "warn")
+        n.Rotation.current = { keys = { "SHOOT" } }
+        n.Fire("ROTATION", n.Rotation.current)
+        assert(rule(n, 4).state == "ok" and #o.rtoasts == 0, "mouvement lisible : pas de rappel")
+        mock.setCombat(true)
+        n.Rotation.current = { keys = { "SHOOT" }, stop = true }
+        n.Fire("ROTATION", n.Rotation.current)
+        mock.setCombat(false)
+        assert(rule(n, 4).state == "warn", "evaluee en combat")
+      end, rcleanup)
+    end)
+    withMoving(false, function()
+      isolated(function()
+        local o = fresh()
+        local n = o.n
+        n.Fire("ROTATION", { keys = { "SMITE" } })
+        assert(#o.rtoasts == 0 and rule(n, 4).state == "unknown", "pas de Tir : pas de rappel")
+        n.Fire("ROTATION", { keys = { "SHOOT" } })
+        n.Fire("ROTATION", { keys = { "SMITE" } })
+        n.Fire("ROTATION", { keys = { "SHOOT" } })
+        assert(count(o.rtoasts, "r4") == 1, "rappel unique par session")
+      end, rcleanup)
+    end)
+  end)
+
+  check("R5 zone : adaptee, dernier niveau, verte + toast, inconnu, figee en combat", function()
+    isolated(function()
+      local o = fresh()
+      local n = o.n
+      n.State.zone, n.State.level = 1420, 9
+      n.Rules.Evaluate()
+      assert(rule(n, 5).state == "ok")
+      n.State.level = 10
+      n.Rules.Evaluate()
+      assert(rule(n, 5).state == "warn" and #o.rtoasts == 0, "dernier niveau : orange")
+      n.State.level = 11
+      n.Rules.Evaluate()
+      assert(rule(n, 5).state == "bad" and count(o.rtoasts, "r5:1420") == 1)
+      local t = o.rtoasts[#o.rtoasts]
+      assert(t.text == "Cette zone devient verte. Direction : Forêt des Pins-Argentés", t.text)
+      local c = #o.rtoasts
+      mock.setCombat(true)
+      n.State.zone, n.State.level = 1421, 15
+      n.Rules.Evaluate()
+      assert(rule(n, 5).state == "bad" and #o.rtoasts == c, "garde son dernier etat en combat")
+      mock.setCombat(false)
+      mock.fire("PLAYER_REGEN_ENABLED")
+      assert(rule(n, 5).state == "ok", "reevaluee a la sortie du combat")
+      n.State.zone = nil
+      n.Rules.Evaluate()
+      assert(rule(n, 5).state == "unknown", "zone inconnue")
+      n.State.zone, n.State.level = 1421, nil
+      n.Rules.Evaluate()
+      assert(rule(n, 5).state == "unknown", "niveau inconnu")
+    end, rcleanup)
+  end)
+
+  check("R6 Thrill of Adventure : inconnu, ok si coche dans le guide", function()
+    isolated(function()
+      local n = fresh().n
+      n.Rules.Evaluate()
+      assert(rule(n, 6).state == "unknown")
+      n.db.guide.manual.legacy_toa = true
+      n.Rules.Evaluate()
+      assert(rule(n, 6).state == "ok")
+    end)
+  end)
+
+  check("R7 Brassenoire : niveaux 23/24/32/33, quete nil, manuel, toast Ashenvale unique", function()
+    isolated(function()
+      local o = fresh()
+      local n = o.n
+      local keep, done = n.State.QuestDone, false
+      n.State.QuestDone = function() return done end
+      n.State.zone = 1420
+      for _, c in ipairs({ { 23, "ok" }, { 24, "warn" }, { 32, "warn" }, { 33, "ok" } }) do
+        n.State.level = c[1]
+        n.Rules.Evaluate()
+        assert(rule(n, 7).state == c[2], "niveau " .. c[1] .. " : " .. rule(n, 7).state)
+      end
+      assert(count(o.rtoasts, "r7") == 0, "pas de toast hors Ashenvale")
+      n.State.level, n.State.zone = 28, 1440
+      n.Rules.Evaluate()
+      n.Rules.Evaluate()
+      assert(count(o.rtoasts, "r7") == 1, "toast une seule fois par session")
+      done = true
+      n.Rules.Evaluate()
+      assert(rule(n, 7).state == "ok")
+      done = nil
+      n.Rules.Evaluate()
+      assert(rule(n, 7).state == "unknown", "quete illisible")
+      n.db.guide.manual.bfd_quest = true
+      n.Rules.Evaluate()
+      assert(rule(n, 7).state == "ok", "objectif coche a la main")
+      n.State.level = nil
+      n.Rules.Evaluate()
+      assert(rule(n, 7).state == "unknown")
+      n.State.QuestDone = keep
+    end, rcleanup)
+  end)
+
+  check("R8 double spe au 40 : niveaux 39/40, forme d'ombre, specGroups, nil, toast unique, combat", function()
+    isolated(function()
+      local o = fresh()
+      local n = o.n
+      local sf
+      n.State.Knows = function() return sf end
+      n.State.level, n.State.specGroups = 39, 1
+      n.Rules.Evaluate()
+      assert(rule(n, 8).state == "ok" and #o.rtoasts == 0, "niveau 39")
+      n.State.level, sf = 40, 1
+      n.Rules.Evaluate()
+      assert(rule(n, 8).state == "bad", "une seule spe")
+      assert(count(o.rtoasts, "r8") == 1 and o.rtoasts[#o.rtoasts].text == "Respec Ombre et active ta double spé")
+      sf, n.State.specGroups = 0, 2
+      n.Rules.Evaluate()
+      assert(rule(n, 8).state == "bad", "forme d'ombre non apprise")
+      assert(count(o.rtoasts, "r8") == 1, "toast une seule fois")
+      sf = 1
+      n.Rules.Evaluate()
+      assert(rule(n, 8).state == "ok")
+      n.State.specGroups = nil
+      n.Rules.Evaluate()
+      assert(rule(n, 8).state == "ok", "specGroups inconnu : juge sur la Forme d'Ombre")
+      sf = nil
+      n.Rules.Evaluate()
+      assert(rule(n, 8).state == "unknown")
+      sf, n.State.specGroups = 1, 1
+      mock.setCombat(true)
+      n.Rules.Evaluate()
+      assert(rule(n, 8).state == "unknown", "pas de reevaluation en combat")
+      mock.setCombat(false)
+      n.Rules.Evaluate()
+      assert(rule(n, 8).state == "bad")
+    end, rcleanup)
+  end)
+
+  check("Regles : toasts non repetes avec le vrai ns.Toast", function()
+    isolated(function()
+      local n = loadAddon()
+      n.db = { show = { toasts = true }, guide = { manual = {}, done = {} } }
+      local log, real = {}, n.Toast
+      n.Toast = function(t, o) local r = real(t, o) log[#log + 1] = r return r end
+      mock.time = 5000
+      n.State.level, n.State.wand = 8, false
+      n.Rules.Evaluate()
+      n.State.level = 9
+      n.Rules.Evaluate()
+      assert(log[1] == true and log[2] == false, "doublon bloque par l'anti-repetition")
+      mock.time = 5301
+      n.State.level = 10
+      n.Rules.Evaluate()
+      assert(log[3] == true, "reapparait apres le delai")
+      mock.flushTimers()
+    end, rcleanup)
+  end)
+
+  check("RulesBar : pastilles, couleurs, combat, infobulle, clic, show.rules", function()
+    isolated(function()
+      local n = loadAddon()
+      n.db = { show = { toasts = false, rules = true }, guide = { manual = {}, done = {} } }
+      mock.fire("ADDON_LOADED", ADDON)
+      local B = n.UI.RulesBar
+      assert(#B.buttons == 8 and B.frame.shown, "8 pastilles")
+      n.State.level, n.State.wand = 12, false
+      n.Rules.Evaluate()
+      local C = n.UI.color
+      assert(B.buttons[1].bg.color[1] == C.bad[1] and B.buttons[3].bg.color[1] == C.good[1], "rouge puis vert")
+      assert(B.buttons[6].bg.color[1] == 0.45, "gris pour inconnu")
+      for i = 1, 8 do assert(B.buttons[i].shown, "hors combat : pastille " .. i) end
+      mock.setCombat(true)
+      mock.fire("PLAYER_REGEN_DISABLED")
+      for i = 1, 4 do assert(B.buttons[i].shown, "combat : pastille " .. i) end
+      for i = 5, 8 do assert(not B.buttons[i].shown, "combat : pastille " .. i .. " masquee") end
+      mock.setCombat(false)
+      mock.fire("PLAYER_REGEN_ENABLED")
+      for i = 5, 8 do assert(B.buttons[i].shown) end
+      local b = B.buttons[1]
+      b.scripts.OnEnter(b)
+      b.scripts.OnLeave(b)
+      local b2 = B.buttons[2]
+      b2.scripts.OnClick(b2)
+      assert(B.detail.shown and B.detail.text.text:find(n.Rules.list[2].explain, 1, true), "clic : explication")
+      b2.scripts.OnClick(b2)
+      assert(not B.detail.shown, "second clic : referme")
+      n.db.show.rules = false
+      B.Render()
+      assert(not B.frame.shown, "show.rules = false")
+      n.db.show.rules = true
+      n.Fire("RULES")
+      n.Rules.Evaluate()
+      B.Render()
+      assert(B.frame.shown)
+    end, rcleanup)
   end)
 
   check("Un listener STATE qui plante ne bloque pas les autres", function()

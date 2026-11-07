@@ -36,6 +36,7 @@ function FRAME.RegisterUnitEvent(self, e, unit)
   self.unit[e] = unit
 end
 function FRAME.SetValue(self, v) self.value = v end
+function FRAME.SetColorTexture(self, ...) self.color = { ... } end
 function FRAME.SetText(self, t) mock.lastText = t self.text = t end
 function FRAME.Show(self) local was = self.shown self.shown = true if not was and self.scripts.OnShow then self.scripts.OnShow(self) end end
 function FRAME.Hide(self) self.shown = false end

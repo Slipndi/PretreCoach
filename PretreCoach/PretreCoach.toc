@@ -26,9 +26,11 @@ State.lua
 Timers.lua
 Guide.lua
 Rotation.lua
+GoldenRules.lua
 UI\Style.lua
 UI\Toast.lua
 UI\Minimap.lua
 UI\GuideWindow.lua
 UI\RotationPanel.lua
+UI\RulesBar.lua
 Probe.lua
