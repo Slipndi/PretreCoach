@@ -330,10 +330,55 @@ local function xpText(e)
 end
 Guide.Detail = xpText -- aussi pour une entrée métier (ex. bandages) : text, detail
 
+local function unspent()
+  local u = State.unspentTalents
+  return type(u) == "number" and not S.IsSecret(u) and u or 0
+end
+
+-- Sort à apprendre chez le maître dès maintenant : premier rang au niveau du joueur (un talent exige un point libre).
+local function knownReady(e)
+  for _, sp in ipairs(D.Spells) do
+    if sp.key == e.arg then
+      local lv = sp.ranks[1].level
+      return type(lv) == "number" and type(State.level) == "number" and lv <= State.level and (not sp.talent or unspent() > 0)
+    end
+  end
+  return false
+end
+
+-- Baguette à équiper : dans les sacs, ou avec un prix connu à l'hôtel des ventes.
+local function wandReady(e)
+  local w
+  if e.check == "wandItem" then
+    for _, x in ipairs(D.Wands) do if x.itemID == e.arg then w = x end end
+  else
+    local _, best = Calc.WandStatus(State.level, State.wand)
+    w = best
+  end
+  if not w then return false end
+  local n = itemTotal({ count = 1, ids = { w.itemID } })
+  if n and n >= 1 then return true end
+  local price = ns.AH and ns.AH.Price(w.itemID)
+  return type(price) == "number" and price > 0
+end
+
+-- Débloquable MAINTENANT (rangée XP, avant les quêtes). Les talents, sorts et sorts connus ne sont JAMAIS dans la rangée
+-- tant qu'ils ne sont pas débloquables (GATED) ; les autres objectifs automatiques passent après les quêtes.
+local READY = { talent = function() return unspent() > 0 end, spells = function() return true end, known = knownReady,
+  wand = wandReady, wandItem = wandReady }
+local GATED = { talent = true, spells = true, known = true }
+
 -- XP : premier objectif automatique à faire ; un objectif illisible (nil) ou manuel est passé.
-local function xpPick(list)
+-- leftover = faux : seulement le débloquable maintenant ; vrai : le reste hors GATED.
+local function xpPick(list, leftover)
   for _, e in ipairs(list) do
-    if not e.prof and not e.manual and not e.unknown and not e.done then return e end
+    if not e.prof and not e.manual and not e.unknown and not e.done then
+      if leftover then
+        if not GATED[e.check] then return e end
+      elseif READY[e.check] and READY[e.check](e) then
+        return e
+      end
+    end
   end
 end
 
@@ -343,9 +388,15 @@ local PROF_ORDER = { 182, 171, 129 } -- Herboristerie, Alchimie, Secourisme, pui
 function Guide.Goals()
   local list = Guide.Evaluate()
   local out = {}
-  local xp = xpPick(list)
-  local text, detail = xpText(xp)
-  out[1] = { kind = "xp", label = L.GUIDE_XP, e = xp, text = text, detail = detail }
+  -- 1. débloquable maintenant ; 2. la quête choisie par Quests ; 3. le reste des objectifs ; 4. repli de zone (xpText(nil))
+  local xp, quest = xpPick(list, false), nil
+  local text, detail, go
+  if not xp then
+    quest = ns.Quests and ns.Quests.Best()
+    if quest then text, detail, go = quest.text, quest.detail, quest.go else xp = xpPick(list, true) end
+  end
+  if not text then text, detail = xpText(xp) end
+  out[1] = { kind = "xp", label = L.GUIDE_XP, e = xp, text = text, detail = detail, go = go, quest = quest }
   local profs = State.profs
   if type(profs) ~= "table" then return out end
   local lines, seen = {}, {}

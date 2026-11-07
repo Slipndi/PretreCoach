@@ -31,6 +31,7 @@ State.lua
 Timers.lua
 Wand.lua
 Goto.lua
+Quests.lua
 Guide.lua
 Rotation.lua
 GoldenRules.lua

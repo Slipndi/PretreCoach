@@ -4670,6 +4670,164 @@ local function suite(label)
     end)
   end)
 
+  ------------------------------------------------------------------------
+  -- Objectif XP choisi parmi les quetes (Quests.Best) ; talents et sorts seulement s'ils sont debloquables
+  ------------------------------------------------------------------------
+  local function questN(level)
+    mock.qlog, mock.qquests, mock.qdone, mock.pos = nil, nil, nil, { 0.5, 0.5 }
+    mock.mapID = 1420
+    mock.qnpcs[9001] = { 0, "", "H", 85, { [85] = { { 52, 50 } } } } -- tout pres du joueur (50, 50)
+    mock.qnpcs[9003] = { 0, "", "H", 85, { [85] = { { 80, 80 } } } } -- loin
+    local n = fresh().n
+    setState(n, { level = level or 20, mapID = 1420 })
+    return n
+  end
+  local LOUPS = { { text = "3/8 Loups tués", numFulfilled = 3, numRequired = 8, finished = false } }
+
+  check("Quetes : une quete terminee a rendre passe avant une quete en cours, meme plus loin", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN()
+    mock.qquests = { [201] = { name = "En cours", startedBy = { { 9001 } } }, [202] = { name = "Finie", startedBy = { { 9001 } }, finishedBy = { { 9003 } } } }
+    mock.qlog = { { questID = 201, title = "En cours", objectives = LOUPS }, { questID = 202, title = "Finie", complete = true } }
+    n.Quests.Refresh()
+    local b = n.Quests.Best()
+    assert(b and b.kind == "turnin" and b.questID == 202 and b.text == "Rends « Finie »" and b.go == "N9003", b and b.text)
+    local g = n.Guide.Goals()[1]
+    assert(g.text == b.text and g.go == "N9003" and g.e == nil and g.quest == b, "la rangee XP est la quete : " .. tostring(g.text))
+    local d = n.Goto.For(g.go)
+    assert(d.mapID == 1420 and d.x == 80 and d.y == 80 and d.text:find("Tirisfal", 1, true), d.text)
+    assert(n.Goto.Place(d) == true and mock.waypoint.mapID == 1420, "Repere pose")
+  end)
+
+  check("Quetes : la quete en cours la plus proche est choisie, texte des objectifs", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN()
+    mock.qquests = {
+      [201] = { name = "Loin", startedBy = { { 9003 } } },
+      [203] = { name = "Pres", startedBy = { { 9003 } }, objectives = { { { 9001, "Loup" } } } },
+    }
+    mock.qlog = { { questID = 201, title = "Loin", objectives = LOUPS }, { questID = 203, title = "Pres", objectives = LOUPS } }
+    n.Quests.Refresh()
+    local b = n.Quests.Best()
+    assert(b.kind == "progress" and b.questID == 203 and b.text == "Pres : 3/8 Loups tués" and b.go == "N9001", b.text)
+    assert(b.detail:find("Tirisfal", 1, true) and b.detail:find("à ~20 m", 1, true), b.detail)
+    n.State.mapID = 1458 -- autre carte : plus rien n'est dans la zone, l'ordre du journal reste
+    n.Quests.Refresh()
+    assert(n.Quests.Best().questID == 201, "autre carte : ordre du journal")
+  end)
+
+  check("Quetes : a prendre dans la zone, au bon niveau, ni grise, ni faite, ni reservee", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN()
+    n.db.qindex = {} -- l'index des PNJ est pret
+    local function q(name, t) t.name, t.startedBy = name, t.startedBy or { { 9001 } } return t end
+    mock.qquests = {
+      [301] = q("Bonne", { requiredLevel = 15, questLevel = 18 }),
+      [302] = q("Grise", { requiredLevel = 5, questLevel = 12 }),
+      [303] = q("Trop haute", { requiredLevel = 25, questLevel = 25 }),
+      [304] = q("Deja faite", { requiredLevel = 15, questLevel = 18 }),
+      [305] = q("Alliance", { requiredLevel = 15, questLevel = 18, requiredRaces = 77 }),
+      [307] = q("Prerequis", { requiredLevel = 15, questLevel = 18, preQuestSingle = { 999 } }),
+      [308] = q("Ailleurs", { requiredLevel = 15, questLevel = 18, startedBy = { { 375 } } }),
+      [309] = q("Horde", { requiredLevel = 15, questLevel = 18, requiredRaces = 178, startedBy = { { 9003 } } }),
+    }
+    mock.qdone = { [304] = true }
+    assert(n.Quests.StartIndex() == true)
+    for _ = 1, 5 do mock.flushTimers() end
+    n.Quests.Refresh()
+    local b = n.Quests.Best()
+    assert(b and b.kind == "pickup" and b.questID == 301 and b.text == "Prends « Bonne »" and b.go == "N9001", b and b.text)
+    assert(b.detail:find("niveau 15 requis", 1, true) and b.detail:find("Tirisfal", 1, true), b.detail)
+    assert(n.Guide.Goals()[1].text == b.text, "rangee XP : " .. tostring(n.Guide.Goals()[1].text))
+    mock.qdone[301] = true -- prise : reste la quete Horde, plus loin
+    n.Quests.Refresh()
+    assert(n.Quests.Best().questID == 309, "Horde plus loin")
+    mock.qdone[309] = true
+    n.Quests.Refresh()
+    assert(n.Quests.Best() == nil, "grises, trop hautes, faites, Alliance, prerequis, autre carte : rien")
+    mock.qdone[999] = true -- prerequis fait : la quete arrive
+    n.Quests.Refresh()
+    assert(n.Quests.Best().questID == 307, "prerequis fait")
+  end)
+
+  check("Quetes : sans Questie, le journal seul (sans lieu)", function()
+    if not C_QuestLog then return end
+    local lib = _G.LibQuestieDB
+    _G.LibQuestieDB = nil
+    local n = questN()
+    mock.qlog = { { questID = 201, title = "En cours", objectives = LOUPS }, { questID = 202, title = "Finie", complete = true } }
+    n.Quests.Refresh()
+    local b = n.Quests.Best()
+    assert(b.kind == "turnin" and b.text == "Rends « Finie »" and b.go == nil and b.detail == nil, b.text)
+    mock.qlog = { { questID = 201, title = "En cours", objectives = LOUPS } }
+    n.Quests.Refresh()
+    b = n.Quests.Best()
+    local g = n.Guide.Goals()[1]
+    _G.LibQuestieDB = lib
+    assert(b.kind == "progress" and b.text == "En cours : 3/8 Loups tués" and b.go == nil, b.text)
+    assert(g.text == b.text and g.go == nil, "pas de Ou aller sans lieu")
+  end)
+
+  check("Guide XP : un talent sans point libre n'est pas la rangee XP, avec un point oui", function()
+    local n = fresh().n
+    mock.qlog = nil
+    setState(n, { level = 10, talents = tl{ [14524] = 0 }, unspentTalents = 0 })
+    assert(st(ev(n, "wandspec")) == "todo")
+    local g = n.Guide.Goals()[1]
+    assert(not (g.e and g.e.check == "talent"), "0 point : pas le talent")
+    n.State.unspentTalents = 1
+    g = n.Guide.Goals()[1]
+    assert(g.e and g.e.id == "wandspec" and g.text == xpFor(n, "wandspec").text, "1 point : le talent")
+    n.State.unspentTalents = nil
+    g = n.Guide.Goals()[1]
+    assert(not (g.e and g.e.check == "talent"), "nombre de points illisible : pas le talent")
+  end)
+
+  check("Guide XP : un sort pas encore debloquable n'est jamais la rangee XP ; repli de zone sans quete", function()
+    local n = fresh().n
+    mock.qlog = nil
+    setState(n, { level = 30, mapID = 1420, unspentTalents = 0 })
+    local locked = { id = "x1", check = "known", arg = "INEXISTANT", done = false, unknown = false, manual = false, text = "Sort verrouille" }
+    local talent = { id = "x2", check = "talent", arg = 14524, done = false, unknown = false, manual = false, text = "Talent sans point" }
+    n.Guide.Evaluate = function() return { locked, talent } end
+    local g = n.Guide.Goals()[1]
+    assert(g.e == nil and (g.text:find("^Monte") or g.text:find("^Continue")), "repli de zone : " .. tostring(g.text))
+    n.Guide.Evaluate = function() return { locked, talent, { id = "x3", check = "spells", done = false, unknown = false, manual = false, text = "Apprends" } } end
+    g = n.Guide.Goals()[1]
+    assert(g.e and g.e.id == "x3", "sorts a apprendre chez le maitre : debloquables")
+  end)
+
+  check("Quetes : rien de secret ni de stocke, en combat le dernier resultat", function()
+    if not (C_QuestLog and C_Map) then return end
+    local n = questN()
+    local before = {}
+    for k in pairs(n.db) do before[k] = true end
+    mock.qlog = { { questID = 201, title = mock.SECRET, objectives = { { text = mock.SECRET, finished = false } } }, { questID = 202, title = "Finie", complete = true } }
+    n.Quests.Refresh()
+    assert(n.Quests.Best().text == "Rends « Finie »")
+    mock.qlog = { { questID = 201, title = mock.SECRET, objectives = { { text = mock.SECRET, finished = false } } } }
+    n.Quests.Refresh()
+    local b = n.Quests.Best()
+    assert(b.kind == "progress" and not findSecret(b, "best"), "titre secret : nom de repli")
+    mock.inCombat = true
+    mock.qlog = nil
+    n.Quests.Refresh()
+    assert(n.Quests.Best() == b, "en combat : le dernier resultat, sans relecture")
+    mock.inCombat = false
+    assert(not findSecret(n.db, "db"))
+    for k in pairs(n.db) do assert(before[k], "cle ajoutee a la base : " .. tostring(k)) end
+  end)
+
+  check("Goto : cible { mapID, x, y, text } et cle N<npc>", function()
+    local n = fresh().n
+    local d = n.Goto.For({ mapID = 1420, x = 10, y = 20, text = "Quelque part" })
+    assert(d.mapID == 1420 and d.x == 10 and d.text == "Quelque part (10.0, 20.0)" and d.where == "Quelque part", d.text)
+    assert(n.Goto.For({ mapID = 1 }) == nil, "sans texte : rien")
+    assert(n.Goto.For("N9999").text:find("Questie", 1, true), "PNJ inconnu : texte neutre")
+    mock.qinit()
+    mock.pos = nil
+  end)
+
   check("Baguette : rien de secret, rien dans les SavedVariables", function()
     wandBoot(function(n, P, W)
       mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", mock.noSecrets and "x" or mock.SECRET)

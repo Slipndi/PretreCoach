@@ -316,7 +316,7 @@ local function fillCardRow(r, g, i, y)
     if not (type(frac) == "number" and not secret(frac)) then frac = nil end
   end
   -- « Où aller » : cible de l'objectif XP non fait, ou du metier dont le rang est a prendre
-  local go = g.kind == "xp" and (g.e and not g.e.done and g.e.go) or g.kind ~= "xp" and g.go or nil
+  local go = g.kind == "xp" and (g.go or (g.e and not g.e.done and g.e.go)) or g.kind ~= "xp" and g.go or nil
   local d = go and ns.Goto.For(go) or nil
   local can = ns.Goto.CanPlace(d)
   r.dest = d

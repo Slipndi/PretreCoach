@@ -1,6 +1,6 @@
 -- « Où aller » : lieu d'un PNJ utile (via Ext/Questie.lua) et repère de carte posé sur demande du joueur.
 -- Goto.For(cible) -> { text, where, mapID, x, y } ou nil si la cible est inconnue ; x et y en pourcentage 0-100.
--- Cible : "WAND", "PRIEST", "ALCHEMY", "HERBALISM", "FIRSTAID" ou "Q<questID>". Le texte ne cite jamais de nom de PNJ anglais :
+-- Cible : "WAND", "PRIEST", "ALCHEMY", "HERBALISM", "FIRSTAID", "Q<questID>", "N<npcID>" ou { mapID, x, y, text }. Le texte ne cite jamais de nom de PNJ anglais :
 -- rôle, zone localisée et coordonnées. Sans Questie : un texte neutre, sans coordonnées.
 local _, ns = ...
 local S, L, Q, State, Calc = ns.S, ns.L, ns.Q, ns.State, ns.Calc
@@ -18,6 +18,8 @@ local function zoneName(w)
   local n = S.Get(C_Map and C_Map.GetAreaInfo, w.areaID)
   return type(n) == "string" and n or nil
 end
+
+Goto.Zone = zoneName
 
 -- head = lieu sans coordonnées (`where`) ; tail = suite du texte.
 local function out(head, w, tail)
@@ -46,6 +48,17 @@ function Goto.For(target)
     local w, zone = find(target)
     if w then return out(L.GO_ROLE:format(L["GO_ROLE_" .. target], zone), w) end
     return out(L["GO_FALLBACK_" .. target])
+  end
+  if type(target) == "table" then -- { mapID, x, y, text } : x et y en pourcentage 0-100
+    if type(target.text) ~= "string" then return nil end
+    return out(target.text, type(target.x) == "number" and type(target.y) == "number" and { uiMapID = target.mapID, x = target.x, y = target.y } or nil)
+  end
+  local nid = tostring(target):match("^N(%d+)$") -- PNJ quelconque (quête à rendre, objectif...)
+  if nid then
+    local w = Q.Where(tonumber(nid))
+    local zone = w and zoneName(w)
+    if zone then return out(L.GO_NPC:format(zone), w) end
+    return out(L.GO_NPC_NONE)
   end
   local qid = tostring(target):match("^Q(%d+)$")
   if qid then

@@ -215,7 +215,13 @@ function GetTrainerServiceLevelReq() return 10 end
 function GetTrainerServiceCost() return 100 end
 function GetCoinTextureString(c) return "COIN:" .. c end
 C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
-C_QuestLog = { IsQuestFlaggedCompleted = function() return false end, GetTitleForQuestID = function() return "Titre" end }
+-- Journal pilotable : mock.qlog = { { questID, title, isHeader, complete, objectives = { { text, numFulfilled, numRequired, finished } } } } ;
+-- mock.qdone = { [questID] = true } : quetes deja faites
+C_QuestLog = { IsQuestFlaggedCompleted = function(id) return (mock.qdone or {})[id] == true end, GetTitleForQuestID = function() return "Titre" end,
+  GetNumQuestLogEntries = function() return #(mock.qlog or {}), 0 end,
+  GetInfo = function(i) local q = (mock.qlog or {})[i] return q and { questID = q.questID, title = q.title, isHeader = q.isHeader == true } or nil end,
+  IsComplete = function(id) for _, q in ipairs(mock.qlog or {}) do if q.questID == id then return q.complete == true end end end,
+  GetQuestObjectives = function(id) for _, q in ipairs(mock.qlog or {}) do if q.questID == id then return q.objectives or {} end end return {} end }
 -- mock.items = { [itemID] = nombre porte }
 function GetItemCount(id) return (mock.items or {})[id] or 0 end
 -- 11287 = baguette (classe 2, sous-classe 19) ; les autres IDs : un objet quelconque
@@ -280,6 +286,7 @@ end
 function mock.qinit()
   mock.qnpcs, mock.qver, mock.qboom, mock.qreads, mock.ah, mock.ahBoom = qDefaults(), "1.0.11", nil, 0, { [2589] = { 120, 3 } }, nil
   mock.qquests = nil
+  mock.qlog, mock.qdone, mock.mapID = nil, nil, nil
 end
 mock.qinit()
 local function qIds() local t = {} for i = 1, 450 do t[i] = i end return t end
@@ -294,8 +301,9 @@ LibQuestieDB = {
   RequireContract = function(v) if v <= 4 then return true end return false, "trop recent" end,
   Enum = { npcFlags = { TRAINER = 16, AUCTIONEER = 4096 }, zoneIDs = { UNDERCITY = 1497, ORGRIMMAR = 1637, THUNDER_BLUFF = 1638 } },
   Npc = { Get = qGet, GetAllIds = function() return qIds() end },
-  -- mock.qquests = { [id] = { name, startedBy, requiredLevel, preQuestSingle, preQuestGroup } } en plus de 6561
-  Quest = { Get = function(id, key) if mock.qboom then error("boom") end
+  -- mock.qquests = { [id] = { name, startedBy, finishedBy, objectives, requiredLevel, questLevel, requiredRaces, preQuestSingle, preQuestGroup } } en plus de 6561
+  Quest = { GetAllIds = function() local t = { 6561 } for id in pairs(mock.qquests or {}) do t[#t + 1] = id end table.sort(t) return t end,
+    Get = function(id, key) if mock.qboom then error("boom") end
     local q = (mock.qquests or {})[id]
     if q then return q[key] end
     if id == 6561 then return key == "name" and "Quete" or (key == "startedBy" and { { 375 } }) or nil end end },
@@ -350,7 +358,7 @@ local function vec(x, y) return { GetXY = function() return x, y end } end
 C_Map = { GetPlayerMapPosition = function(mapID, unit) assert(type(mapID) == "number" and unit == "player", "GetPlayerMapPosition(uiMapID, unit)") if mock.pos == false then return nil end local p = mock.pos or { 0.456, 0.789 } return vec(p[1], p[2]) end,
   CanSetUserWaypointOnMap = function() return mock.canWaypoint ~= false end, GetUserWaypoint = function() return nil end,
   SetUserWaypoint = function(p) mock.waypoint = p end,
-  GetBestMapForUnit = function() return 1 end,
+  GetBestMapForUnit = function() return mock.mapID or 1 end, GetMapWorldSize = function() return 1000, 500 end,
   GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = (mock.mapNames or {})[id] or "Tirisfal", parentMapID = id == 1 and 1420 or 0 } end,
   -- mock.areas = { [areaID] = nom } ; mock.mapKids = { [racine] = { { mapID, name }, ... } } (defauts : Tirisfal, Fossoyeuse, Orgrimmar sous 946)
   GetAreaInfo = function(id) return (mock.areas or { [85] = "Tirisfal", [1497] = "Fossoyeuse", [1637] = "Orgrimmar" })[id] end,

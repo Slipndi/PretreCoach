@@ -29,6 +29,12 @@ local function read(entity, id, key)
 end
 function Q.Quest(id, key) return read("Quest", id, key) end
 function Q.Npc(id, key) return read("Npc", id, key) end
+-- Tous les ID de quêtes (nil si le contrat ne l'expose pas) : pour l'index de Quests.lua.
+function Q.QuestIds()
+  if not Q.Available() or type(lib.Quest.GetAllIds) ~= "function" then return nil end
+  local ok, ids = pcall(lib.Quest.GetAllIds)
+  return ok and type(ids) == "table" and ids or nil
+end
 
 -- AreaID -> uiMapID sans donnee embarquee : nom localise (C_Map.GetAreaInfo) puis table nom -> uiMapID construite en direct
 -- depuis les cartes Zone/City sous Cosmic (946), Kalimdor (1414) et Royaumes de l'Est (1415). Cache en memoire seulement.
