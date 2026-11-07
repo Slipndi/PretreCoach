@@ -80,6 +80,7 @@ function mock.reset()
   SlashCmdList = {}
   PretreCoachDB = nil
   mock.registered, mock.opened = nil, nil
+  if mock.qinit then mock.qinit() end
   mock.pos, mock.recipes, mock.bag, mock.addons, mock.sellPrice, mock.sub, mock.ejSelected = nil, nil, nil, nil, nil, nil, nil
 end
 
@@ -191,7 +192,51 @@ C_Container = { GetContainerNumSlots = function(bag) return bag == 0 and 4 or 0 
   GetContainerItemID = function(bag, slot) return bag == 0 and (mock.bag or { 2589 })[slot] or nil end,
   GetContainerItemInfo = function() return { itemID = 2589 } end }
 -- mock.addons = { Questie = true } ; mock.sellPrice = prix de vente (11e valeur de GetItemInfo)
-C_AddOns = { IsAddOnLoaded = function(n) return (mock.addons or {})[n] == true end }
+C_AddOns = { IsAddOnLoaded = function(n) return (mock.addons or {})[n] == true end,
+  GetAddOnMetadata = function(n, f) if n == "QuestieDB" and f == "Version" then return mock.qver end end }
+
+-- LibQuestieDB minimal (contrat 4). mock.qnpcs = { [id] = { flags, subName, faction, zoneID, spawns } } en plus de 450 PNJ neutres ;
+-- mock.qver = version de l'addon ; mock.qboom = les lectures levent une erreur ; mock.qreads = nombre de lectures de PNJ.
+local NPC_KEYS = { npcFlags = 1, subName = 2, friendlyToFaction = 3, zoneID = 4, spawns = 5 }
+local function qDefaults()
+  return {
+    [375] = { 16, "Priest Trainer", "H", 1497, { [1497] = { { 52.3, 41.2 } } } },
+    [376] = { 16, "Priest Trainer", "A", 1519, { [1519] = { { 40, 40 } } } },
+    [377] = { 16, "Priest Trainer", "AH", 85, { [85] = { { 30.5, 60.1 } } } },
+    [300] = { 16, "Alchemy Trainer", "H", 1497, { [1497] = { { 10, 20 } } } },
+    [301] = { 16, "Herbalism Trainer", "H", 1497, { [1497] = { { 11, 21 } } } },
+    [302] = { 16, "First Aid Trainer", "H", 1497, { [1497] = { { 12, 22 } } } },
+    [303] = { 16, "Cooking Trainer", "H", 1637, { [1637] = { { 13, 23 } } } },
+    [304] = { 4096, "Auctioneer", "H", 1497, { [1497] = { { 14, 24 } } } },
+    [305] = { 4, "Priest Trainer", "H", 85, { [85] = { { 1, 2 } } } }, -- pas de bit maitre : ignore
+    [306] = { 16, "Priest Trainer", nil, 85, { [85] = { { 1, 2 } } } }, -- hostile : ecarte
+    [307] = { 16, "Junior Herbalism Trainer", "AH", 85, { [85] = { { 15, 25 } } } },
+    [308] = { 16, "Priest Trainer", "H", 1497, { [1497] = { { -1, -1 } } } }, -- instance : pas de point
+  }
+end
+function mock.qinit()
+  mock.qnpcs, mock.qver, mock.qboom, mock.qreads, mock.ah, mock.ahBoom = qDefaults(), "1.0.11", nil, 0, { [2589] = { 120, 3 } }, nil
+end
+mock.qinit()
+local function qIds() local t = {} for i = 1, 450 do t[i] = i end return t end
+local function qGet(id, key)
+  mock.qreads = (mock.qreads or 0) + 1
+  if mock.qboom then error("boom") end
+  local n = mock.qnpcs[id]
+  if not n then return key == "npcFlags" and 0 or nil end
+  return n[NPC_KEYS[key]]
+end
+LibQuestieDB = {
+  RequireContract = function(v) if v <= 4 then return true end return false, "trop recent" end,
+  Enum = { npcFlags = { TRAINER = 16, AUCTIONEER = 4096 }, zoneIDs = { UNDERCITY = 1497, ORGRIMMAR = 1637, THUNDER_BLUFF = 1638 } },
+  Npc = { Get = qGet, GetAllIds = function() return qIds() end },
+  Quest = { Get = function(id, key) if mock.qboom then error("boom") end if id == 6561 then return key == "name" and "Quete" or nil end end },
+}
+-- mock.ah = { [itemID] = { prix, age } } ; mock.ahBoom = l'API leve une erreur
+Auctionator = { API = { v1 = {
+  GetAuctionPriceByItemID = function(caller, id) assert(type(caller) == "string") if mock.ahBoom then error("boom") end local e = (mock.ah or {})[id] return e and e[1] end,
+  GetAuctionAgeByItemID = function(caller, id) assert(type(caller) == "string") local e = (mock.ah or {})[id] return e and e[2] end,
+} } }
 C_EncounterJournal = {}
 function EJ_GetNumTiers() return 2 end
 function EJ_GetTierInfo(i) return "Palier" .. i end
@@ -248,7 +293,7 @@ C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 UiMapPoint C_SuperTrack C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
-EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex
+EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end

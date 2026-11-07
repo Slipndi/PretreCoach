@@ -6,6 +6,7 @@
 ## Version: 0.9.0
 ## Category: WoW Forever
 ## IconTexture: Interface\Icons\Spell_Shadow_ShadowWordPain
+## OptionalDeps: Questie, QuestieDB, Auctionator
 ## SavedVariablesPerCharacter: PretreCoachDB
 ## AddonCompartmentFunc: PretreCoach_OnCompartmentClick
 
@@ -21,6 +22,8 @@ Data\Objectives.lua
 Data\Undead.lua
 Secrets.lua
 Core.lua
+Ext\Questie.lua
+Ext\Auctionator.lua
 Calc.lua
 State.lua
 Timers.lua

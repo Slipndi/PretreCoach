@@ -284,6 +284,8 @@ local function suite(label)
   local function probeText() suiteSlash("probe") return mock.lastText end
   local absent = mock.noSecrets -- passe « absentes »
   check("probe : carte, metiers, sacs, journal, addons (APIs presentes ou absentes)", function()
+    local lib, ah = LibQuestieDB, Auctionator -- ce test releve des addons non installes
+    LibQuestieDB, Auctionator = nil, nil
     mock.recipes, mock.sellPrice = 5, 7
     mock.fire("TRADE_SKILL_SHOW")
     local t = probeText()
@@ -306,6 +308,7 @@ local function suite(label)
       assert(t:find("Questie : non installé", 1, true) and t:find("Auctionator : non installé", 1, true))
       assert(t:find("LibQuestieDB : non installé", 1, true) and t:find("Auctionator.API.v1.GetAuctionPriceByItemID : non installé", 1, true))
     end
+    LibQuestieDB, Auctionator = lib, ah
     mock.fire("TRADE_SKILL_CLOSE")
   end)
   check("probe : position illisible, fenetre de metier non ouverte", function()
@@ -2866,6 +2869,137 @@ local function suite(label)
     N.Fire("STATE", { "x" })
     assert(got == 1 and #mock.errors == 1, "le suivant doit s'executer, l'erreur partir au gestionnaire")
     mock.errors = {}
+  end)
+
+  -- L14 : ponts Questie et Auctionator (addon neuf et mock remis a zero a chaque etape)
+  local function qboot(db)
+    mock.reset()
+    local n = loadAddon()
+    PretreCoachDB = db or {}
+    mock.fire("ADDON_LOADED", ADDON)
+    return n
+  end
+  local function drain() for _ = 1, 20 do if #mock.timers == 0 then return end mock.flushTimers() end error("minuteurs sans fin") end
+  local function same(t, ...) local e = { ... } assert(#t == #e, "attendu " .. table.concat(e, ",") .. ", recu " .. table.concat(t, ",")) for i, v in ipairs(e) do assert(t[i] == v) end end
+
+  check("Ponts : Questie et Auctionator absents, rien ne plante", function()
+    local lib, ah = LibQuestieDB, Auctionator
+    LibQuestieDB, Auctionator = nil, nil
+    local ok, err = pcall(function()
+      local n = qboot()
+      assert(n.Q.Available() == false and n.AH.Available() == false)
+      assert(n.Q.Quest(1, "name") == nil and n.Q.Npc(1, "name") == nil and n.Q.Where(375) == nil)
+      assert(n.Q.StartIndex() == false and n.Q.Nearest("PRIEST") == nil and n.db.qindex == nil)
+      assert(n.AH.Price(2589) == nil and n.AH.Age(2589) == nil)
+      mock.fire("PLAYER_LOGIN"); drain()
+      assert(n.db.qindex == nil)
+    end)
+    LibQuestieDB, Auctionator = lib, ah
+    assert(ok, err)
+  end)
+
+  check("Ponts : contrat refuse = absent", function()
+    if not LibQuestieDB then return end
+    local keep = LibQuestieDB.RequireContract
+    LibQuestieDB.RequireContract = function() return false, "trop vieux" end
+    local ok, err = pcall(function() assert(qboot().Q.Available() == false) end)
+    LibQuestieDB.RequireContract = keep
+    assert(ok, err)
+  end)
+
+  check("Ponts : les appels qui plantent sont rattrapes", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    mock.qboom, mock.ahBoom = true, true
+    assert(n.Q.Available() and n.Q.Npc(375, "name") == nil and n.Q.Quest(6561, "name") == nil and n.Q.Where(375) == nil)
+    assert(n.AH.Price(2589) == nil and n.AH.Age(2589) == nil)
+    assert(n.Q.StartIndex() == true); drain() -- chaque lecture plante : index vide, pas d'erreur
+    assert(#n.db.qindex.trainers.PRIEST == 0)
+    mock.qboom, mock.ahBoom = nil, nil
+  end)
+
+  check("Auctionator : Price et Age", function()
+    if not Auctionator then return end
+    local n = qboot()
+    assert(n.AH.Available() and n.AH.Price(2589) == 120 and n.AH.Age(2589) == 3)
+    assert(n.AH.Price(1) == nil and n.AH.Age(1) == nil and n.AH.Price("x") == nil and n.AH.Price(nil) == nil)
+    mock.ah = nil
+    assert(n.AH.Price(2589) == nil, "base vide : nil sans planter")
+  end)
+
+  check("Questie : Where (pourcentage 0-100 tel quel, instance ignoree)", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    assert(n.Q.Quest(6561, "name") == "Quete")
+    local w = n.Q.Where(375)
+    assert(w.areaID == 1497 and w.uiMapID == nil and w.x == 52.3 and w.y == 41.2, "x et y restent en pourcentage")
+    assert(n.Q.Where(377).areaID == 85 and n.Q.Where(308) == nil and n.Q.Where(1) == nil and n.Q.Where(999) == nil)
+  end)
+
+  check("Questie : index par morceaux, QINDEX, roles et filtre de faction", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    local fired = 0
+    n.Listen("QINDEX", function() fired = fired + 1 end)
+    assert(n.Q.StartIndex() == true and n.Q.StartIndex() == false, "un seul index a la fois")
+    if C_Timer then
+      mock.flushTimers(); assert(n.db.qindex == nil and fired == 0, "morceau 1 sur 3")
+      mock.flushTimers(); assert(n.db.qindex == nil, "morceau 2 sur 3")
+    end
+    drain()
+    local q = n.db.qindex
+    assert(fired == 1 and q.ver == "1.0.11")
+    same(q.trainers.PRIEST, 308, 375, 377) -- 376 Alliance, 305 sans bit maitre, 306 hostile : ecartes
+    same(q.trainers.ALCHEMY, 300); same(q.trainers.HERBALISM, 301, 307); same(q.trainers.FIRSTAID, 302); same(q.trainers.COOKING, 303)
+    same(q.auctioneers, 304)
+  end)
+
+  check("Questie : l'index se lance au PLAYER_LOGIN apres un delai", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    mock.fire("PLAYER_LOGIN"); drain()
+    assert(n.db.qindex and n.db.qindex.ver == "1.0.11")
+  end)
+
+  check("Questie : pause en combat, reprise apres", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    assert(n.Q.StartIndex())
+    mock.setCombat(true)
+    mock.flushTimers(); mock.flushTimers()
+    assert(mock.qreads == 0 and n.db.qindex == nil, "aucune lecture en combat")
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED"); drain()
+    assert(n.db.qindex and #n.db.qindex.trainers.PRIEST == 3, "termine apres le combat")
+  end)
+
+  check("Questie : cache reutilise, reconstruit si la version change", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    n.Q.StartIndex(); drain()
+    local saved = n.db
+    mock.qreads = 0
+    local n2 = qboot(saved)
+    assert(n2.Q.StartIndex() == false and mock.qreads == 0 and n2.db.qindex.ver == "1.0.11", "cache reutilise")
+    mock.qver = "1.0.12"
+    local n3 = qboot(saved)
+    assert(n3.Q.StartIndex() == true); drain()
+    assert(n3.db.qindex.ver == "1.0.12" and mock.qreads > 0, "reconstruit")
+  end)
+
+  check("Questie : Nearest prefere la zone du joueur, puis une capitale Horde", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    assert(n.Q.Nearest("PRIEST") == nil, "pas d'index : nil")
+    n.Q.StartIndex(); drain()
+    local id, w = n.Q.Nearest("PRIEST", nil, 85)
+    assert(id == 377 and w.areaID == 85, "meme zone")
+    assert(n.Q.Nearest("PRIEST") == 375, "sinon Fossoyeuse")
+    assert(n.Q.Nearest("COOKING", nil, 85) == 303, "Orgrimmar")
+    assert(n.Q.Nearest("HERBALISM", nil, 85) == 307 and n.Q.Nearest("HERBALISM", nil, 999) == 301)
+    assert(n.Q.Nearest("AUCTIONEER") == 304 and n.Q.Nearest("INCONNU") == nil)
+    n.db.qindex.trainers.ALCHEMY = { 377 }
+    assert(n.Q.Nearest("ALCHEMY", nil, 999) == nil, "ni meme zone ni capitale : rien")
   end)
 end
 
