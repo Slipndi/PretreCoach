@@ -178,16 +178,46 @@ function Prof.Read()
   end
 end
 
+-- Seule fonction d'argent de l'addon : « 1[or] 20[argent] », zéros omis (0 = « 0[cuivre] »). Valeur illisible : « ? ».
+local COIN = { "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t", "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t", "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t" }
 function Prof.Money(c)
+  if type(c) ~= "number" or S.IsSecret(c) then return "?" end
   if GetCoinTextureString then
     local ok, s = pcall(GetCoinTextureString, c)
-    if ok and type(s) == "string" then return s end
+    if ok and type(s) == "string" and s:find("|T", 1, true) then return s end
   end
+  c = math.floor(math.abs(c))
   local po, pa, pc, t = math.floor(c / 10000), math.floor(c / 100) % 100, c % 100, {}
-  if po > 0 then t[#t + 1] = po .. " po" end
-  if pa > 0 then t[#t + 1] = pa .. " pa" end
-  if pc > 0 or #t == 0 then t[#t + 1] = pc .. " pc" end
+  if po > 0 then t[#t + 1] = po .. COIN[1] end
+  if pa > 0 then t[#t + 1] = pa .. COIN[2] end
+  if pc > 0 or #t == 0 then t[#t + 1] = pc .. COIN[3] end
   return table.concat(t, " ")
+end
+
+-- Icône d'objet inline devant le nom ; nom seul si l'icône est illisible.
+local function ico(id, name)
+  if not id then return name end
+  local icon
+  if C_Item and C_Item.GetItemIconByID then
+    local ok, v = pcall(C_Item.GetItemIconByID, id)
+    if ok then icon = v end
+  end
+  if not icon and C_Item and C_Item.GetItemInfoInstant then
+    local ok, _, _, _, _, v = pcall(C_Item.GetItemInfoInstant, id)
+    if ok then icon = v end
+  end
+  if type(icon) == "number" and icon > 0 or type(icon) == "string" and icon ~= "" then
+    if S.IsSecret(icon) then return name end
+    return "|T" .. icon .. ":14:14|t " .. name
+  end
+  return name
+end
+
+-- Marge : verte si positive, rouge si négative, sans signe collé aux icônes.
+local function margin(m)
+  local col = m > 0 and "|cff40ff40" or m < 0 and "|cffff4040" or nil
+  local s = Prof.Money(math.abs(m))
+  return col and (col .. s .. "|r") or s
 end
 
 local function itemName(id)
@@ -205,7 +235,8 @@ function Prof.Text(line)
   end
   local s = L.PROF_CRAFT_LINE:format(top.name or "?", L["PROF_C_" .. top.color], top.skillUps)
   if top.cost then s = s .. L.PROF_COST:format(Prof.Money(top.cost)) end
-  if top.margin then s = s .. L.PROF_MARGIN:format((top.margin >= 0 and "+" or "-") .. Prof.Money(math.abs(top.margin))) end
+  if top.value then s = s .. L.PROF_VALUE:format(Prof.Money(top.value)) end
+  if top.margin then s = s .. L.PROF_MARGIN:format(margin(top.margin)) end
   if not top.craftable and top.missing and #top.missing > 0 then
     local t = {}
     for i, m in ipairs(top.missing) do t[i] = m.n .. "x " .. itemName(m.itemID) end
@@ -213,6 +244,182 @@ function Prof.Text(line)
   end
   return s
 end
+
+------------------------------------------------------------------------
+-- Plan de montee (Data/ProfPlan.lua) : etape du rang actuel en checklist didactique. Texte seulement (Regle 0).
+-- done = true / false / nil (nil = illisible ou inconnu : on ne coche rien et on n'invente aucun compte).
+------------------------------------------------------------------------
+local function count(id)
+  if not id then return nil end
+  local n = S.Get((C_Item and C_Item.GetItemCount) or GetItemCount, id)
+  return type(n) == "number" and n or nil
+end
+
+local function zoneName(id)
+  local info = S.Get(C_Map and C_Map.GetMapInfo, id)
+  local n = type(info) == "table" and field(info, "name")
+  return type(n) == "string" and n or ("zone " .. id)
+end
+
+local function stepFor(plan, rank)
+  rank = math.max(rank, 1)
+  for _, x in ipairs(plan.steps) do if rank >= x.from and rank < x.to then return x end end
+  return plan.steps[#plan.steps]
+end
+
+local function knownRecipe(adv, name)
+  for _, e in ipairs(adv and adv.list or {}) do if e.name == name then return e end end
+end
+
+local function names(t, sep) return table.concat(t, sep or ", ") end
+
+function Prof.Steps(line)
+  local plan = D.ProfPlan and D.ProfPlan[line]
+  local p = type(State.profs) == "table" and State.profs[line]
+  if not plan or not p then return nil end
+  local rank, max = p.rank or 0, p.max or 0
+  local step = stepFor(plan, rank)
+  local pname = D.Professions[line] and D.Professions[line].name or tostring(line)
+  local title
+  if step.recipe then title = L.PROF_STEP_TITLE_CRAFT:format(pname, rank, max, step.recipe)
+  elseif step.herbs then title = L.PROF_STEP_TITLE_HERB:format(pname, rank, max, names(step.herbs, ", "))
+  else title = L.PROF_STEP_TITLE_NOTE:format(pname, rank, max) end
+  local todo = {}
+  local function add(kind, text, done) todo[#todo + 1] = { kind = kind, text = text, done = done } end
+  local adv = Get(line)
+
+  if rank >= max - 5 then
+    for _, t in ipairs(Calc.ProfessionTodo(State.level, State.profs, D.Professions) or {}) do
+      if t.skillLine == line then
+        local m = plan.masters and plan.masters[t.rank.name]
+        add("rank", m and L.PROF_STEP_RANK:format(t.rank.name, m) or L.PROF_STEP_RANK_ANY:format(t.rank.name), false)
+      end
+    end
+  end
+  if step.buy then
+    local b = step.buy
+    local known = knownRecipe(adv, b.recipe) and true or nil
+    add("buy", L.PROF_STEP_BUY:format(b.item or ("Recette : " .. b.recipe), b.where) .. (b.price and (" (" .. Prof.Money(b.price) .. ")") or ""), known)
+  end
+  if step.extra then add("extra", step.extra) end
+  if step.comps then
+    local left = math.max(1, math.ceil(step.crafts * (step.to - math.min(math.max(rank, step.from), step.to)) / (step.to - step.from)))
+    local parts, vendors, all = {}, {}, true
+    for _, c in ipairs(step.comps) do
+      local need, have = c.n * left, count(c.id)
+      local nm = ico(c.id, c.name)
+      parts[#parts + 1] = have and L.PROF_STEP_HAVE:format(need, nm, have) or ("%d %s"):format(need, nm)
+      if c.vendor then vendors[#vendors + 1] = nm end
+      if have == nil then all = nil elseif have < need and all then all = false end
+    end
+    local text = L.PROF_STEP_GATHER:format(names(parts))
+    if #vendors > 0 then text = text .. L.PROF_STEP_VENDOR:format(names(vendors, " et ")) end
+    add("gather", text, all)
+    add("craft", L.PROF_STEP_CRAFT:format(left, step.recipe, step.to))
+  end
+  if step.note then add("note", step.note) end
+  if step.herbs then
+    local z = {}
+    for i, id in ipairs(step.zones or {}) do if i <= 3 then z[#z + 1] = zoneName(id) end end
+    add("herb", L.PROF_STEP_HERB:format(names(step.herbs, ", "), names(z, " ou ")))
+  end
+  local top = adv and adv.list and adv.list[1]
+  if top and top.name and top.name ~= step.recipe and (top.color == "orange" or top.color == "yellow") then
+    add("live", L.PROF_STEP_LIVE:format(top.name, L["PROF_C_" .. top.color]))
+  end
+  return { title = title, short = title:sub(#pname + 2), todo = todo, step = step }
+end
+
+-- Texte court pour la carte : titre + premiere action non faite (2 lignes max), ou le conseil « tes sacs » si une
+-- fabrication fait monter la competence et que rien ne bloque (rang chez le maitre).
+function Prof.StepsText(line)
+  local s = Prof.Steps(line)
+  if not s then return nil end
+  local first
+  for _, a in ipairs(s.todo) do if a.done ~= true then first = a break end end
+  if not (first and first.kind == "rank") then
+    for _, e in ipairs(Prof.Craftable()) do
+      if e.line == line and e.skillUp then return s.short .. "\n" .. Prof.BagShort(e) end
+    end
+  end
+  return first and (s.short .. "\n" .. first.text) or s.short
+end
+
+------------------------------------------------------------------------
+-- Crafts possibles avec les composants NON marchands des sacs ; les fioles, fils, etc. (vendor = true) sont a acheter.
+-- Entree : { line, recipe, n, with = { noms }, buy = { { name, qty, cost } }, skillUp = true|nil, confirm = true|nil }
+-- Composant non marchand illisible (secret, API absente) : recette ignoree, jamais de faux compte.
+------------------------------------------------------------------------
+local FRESH = 25 -- recettes du plan plus de 25 points sous le rang : ignorees (grises)
+
+local function compute()
+  local out = {}
+  if type(State.profs) ~= "table" then return out end
+  for line, plan in pairs(D.ProfPlan or {}) do
+    local p = State.profs[line]
+    local adv = p and Get(line)
+    for _, st in ipairs(p and plan.steps or {}) do
+      if st.recipe and st.comps and (p.rank or 0) >= st.from and st.to > (p.rank or 0) - FRESH then
+        local n, with, ok = math.huge, {}, true
+        for _, c in ipairs(st.comps) do
+          if not c.vendor then
+            local have = count(c.id)
+            if have == nil then ok = false break end
+            n = math.min(n, math.floor(have / c.n))
+            with[#with + 1] = ico(c.id, c.name)
+          end
+        end
+        if ok and #with > 0 and n >= 1 then
+          local e = { line = line, recipe = st.recipe, n = n, with = with, buy = {} }
+          local known = knownRecipe(adv, st.recipe)
+          if known then e.skillUp = (known.color == "orange" or known.color == "yellow") or nil
+          else e.confirm = true e.skillUp = (p.rank or 0) < st.to or nil end
+          for _, c in ipairs(st.comps) do
+            if c.vendor then
+              local qty = n * c.n
+              local have = count(c.id)
+              if have then qty = math.max(0, qty - have) end
+              if qty > 0 then e.buy[#e.buy + 1] = { name = c.name, id = c.id, qty = qty, cost = c.price and c.price * qty or nil } end
+            end
+          end
+          out[#out + 1] = e
+        end
+      end
+    end
+  end
+  table.sort(out, function(a, b)
+    if (a.skillUp or false) ~= (b.skillUp or false) then return a.skillUp or false end
+    if a.n ~= b.n then return a.n > b.n end
+    if a.line ~= b.line then return a.line < b.line end
+    return a.recipe < b.recipe
+  end)
+  return out
+end
+
+-- Hors combat : recalcul a chaque appel (quelques GetItemCount) et a BAG_UPDATE_DELAYED ; en combat : dernier resultat connu.
+local last = {}
+function Prof.Craftable()
+  if not InCombatLockdown() then last = compute() end
+  return last
+end
+
+local function buyList(e)
+  local t = {}
+  for i, b in ipairs(e.buy) do t[i] = ("%d %s"):format(b.qty, ico(b.id, b.name)) .. (b.cost and (" (≈ " .. Prof.Money(b.cost) .. ")") or "") end
+  return names(t)
+end
+
+function Prof.BagText(e)
+  local s = L.PROF_BAG:format(e.n, e.recipe, names(e.with, " et "))
+  if #e.buy > 0 then s = s .. L.PROF_BAG_BUY:format(buyList(e)) end
+  return e.confirm and (s .. L.PROF_BAG_CONFIRM) or s
+end
+
+function Prof.BagShort(e)
+  return L.PROF_BAG_SHORT:format(e.n, e.recipe) .. (#e.buy > 0 and L.PROF_BAG_SHORT_BUY:format(buyList(e)) or "")
+end
+
+ns.On("BAG_UPDATE_DELAYED", function() if not InCombatLockdown() then Prof.Craftable() end end)
 
 -- Lecture 0,3 s apres l'evenement, jamais en combat (reprise a la fin du combat).
 local waiting, deferred = false, false

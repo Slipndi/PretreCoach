@@ -14,6 +14,9 @@ local function check(name, fn)
   mock.errors = {}
 end
 
+-- Pieces inline (Prof.Money) : o = or, a = argent, c = cuivre
+local MI = { o = "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t", a = "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t", c = "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t" }
+
 local ADDON = "PretreCoach"
 local files = {}
 for line in io.lines(root .. "/" .. ADDON .. "/" .. ADDON .. ".toc") do
@@ -1181,10 +1184,10 @@ local function suite(label)
     assert(#r == inRange + #D2.DungeonTips and r[1].highlight and not r[#r].highlight
       and r[#r].text == D2.DungeonTips[#D2.DungeonTips], "donjons de la tranche puis conseils")
     r = G.Reference("profs")
-    assert(#r == 3, "trois metiers")
+    assert(#r == 1, "seul le metier actif (Herboristerie) est liste")
     local byText = {}
     for _, p in ipairs(r) do byText[p.text] = p end
-    assert(byText["Herboristerie"].sub == "10/75" and byText["Alchimie"].sub == "non apprise" and byText["Alchimie"].highlight)
+    assert(byText["Herboristerie"].sub:find("^Herboristerie 10/75") and byText["Alchimie"] == nil)
     r = G.Reference("undead")
     assert(#r == #D2.Undead and r[1].highlight and r[#r].highlight == (20 >= D2.Undead[#D2.Undead].level))
     local anyApi = IsPlayerSpell or IsSpellKnown or (C_SpellBook and C_SpellBook.IsSpellInSpellBook)
@@ -2607,12 +2610,12 @@ local function suite(label)
       assert(s and s.level == 12 and s.cost == 12000 and s.category == "available", "service memorise")
       assert(n.db.trainer["Sort1|"].category == "used" and n.db.trainer["Sort3|"].category == "unavailable")
       local P = n.Training.Panel()
-      assert(P and P:IsShown() and P.body.text == "Sort2 (Rang 2) : " .. (GetCoinTextureString and "COIN:12000" or "1 po 20 pa"), "panneau : 1 service")
+      assert(P and P:IsShown() and P.body.text == "Sort2 (Rang 2) : " .. ("1" .. MI.o .. " 20" .. MI.a), "panneau : 1 service")
       assert(P.pt[1] == "CENTER", "sans ClassTrainerFrame : au centre")
       GetCoinTextureString = nil
       local f = CreateFrame("Frame", "ClassTrainerFrame")
       mock.fire("TRAINER_UPDATE")
-      assert(P.body.text == "Sort2 (Rang 2) : 1 po 20 pa", P.body.text)
+      assert(P.body.text == "Sort2 (Rang 2) : 1" .. MI.o .. " 20" .. MI.a, P.body.text)
       assert(P.pt[2] == f, "ancre a cote du cadre du maitre")
       mock.fire("TRAINER_CLOSED")
       assert(not P:IsShown(), "ferme avec le maitre")
@@ -2762,7 +2765,7 @@ local function suite(label)
     local t = pcToasts(o, "^pc:prof:craft")
     assert(#t == 1 and t[1].text == "Alchimie : fabrique Recette101 pour monter", "un toast")
     local sub = rows()["Alchimie"].sub
-    assert(sub:find("Fabrique : Recette101 (orange, +1 pt) - coût COIN:100 - marge +COIN:60", 1, true), sub)
+    assert(sub:find("Fabrique : Recette101 (orange, +1 pt)  ·  Coût 1" .. MI.a .. "  ·  Vente HdV 1" .. MI.a .. " 60" .. MI.c .. "  ·  Marge |cff40ff40" .. "60" .. MI.c .. "|r", 1, true), sub)
     assert(sub:find("Il te manque : 2x Baguette 10", 1, true), sub)
     open() -- deuxieme passe identique : ni doublon ni changement
     assert(#pcToasts(o, "^pc:prof:craft") == 1 and n.Prof.Advice[171] ~= adv and n.Prof.Advice[171].list[1].recipeID == 101)
@@ -2777,18 +2780,32 @@ local function suite(label)
     t = pcToasts(o, "^pc:prof:craft")
     assert(#t == 2 and t[2].text == "Alchimie : fabrique Recette104 pour monter", "toast quand la meilleure recette change")
     sub = rows()["Alchimie"].sub
-    assert(sub:find("Fabrique : Recette104 (orange, +1 pt)", 1, true) and not sub:find("coût", 1, true) and not sub:find("marge", 1, true), sub)
+    assert(sub:find("Fabrique : Recette104 (orange, +1 pt)", 1, true) and not sub:find("Coût", 1, true) and not sub:find("Marge", 1, true), sub)
     -- fenetre pas prete : rien de lu
     mock.tsNotReady = true
     n.Prof.Advice[171] = nil
     n.db.prof = nil
     open()
     assert(n.Prof.Get(171) == nil, "fenetre non prete")
-    -- format monetaire maison si GetCoinTextureString est absente
+    -- format monetaire unique, icones de pieces, zeros omis ; GetCoinTextureString gardee seulement si elle rend des |T
     local g = GetCoinTextureString
-    GetCoinTextureString = nil
-    assert(n.Prof.Money(12000) == "1 po 20 pa" and n.Prof.Money(0) == "0 pc" and n.Prof.Money(5) == "5 pc")
+    for _, f in ipairs({ g or false, false }) do
+      GetCoinTextureString = f or nil
+      local m = n.Prof.Money
+      assert(m(12000) == "1" .. MI.o .. " 20" .. MI.a and m(10000) == "1" .. MI.o and m(10005) == "1" .. MI.o .. " 5" .. MI.c, "or seul, or + argent, or + cuivre")
+      assert(m(5) == "5" .. MI.c and m(0) == "0" .. MI.c and m(100) == "1" .. MI.a and m(mock.SECRET) == "?", "cuivre seul, zero, secret")
+    end
+    GetCoinTextureString = function(c) return c .. "|TInterface\\X:0|t" end
+    assert(n.Prof.Money(7) == "7|TInterface\\X:0|t", "chaine du jeu avec |T conservee")
     GetCoinTextureString = g
+    -- marge : verte si positive, rouge si negative, aucun signe colle aux icones
+    local adv2 = { list = { { name = "R", color = "orange", skillUps = 1, cost = 100, value = 50, margin = -50 } } }
+    n.Prof.Advice[171] = adv2
+    local txt = n.Prof.Text(171)
+    assert(txt:find("Marge |cffff4040" .. "50" .. MI.c .. "|r", 1, true) and not txt:match("Marge (.*)"):find("[%+%-]%d"), txt)
+    adv2.list[1].margin = 0
+    assert(n.Prof.Text(171):find("Marge 0" .. MI.c, 1, true) and not n.Prof.Text(171):find("|cff40ff40", 1, true), "marge nulle : sans couleur")
+    n.Prof.Advice[171] = nil
     mock.recipes = nil
   end)
 
@@ -2827,7 +2844,7 @@ local function suite(label)
     local G = n.UI.GuideWin
     G.win.tabs[#TABS].scripts.OnClick(G.win.tabs[#TABS])
     assert(n.db.guide.tab == "sell" and G.used == 6, "onglet Vente : totaux + 5 piles")
-    assert(G.rows[1].text.text:find("À l'HdV : COIN:2300  ·  Au marchand : COIN:75", 1, true), G.rows[1].text.text)
+    assert(G.rows[1].text.text:find("À l'HdV : 23" .. MI.a .. "  ·  Au marchand : 75" .. MI.c, 1, true), G.rows[1].text.text)
     assert(G.rows[2].text.text:find("Hôtel des ventes", 1, true) and G.rows[3].sub.text:find("prix ancien", 1, true))
     assert(G.rows[6].sub.text:find("sert peut-être à ton métier", 1, true))
     -- sans Auctionator : seuls les conseils Marchand, et la note
@@ -3743,10 +3760,12 @@ local function suite(label)
     n.Guide.Evaluate = function() return {} end -- tout est fait
     local goals = n.Guide.Goals()
     assert(goals[1].e == nil and (goals[1].text:find("Monte de niveau", 1, true) or goals[1].text:find("Continue", 1, true)), goals[1].text)
-    assert(goals[2].e == nil and goals[2].text:find("rang Compagnon", 1, true), "rang a prendre chez le maitre : " .. goals[2].text)
-    assert(goals[3].text == n.Prof.Text(171), "conseil de recette : " .. goals[3].text)
+    assert(goals[2].e == nil and goals[2].text:find("Cueille", 1, true), "plan de montee : " .. goals[2].text)
+    n.State.profs[182].rank = 72
+    assert(n.Guide.Goals()[2].text:find("rang Compagnon", 1, true), "rang a prendre chez le maitre : " .. n.Guide.Goals()[2].text)
+    assert(goals[3].text == n.Prof.StepsText(171) and goals[3].text:find("Réunis", 1, true), "plan alchimie : " .. goals[3].text)
     n.State.profs[182].rank = 10
-    assert(n.Guide.Goals()[2].text == n.L.GUIDE_HERB_GATHER, "herboristerie : cueillette")
+    assert(n.Guide.Goals()[2].text:find("Cueille", 1, true), "herboristerie : cueillette")
   end)
 
   check("GuideWindow : carte et onglet Maintenant = les entrees de Goals", function()
@@ -3759,7 +3778,7 @@ local function suite(label)
     local want = { "Expérience", "Herboristerie", "Alchimie" }
     for i, g in ipairs(goals) do
       assert(rows[i].shown and rows[i].label.text == want[i], "libelle " .. i)
-      assert(rows[i].text.text:find(g.text, 1, true) and not rows[i].text.text:find(" : ", 1, true), "texte sans prefixe " .. i)
+      assert(rows[i].text.text:find(g.text, 1, true) and not rows[i].text.text:find("^" .. want[i]), "texte sans prefixe " .. i)
       assert(rows[i].go.shown ~= true or i == 1, "Repere seulement sur XP")
     end
     assert(rows[2].icon.tex == "tex2366", "icone du metier via C_Spell.GetSpellTexture")
@@ -3959,7 +3978,8 @@ local function suite(label)
       end
     end
     g = xpFor(n, "spells")
-    assert(g.text:find(" : " .. n.Training.Coin(total) .. "$", 1), g.text)
+    local tail = " : " .. n.Training.Coin(total)
+    assert(g.text:sub(-#tail) == tail, g.text)
     knows(nil)
   end)
 
@@ -3990,7 +4010,8 @@ local function suite(label)
     for _, sp in ipairs(n.Data.Spells) do if sp.key == "FEARWARD" then name = sp.name end end
     n.db.trainer[name .. "|"] = { cost = 12000, category = "available" }
     g = xpFor(n, "fearward")
-    assert(g.text:find(" : " .. n.Training.Coin(12000) .. "$"), g.text)
+    local tail12 = " : " .. n.Training.Coin(12000)
+    assert(g.text:sub(-#tail12) == tail12, g.text)
   end)
 
   check("Guide XP : baguette (nom, source, prix HdV) et baguette superieure", function()
@@ -4070,6 +4091,188 @@ local function suite(label)
     n.ToggleGuide()
     n.Fire("GUIDE")
     assert(G.rows[1].sub.text:find(goal.detail, 1, true), "Maintenant : detail " .. tostring(G.rows[1].sub.text))
+  end)
+
+  -- Plan de montee par metier (Prof.Steps) et crafts possibles avec les sacs (Prof.Craftable)
+  local function planState(n, profs, level)
+    setState(n, { level = level or 40, profs = profs })
+    mock.items = nil
+    n.Prof.Advice = {}
+    n.db.prof = nil
+  end
+  local function todoText(s) local t = {} for i, a in ipairs(s.todo) do t[i] = a.text end return table.concat(t, "\n") end
+  local function kinds(s) local t = {} for i, a in ipairs(s.todo) do t[i] = a.kind end return table.concat(t, ",") end
+  local function gatherOf(n, line) for _, a in ipairs(n.Prof.Steps(line).todo) do if a.kind == "gather" then return a end end end
+
+  check("Prof.Steps : etape choisie selon le rang, titre, maitre quand le plafond bloque", function()
+    local n = fresh().n
+    planState(n, { [171] = { rank = 52, max = 75 } })
+    local s = n.Prof.Steps(171)
+    assert(s.title == "Alchimie 52/75 : fais Élixir de défense mineure", s.title)
+    assert(not kinds(s):find("rank", 1, true), "plafond loin : pas de maitre")
+    n.State.profs[171] = { rank = 3, max = 75 }
+    assert(n.Prof.Steps(171).title:find("Élixir arcanique mineur", 1, true), "debut de tranche")
+    n.State.profs[171] = { rank = 72, max = 75 }
+    s = n.Prof.Steps(171)
+    assert(s.todo[1].kind == "rank" and s.todo[1].text:find("Compagnon", 1, true) and s.todo[1].text:find("Docteur Marsh", 1, true) and s.todo[1].done == false, "maitre d'abord : " .. todoText(s))
+    n.State.level = 5 -- niveau trop bas : le rang n'est pas disponible
+    assert(n.Prof.Steps(171).todo[1].kind ~= "rank")
+    n.State.profs[171] = { rank = 400, max = 300 } -- au-dela du plan : derniere etape
+    assert(n.Prof.Steps(171).step.to == 300)
+    n.State.profs = nil
+    assert(n.Prof.Steps(171) == nil, "metiers illisibles")
+    planState(n, { [171] = { rank = 52, max = 75 } })
+    assert(n.Prof.Steps(999) == nil and n.Prof.Steps(182) == nil, "metier sans plan ou non appris")
+  end)
+
+  check("Prof.Steps : recette a acheter, connue ou non, ligne En direct", function()
+    local n = fresh().n
+    planState(n, { [171] = { rank = 200, max = 225 } })
+    local s = n.Prof.Steps(171)
+    assert(kinds(s):find("^buy"), kinds(s))
+    assert(s.todo[1].text:find("Achète « Recette : Potion de protection contre la nature » chez Bronk", 1, true) and s.todo[1].done == nil, s.todo[1].text)
+    n.Prof.Advice[171] = { list = { { name = "Potion de protection contre la nature", color = "yellow" } } }
+    s = n.Prof.Steps(171)
+    assert(s.todo[1].done == true and not kinds(s):find("live", 1, true), "connue : cochee, pas de doublon En direct")
+    n.Prof.Advice[171] = { list = { { name = "Potion de mana", color = "orange" } } }
+    s = n.Prof.Steps(171)
+    assert(todoText(s):find("En direct : tu peux fabriquer Potion de mana (orange)", 1, true), todoText(s))
+    assert(s.todo[1].done == nil and kinds(s):find("live$"), "recette non listee : inconnue, En direct en dernier")
+    n.Prof.Advice[171] = { list = { { name = "Potion de mana", color = "green" } } }
+    assert(not kinds(n.Prof.Steps(171)):find("live", 1, true), "verte : pas de conseil En direct")
+  end)
+
+  check("Prof.Steps : comptes de composants lisibles, absents, secrets", function()
+    local n = fresh().n
+    planState(n, { [171] = { rank = 10, max = 75 } })
+    mock.items = { [765] = 10, [2447] = 3 }
+    local g = gatherOf(n, 171)
+    if not GetItemCount then
+      assert(g.done == nil and not g.text:find("tu en as", 1, true) and g.text:find("45 Feuillargent", 1, true), "API absente : aucun compte invente")
+      return
+    end
+    assert(g.text:find("45 Feuillargent (tu en as 10)", 1, true) and g.text:find("45 Fiole vide (tu en as 0)", 1, true) and g.done == false, g.text)
+    assert(g.text:find("achète Fiole vide chez un marchand de fournitures", 1, true), g.text)
+    assert(todoText(n.Prof.Steps(171)):find("Fabrique-en ~45 (Élixir de défense mineure) jusqu'à 55", 1, true), todoText(n.Prof.Steps(171)))
+    mock.items = { [765] = 99, [2447] = 99, [3371] = 99 }
+    assert(gatherOf(n, 171).done == true, "tout est la")
+    mock.items = { [765] = mock.SECRET, [2447] = 99, [3371] = 99 }
+    g = gatherOf(n, 171)
+    assert(g.done == nil and g.text:find("45 Feuillargent", 1, true) and not g.text:find("45 Feuillargent (tu en as", 1, true), "secret : rien de coche, pas de faux compte : " .. g.text)
+    local gi = GetItemCount
+    GetItemCount = nil -- API absente
+    g = gatherOf(n, 171)
+    GetItemCount = gi
+    assert(g.done == nil and not g.text:find("tu en as", 1, true), "API absente")
+    mock.items = nil
+  end)
+
+  check("Prof.Steps : herboristerie avec zones (nom lu, repli sur l'ID), secourisme", function()
+    local n = fresh().n
+    planState(n, { [182] = { rank = 10, max = 75 } })
+    mock.mapNames = { [1420] = "Clairières de Tirisfal", [1411] = "Durotar", [1412] = "Mulgore" }
+    local s = n.Prof.Steps(182)
+    assert(s.title == "Herboristerie 10/75 : cueille Pacifique, Feuillargent, Terrestrine", s.title)
+    if not C_Map then
+      assert(todoText(s):find("zone 1420 ou zone 1411 ou zone 1412", 1, true), "API absente : repli sur les ID")
+      return
+    end
+    assert(todoText(s):find("Cueille Pacifique, Feuillargent, Terrestrine dans : Clairières de Tirisfal ou Durotar ou Mulgore", 1, true), todoText(s))
+    mock.unknown.map = { [1420] = true }
+    assert(todoText(n.Prof.Steps(182)):find("zone 1420 ou Durotar", 1, true), "carte inconnue : repli ID")
+    mock.unknown.map = nil
+    mock.mapNames = nil
+    n.State.profs[182] = { rank = 80, max = 150 }
+    assert(n.Prof.Steps(182).step.zones[1] == 1421, "tranche 70-115")
+    planState(n, { [129] = { rank = 160, max = 225 } })
+    s = n.Prof.Steps(129)
+    assert(s.title:find("Bandage en soie", 1, true) and todoText(s):find("Manuel : Secourisme expert", 1, true), todoText(s))
+    n.State.profs[129] = { rank = 224, max = 225 }
+    assert(todoText(n.Prof.Steps(129)):find("Triage", 1, true), "quete Triage pour Artisan : " .. todoText(n.Prof.Steps(129)))
+  end)
+
+  check("Goals : texte d'un metier sur 2 lignes max ; Metiers = metiers actifs seulement", function()
+    local n = fresh().n
+    planState(n, { [182] = { rank = 10, max = 75 }, [171] = { rank = 72, max = 75 }, [129] = { rank = 224, max = 225 } })
+    n.Guide.Evaluate = function() return {} end
+    for _, g in ipairs(n.Guide.Goals()) do
+      if g.kind == "prof" then
+        local _, nl = g.text:gsub("\n", "")
+        assert(nl <= 1 and not g.text:find("^" .. g.label), g.label .. " : " .. g.text)
+      end
+    end
+    local g2 = n.Guide.Goals()[3]
+    assert(g2.line == 171 and g2.text:find("^72/75 : fais Élixir de vigueur mineure\nPrends le rang Compagnon"), g2.text)
+    local r = n.Guide.Reference("profs")
+    assert(#r == 3 and r[1].text == "Secourisme" and r[2].text == "Alchimie" and r[3].text == "Herboristerie", "trois metiers actifs")
+    assert(r[3].sub:find("^Herboristerie 10/75 : cueille") and r[3].sub:find("• Cueille", 1, true), r[3].sub)
+    n.State.profs = { [171] = { rank = 40, max = 75 } }
+    mock.items = { [765] = 99, [2447] = 99, [3371] = 99 }
+    r = n.Guide.Reference("profs")
+    local alch = r[#r]
+    assert(alch.text == "Alchimie" and not r[2] or r[1].text == "Avec tes sacs", "section sacs eventuelle en tete")
+    assert(alch.text == "Alchimie" and (not GetItemCount or alch.sub:find("|cff40ff40✓|r Réunis", 1, true)), "metiers non appris masques, coche verte")
+    for _, row in ipairs(r) do assert(row.text ~= "Herboristerie" and row.text ~= "Secourisme", "metier non appris") end
+    n.State.profs = nil
+    mock.items = nil
+    assert(#n.Guide.Reference("profs") == 3, "metiers illisibles : liste complete, sans checklist")
+  end)
+
+  check("Prof.Craftable : craft avec achat marchand, rien, secret, tri par montee de competence", function()
+    local o = fresh()
+    local n = o.n
+    planState(n, { [171] = { rank = 10, max = 75 } })
+    assert(#n.Prof.Craftable() == 0, "sacs vides : rien de possible")
+    mock.items = { [765] = 4, [2447] = 6 }
+    local list = n.Prof.Craftable()
+    if not GetItemCount then assert(#list == 0, "comptes illisibles : rien d'affirme") return end
+    assert(#list == 2 and list[1].recipe == "Élixir de défense mineure" and list[1].n == 4 and list[1].skillUp and list[1].confirm, "monte la competence d'abord")
+    assert(list[2].recipe == "Élixir arcanique mineur" and list[2].n == 6 and not list[2].skillUp, "grise de tranche : apres")
+    assert(#list[1].buy == 1 and list[1].buy[1].name == "Fiole vide" and list[1].buy[1].qty == 4 and list[1].buy[1].cost == nil, "fioles a acheter, prix inconnu : nil")
+    local text = n.Prof.BagText(list[1])
+    assert(text == "Tu peux faire 4 Élixir de défense mineure avec tes Feuillargent et Pacifique : achète 4 Fiole vide chez un marchand de fournitures (recette à confirmer)", text)
+    local vial = n.Data.ProfPlan[171].steps[2].comps[3] -- Fiole vide (table partagee)
+    vial.price = 4
+    assert(n.Prof.Craftable()[1].buy[1].cost == 16 and n.Prof.BagText(n.Prof.Craftable()[1]):find("(≈ 16" .. MI.c .. ")", 1, true), "prix connu")
+    vial.price = nil
+    mock.items[3371] = 3
+    assert(n.Prof.Craftable()[1].buy[1].qty == 1, "fioles deja portees deduites")
+    mock.items[3371] = 9
+    assert(#n.Prof.Craftable()[1].buy == 0, "rien a acheter")
+    -- ligne de la carte et section de l'onglet
+    mock.items = { [765] = 4, [2447] = 6 }
+    n.Guide.Evaluate = function() return {} end
+    assert(n.Guide.Goals()[2].text:find("\nTes sacs : 4× Élixir de défense mineure (achète 4 Fiole vide)", 1, true), n.Guide.Goals()[2].text)
+    local r = n.Guide.Reference("profs")
+    assert(r[1].text == "Avec tes sacs" and r[1].sub:find("• Tu peux faire 4 Élixir de défense mineure", 1, true), "section en tete de l'onglet")
+    -- couleur lue en direct : verte = ne fait plus monter
+    n.Prof.Advice[171] = { list = { { name = "Élixir de défense mineure", color = "green" } } }
+    list = n.Prof.Craftable()
+    assert(not list[1].skillUp and list[1].recipe == "Élixir arcanique mineur" and list[1].n == 6, "tri : le plus grand nombre si rien ne monte")
+    assert(not n.Guide.Goals()[2].text:find("Tes sacs", 1, true), "pas de ligne sacs sans montee")
+    n.Prof.Advice[171] = nil
+    -- icones d'objet : presentes si lisibles, nom seul sinon
+    mock.icons = { [765] = 135000, [3371] = 134000 }
+    local ic = n.Prof.Craftable()[1]
+    assert(n.Prof.BagText(ic):find("avec tes |T135000:14:14|t Feuillargent et Pacifique", 1, true) and n.Prof.BagText(ic):find("achète 4 |T134000:14:14|t Fiole vide", 1, true), n.Prof.BagText(ic))
+    assert(todoText(n.Prof.Steps(171)):find("|T135000:14:14|t Feuillargent", 1, true), "icone dans les etapes")
+    mock.icons = nil
+    assert(not n.Prof.BagText(n.Prof.Craftable()[1]):find("|T", 1, true) and n.Prof.BagText(n.Prof.Craftable()[1]):find("tes Feuillargent et Pacifique", 1, true), "icone illisible : nom seul")
+    -- secret : recette ignoree, jamais de faux compte
+    mock.items = { [765] = mock.SECRET, [2447] = 6 }
+    list = n.Prof.Craftable()
+    assert(#list == 1 and list[1].recipe == "Élixir arcanique mineur", "composant secret : recette ignoree")
+    mock.items = { [765] = mock.SECRET, [2447] = mock.SECRET }
+    assert(#n.Prof.Craftable() == 0, "tout secret : rien")
+    -- combat : dernier resultat conserve, pas de relecture ; rescan hors combat
+    mock.items = { [765] = 4, [2447] = 6 }
+    mock.fire("BAG_UPDATE_DELAYED")
+    mock.items = nil
+    mock.setCombat(true)
+    mock.fire("BAG_UPDATE_DELAYED")
+    assert(#n.Prof.Craftable() == 2, "combat : resultat memorise")
+    mock.setCombat(false)
+    assert(#n.Prof.Craftable() == 0, "hors combat : relu")
   end)
 end
 

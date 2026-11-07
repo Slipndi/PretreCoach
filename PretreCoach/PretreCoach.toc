@@ -16,6 +16,7 @@ Data\Dungeons.lua
 Data\Milestones.lua
 Data\Gear.lua
 Data\Professions.lua
+Data\ProfPlan.lua
 Data\Spells.lua
 Data\Talents.lua
 Data\Objectives.lua

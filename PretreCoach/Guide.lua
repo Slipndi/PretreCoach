@@ -357,7 +357,9 @@ function Guide.Goals()
     if profs[line] and D.Professions[line] then
       local g = { kind = "prof", line = line, label = D.Professions[line].name }
       g.e = firstTodo(list, function(e) return e.prof == line end)
-      if g.e then
+      g.text = ns.Prof and ns.Prof.StepsText(line)
+      if g.text then -- plan de montee : titre + premiere action non faite
+      elseif g.e then
         g.text = g.e.text
       else
         for _, t in ipairs(todo or {}) do
@@ -446,20 +448,30 @@ function REFERENCE.profs(level)
   for id in pairs(D.Professions) do ids[#ids + 1] = id end
   table.sort(ids)
   local out = {}
+  -- « Avec tes sacs » en tete : crafts possibles avec les composants non marchands portes
+  local bag = {}
+  for i, e in ipairs(ns.Prof and ns.Prof.Craftable() or {}) do if i <= 5 then bag[#bag + 1] = "• " .. ns.Prof.BagText(e) end end
+  if #bag > 0 then out[1] = { text = L.PROF_BAG_HEAD, sub = table.concat(bag, "\n"), highlight = true } end
   for _, id in ipairs(ids) do
     local p = type(State.profs) == "table" and State.profs[id]
     local sub, hi
     if type(State.profs) ~= "table" then
       sub, hi = L.GUIDE_UNKNOWN, false
-    elseif not p then
-      sub, hi = L.GUIDE_NOT_LEARNED, true
-    else
+    elseif p then
       sub, hi = ("%d/%d"):format(p.rank or 0, p.max or 0), false
-      -- Herboristerie (route des herbes par tranche) n'a pas de fenetre de recettes
+      local s = ns.Prof and ns.Prof.Steps(id)
+      if s then
+        -- checklist de l'etape courante : coche verte = fait, point = a faire
+        local t = { s.title }
+        for _, a in ipairs(s.todo) do t[#t + 1] = (a.done == true and "|cff40ff40✓|r " or "• ") .. a.text end
+        sub = table.concat(t, "\n")
+      end
+      -- conseil lu en direct (cout, marge) ; Herboristerie n'a pas de fenetre de recettes
       if ns.Prof and not D.Professions[id].herbs then sub = sub .. "\n" .. ns.Prof.Text(id) end
       for _, t in ipairs(todo or {}) do if t.skillLine == id then hi = true end end
     end
-    out[#out + 1] = { text = D.Professions[id].name, sub = sub, highlight = hi }
+    -- metier non appris : pas de ligne (seuls les metiers actifs sont listes)
+    if p or type(State.profs) ~= "table" then out[#out + 1] = { text = D.Professions[id].name, sub = sub, highlight = hi } end
   end
   return out
 end

@@ -38,16 +38,8 @@ local function spellName(sp, i)
   return type(name) == "string" and name or sp.name
 end
 
--- Prix en or/argent/cuivre : GetCoinTextureString si présent, sinon « 1 po 20 pa ».
-local function coin(c)
-  local s = S.Get(GetCoinTextureString, c)
-  if type(s) == "string" then return s end
-  local parts = {}
-  if c >= 10000 then parts[#parts + 1] = math.floor(c / 10000) .. " po" end
-  if c % 10000 >= 100 then parts[#parts + 1] = math.floor(c % 10000 / 100) .. " pa" end
-  if c % 100 > 0 or #parts == 0 then parts[#parts + 1] = (c % 100) .. " pc" end
-  return table.concat(parts, " ")
-end
+-- Prix : le formateur unique de l'addon est Prof.Money (icônes de pièces), résolu à l'appel (Professions.lua se charge après).
+local function coin(c) return ns.Prof.Money(c) end
 Training.Coin = coin
 
 -- Coût mémorisé du rang (chez le maître) ; le rang est comparé par son numéro (« Rang 2 » ou « Rank 2 », rang 1 = vide).

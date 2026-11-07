@@ -212,6 +212,8 @@ C_Item = { GetItemInfoInstant = function(id)
   if (mock.unknown.item or {})[id] then return nil end
   return id, "Arme", "Baguette", "", 0, (mock.itemClass or {})[id] or 2, (mock.itemSub or {})[id] or (id == 11287 and 19 or 0)
 end,
+  -- mock.icons = { [id] = fileID } ; sans entree : icone illisible
+  GetItemIconByID = function(id) return (mock.icons or {})[id] end,
   -- mock.itemInfo = { [id] = { nom, niveau d'objet, niveau requis, icone } }
   GetItemInfo = function(id)
     local c = (mock.itemInfo or {})[id]
