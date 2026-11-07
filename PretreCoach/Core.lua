@@ -127,6 +127,7 @@ local commands = {
     end
   end,
   probe = function() ns.Probe() end,
+  here = function() ns.Here() end,
   guide = function() if ns.ToggleGuide then ns.ToggleGuide() end end,
   compact = function() if ns.SetCompact then ns.SetCompact() end end,
   debug = function()

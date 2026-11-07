@@ -199,8 +199,8 @@ local function suite(label)
     local function row(i) return m.rows and m.rows[i] end
     ns.ToggleMinimapMenu(b)
     local btns = N.UI.MenuRows()
-    assert(#btns == 8, "8 lignes cliquables")
-    local expect = { "guide", "compact", "", "lock", "reset", "probe", "debug", nil }
+    assert(#btns == 9, "9 lignes cliquables")
+    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", nil }
     for i, e in ipairs(expect) do
       calls = {}
       if not m:IsShown() then ns.ToggleMinimapMenu(b) end
@@ -212,10 +212,10 @@ local function suite(label)
     -- libelles et coches suivent l'etat
     ns.db.locked = false; ns.db.guide.compact = false; ns.db.debug = false
     m:Hide(); ns.ToggleMinimapMenu(b)
-    assert(btns[4].text.text == ns.L.MENU_LOCK and btns[2].check.shown == false and btns[7].check.shown == false)
+    assert(btns[4].text.text == ns.L.MENU_LOCK and btns[2].check.shown == false and btns[8].check.shown == false)
     ns.db.locked = true; ns.db.guide.compact = true; ns.db.debug = true
     m:Hide(); ns.ToggleMinimapMenu(b)
-    assert(btns[4].text.text == ns.L.MENU_UNLOCK and btns[2].check.shown == true and btns[7].check.shown == true)
+    assert(btns[4].text.text == ns.L.MENU_UNLOCK and btns[2].check.shown == true and btns[8].check.shown == true)
     calls = {}; btns[4].btn.scripts.OnClick(btns[4].btn)
     assert(calls[1] == "unlock" and ns.db.locked == false)
     ns.db.guide.compact = false; ns.db.debug = false
@@ -281,6 +281,88 @@ local function suite(label)
     i:SetIcon("x"); i:SetHotkey("1"); i:SetGrayed(true); i:Pulse(); mock.flushTimers()
   end)
   check("probe hors combat", function() SlashCmdList.PRETRECOACH("probe") end)
+  local function probeText() suiteSlash("probe") return mock.lastText end
+  local absent = mock.noSecrets -- passe « absentes »
+  check("probe : carte, metiers, sacs, journal, addons (APIs presentes ou absentes)", function()
+    mock.recipes, mock.sellPrice = 5, 7
+    mock.fire("TRADE_SKILL_SHOW")
+    local t = probeText()
+    for _, h in ipairs({ "Carte et repères", "Métiers (fenêtre)", "Sacs", "Journal de donjon", "Addons optionnels" }) do
+      assert(t:find("== " .. h .. " ==", 1, true), h)
+    end
+    assert(t:find("C_Map.SetUserWaypoint:" .. (absent and "NON" or "oui"), 1, true), "presence waypoint")
+    assert(t:find("C_Container.GetContainerItemID:" .. (absent and "NON" or "oui"), 1, true), "presence sacs")
+    assert(t:find("EJ_GetNumTiers:" .. (absent and "NON" or "oui"), 1, true), "presence EJ")
+    assert(not mock.ejSelected, "aucune selection du journal")
+    local ts = ns.db.probe.tradeskill
+    if absent then
+      assert(ts == nil and t:find("0 sacs", 1, true) and t:find("C_AddOns.IsAddOnLoaded absente", 1, true))
+    else
+      assert(ts.count == 5 and #ts.recipes == 3 and ts.recipes[1].recipeID == 101 and ts.recipes[1].learned == true, "releve metier")
+      assert(t:find("x et y lisibles (45.6, 78.9)", 1, true) and t:find("1 sacs, 1 emplacements", 1, true))
+      assert(t:find("(11e valeur de C_Item.GetItemInfo) : 7", 1, true), "prix marchand")
+      assert(t:find("instance 10 : Donjon10", 1, true) and not t:find("instance 11", 1, true), "10 instances")
+      assert(t:find("2 paliers (courant : 1)", 1, true))
+      assert(t:find("Questie : non installé", 1, true) and t:find("Auctionator : non installé", 1, true))
+      assert(t:find("LibQuestieDB : non installé", 1, true) and t:find("Auctionator.API.v1.GetAuctionPriceByItemID : non installé", 1, true))
+    end
+    mock.fire("TRADE_SKILL_CLOSE")
+  end)
+  check("probe : position illisible, fenetre de metier non ouverte", function()
+    mock.pos = false
+    local t = probeText()
+    assert(t:find("GetPlayerMapPosition : illisible", 1, true))
+    mock.pos = nil
+  end)
+  check("probe : Questie et Auctionator presents, Auctionator qui plante", function()
+    mock.addons = { Questie = true, QuestieDB = true, Auctionator = true }
+    _G.LibQuestieDB = { RequireContract = function(n) return n == 4 end,
+      Quest = { Get = function(_, k) return ({ name = "Pierre", startedBy = { { 3000 } }, requiredLevel = 5 })[k] end },
+      Npc = { Get = function(id, k) return k == "spawns" and { [85] = { { 40.5, 50 } } } or nil end } }
+    _G.Auctionator = { API = { v1 = { GetAuctionPriceByItemID = function(c, id) assert(c == "PretreCoach" and id == 2589) return 123 end } } }
+    local t = probeText()
+    assert(t:find("RequireContract(4) : true", 1, true) and t:find("QuestDB.Get(6561) : name Pierre", 1, true), "questie")
+    assert(t:find("requiredLevel 5", 1, true) and t:find("NpcDB.Get(3000, spawns) : {85={", 1, true), "pnj")
+    assert(t:find("(2589, étoffe de lin) : 123", 1, true), "prix")
+    if not absent then assert(t:find("Questie : chargé", 1, true) and t:find("Auctionator : chargé", 1, true)) end
+    _G.Auctionator.API.v1.GetAuctionPriceByItemID = function() error("boom") end
+    _G.LibQuestieDB.RequireContract = function() error("boom") end
+    t = probeText()
+    assert(t:find("(2589, étoffe de lin) : erreur", 1, true) and t:find("RequireContract(4) : erreur", 1, true), "erreurs absorbees")
+    _G.LibQuestieDB, _G.Auctionator, mock.addons = nil, nil, nil
+  end)
+  check("/coach here : coordonnees lisibles, puis nil, historique plafonne a 20", function()
+    mock.sub = "Brill"
+    ns.db.places = nil -- le menu minicarte a deja releve une fois
+    suiteSlash("here")
+    local t = mock.lastText
+    assert(t:find("Tirisfal", 1, true) and t:find("sous-zone : Brill", 1, true) and t:find("Cible : Cible", 1, true), t)
+    local p = ns.db.places
+    assert(#p == 1 and p[1].sub == "Brill" and p[1].target == "Cible" and p[1].when)
+    if not absent then
+      assert(t:find("uiMapID 1", 1, true) and t:find("x 45.6, y 78.9", 1, true), t)
+      assert(p[1].mapID == 1 and p[1].x == 45.6 and p[1].y == 78.9)
+    end
+    mock.pos = false
+    suiteSlash("here")
+    assert(mock.lastText:find("Position illisible", 1, true), mock.lastText)
+    mock.pos = nil
+    mock.hasTarget = false
+    suiteSlash("here")
+    assert(mock.lastText:find("Cible : aucune", 1, true) and ns.db.places[3].target == nil)
+    mock.hasTarget = true
+    if not absent then
+      mock.setCombat(true)
+      suiteSlash("here")
+      mock.setCombat(false)
+      assert(mock.lastText:find("nom illisible", 1, true) and ns.db.places[4].target == nil, "cible secrete")
+    end
+    for i = 1, 25 do mock.sub = "S" .. i; suiteSlash("here") end
+    p = ns.db.places
+    assert(#p == 20 and p[20].sub == "S25" and p[1].sub == "S6", "20 derniers releves")
+    assert(ns.db.places[1].target ~= mock.SECRET)
+    mock.sub = nil
+  end)
   check("debug et aide", function()
     SlashCmdList.PRETRECOACH("debug"); SlashCmdList.PRETRECOACH("debug"); SlashCmdList.PRETRECOACH("")
   end)
@@ -2713,7 +2795,7 @@ local function suite(label)
     mock.printed = {}
     cmd("help")
     local h = mock.printed[1]
-    for _, w in ipairs({ "guide", "compact", "lock", "unlock", "reset", "probe", "debug" }) do assert(h:find(w, 1, true), w) end
+    for _, w in ipairs({ "guide", "compact", "lock", "unlock", "reset", "probe", "here", "debug" }) do assert(h:find(w, 1, true), w) end
     restore()
   end)
 

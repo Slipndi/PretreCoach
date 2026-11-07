@@ -49,6 +49,7 @@ local EVENTS = {
   "CHARACTER_POINTS_CHANGED", "PLAYER_TALENT_UPDATE", "ACTIVE_TALENT_GROUP_CHANGED", "TRAIT_CONFIG_UPDATED",
   "SPELLS_CHANGED", "LEARNED_SPELL_IN_TAB", "PLAYER_STARTED_MOVING", "PLAYER_STOPPED_MOVING",
   "PLAYER_XP_UPDATE", "CHAT_MSG_COMBAT_XP_GAIN", "PLAYER_REGEN_DISABLED", "UNIT_HEALTH",
+  "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_CLOSE",
 }
 
 ------------------------------------------------------------------------
@@ -104,6 +105,59 @@ end
 local function SpellName(id)
   local n = S.Get(C_Spell and C_Spell.GetSpellName, id)
   return n or "?"
+end
+
+-- Position du joueur en fractions 0..1, ou nil si illisible (API absente, nil ou secrète).
+local function PlayerXY(mapID)
+  local pos = mapID and S.Get(C_Map and C_Map.GetPlayerMapPosition, "player", mapID)
+  if not pos then return nil end
+  local ok, x, y = pcall(function()
+    if pos.GetXY then return pos:GetXY() end
+    return pos.x, pos.y
+  end)
+  if ok and type(x) == "number" and type(y) == "number" and not S.IsSecret(x) and not S.IsSecret(y) then return x, y end
+end
+
+-- « chemin:oui » / « chemin:NON » pour une liste de fonctions
+local function Presence(list)
+  local t = {}
+  for _, p in ipairs(list) do t[#t + 1] = p .. ":" .. (type(Resolve(p)) == "function" and "oui" or "NON") end
+  return table.concat(t, " | ")
+end
+
+-- table de données d'un addon tiers, en texte court (jamais plus de 4 entrées par niveau)
+local function Brief(v, d)
+  if type(v) ~= "table" then return tostring(v) end
+  d = d or 0
+  if d >= 3 then return "{…}" end
+  local t, n = {}, 0
+  for k, x in pairs(v) do
+    n = n + 1
+    if n > 4 then t[#t + 1] = "…" break end
+    t[#t + 1] = tostring(k) .. "=" .. Brief(x, d + 1)
+  end
+  return "{" .. table.concat(t, ", ") .. "}"
+end
+
+-- Relevé de la fenêtre de métier : nombre de recettes et 3 premières, sans valeur secrète.
+local function TakeTradeskill()
+  if not ns.db then return end
+  local ids = S.Get(Resolve("C_TradeSkillUI.GetAllRecipeIDs"))
+  if type(ids) ~= "table" or #ids == 0 then return end
+  local rec = { when = date("%Y-%m-%d %H:%M:%S"), count = #ids, recipes = {} }
+  for i = 1, math.min(3, #ids) do
+    local info = S.Get(Resolve("C_TradeSkillUI.GetRecipeInfo"), ids[i])
+    if type(info) == "table" then
+      local r = { recipeID = ids[i] }
+      for _, k in ipairs({ "name", "difficulty", "relativeDifficulty", "numSkillUps", "learned" }) do
+        local v = info[k]
+        if not S.IsSecret(v) and type(v) ~= "table" then r[k] = v end
+      end
+      rec.recipes[#rec.recipes + 1] = r
+    end
+  end
+  ns.db.probe = ns.db.probe or {}
+  ns.db.probe.tradeskill = rec
 end
 
 ------------------------------------------------------------------------
@@ -251,6 +305,8 @@ for _, ev in ipairs(EVENTS) do
             when = date("%Y-%m-%d %H:%M:%S") }
         end
       end
+    elseif e == "TRADE_SKILL_SHOW" or e == "TRADE_SKILL_LIST_UPDATE" then
+      TakeTradeskill()
     elseif e == "TRAINER_SHOW" then
       trainerDump = { "services : " .. Dump("GetNumTrainerServices") }
       for i = 1, 3 do
@@ -384,6 +440,144 @@ local function CheckData(add)
 end
 
 ------------------------------------------------------------------------
+-- /coach here : relève un lieu à la main (20 derniers dans ns.db.places)
+------------------------------------------------------------------------
+local MAX_PLACES = 20
+
+function ns.Here()
+  local mapID = S.Get(C_Map and C_Map.GetBestMapForUnit, "player")
+  local info = mapID and S.Get(C_Map.GetMapInfo, mapID)
+  local x, y = PlayerXY(mapID)
+  if x then x, y = math.floor(x * 1000 + 0.5) / 10, math.floor(y * 1000 + 0.5) / 10 end
+  local sub = S.Get(GetSubZoneText)
+  local zone = S.Get(GetRealZoneText)
+  local hasTarget = S.Get(UnitExists, "target")
+  local target = hasTarget and S.Get(UnitName, "target") or nil
+
+  local out = {
+    L.HERE_MAP:format(info and Show(info.name) or "?", tostring(mapID)),
+    L.HERE_ZONE:format(tostring(zone), (sub and sub ~= "") and sub or "-"),
+    x and L.HERE_XY:format(x, y) or L.HERE_XY_NONE,
+    hasTarget and (target and L.HERE_TARGET:format(tostring(target)) or L.HERE_TARGET_HIDDEN) or L.HERE_TARGET_NONE,
+  }
+  if ns.db then
+    local places = ns.db.places or {}
+    ns.db.places = places
+    places[#places + 1] = { when = date("%Y-%m-%d %H:%M:%S"), mapID = mapID, x = x, y = y, sub = sub, target = target }
+    while #places > MAX_PLACES do table.remove(places, 1) end
+    out[#out + 1] = L.HERE_SAVED:format(#places, MAX_PLACES)
+  end
+  ShowText(table.concat(out, "\n"))
+end
+
+------------------------------------------------------------------------
+-- sections étendues de la sonde (lecture seule : existence et lisibilité)
+------------------------------------------------------------------------
+local function ExtraSections(add, section)
+  local function run(name, fn)
+    section(name)
+    local ok, err = pcall(fn)
+    if not ok then add("erreur : %s", tostring(err)) end
+  end
+
+  run("Carte et repères", function()
+    add(Presence({ "C_Map.SetUserWaypoint", "C_Map.GetUserWaypoint", "C_Map.CanSetUserWaypointOnMap",
+      "C_Map.GetPlayerMapPosition", "UiMapPoint.CreateFromCoordinates", "C_SuperTrack.SetSuperTrackedUserWaypoint" }))
+    local mapID = S.Get(C_Map and C_Map.GetBestMapForUnit, "player")
+    add("CanSetUserWaypointOnMap(%s) : %s | GetUserWaypoint : %s", tostring(mapID),
+      Dump("C_Map.CanSetUserWaypointOnMap", mapID), Dump("C_Map.GetUserWaypoint"))
+    local x, y = PlayerXY(mapID)
+    add("GetPlayerMapPosition : %s", x and ("x et y lisibles (%.1f, %.1f)"):format(x * 100, y * 100) or "illisible, nil ou API absente")
+  end)
+
+  run("Métiers (fenêtre)", function()
+    add(Presence({ "C_TradeSkillUI.GetAllRecipeIDs", "C_TradeSkillUI.GetRecipeInfo", "C_TradeSkillUI.GetRecipeSchematic",
+      "C_TradeSkillUI.IsTradeSkillReady", "C_TradeSkillUI.GetTradeSkillLine", "C_TradeSkillUI.GetBaseProfessionInfo" }))
+    for _, ev in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_CLOSE" }) do
+      add("%s : %s", ev, reg[ev] and "inscrit" or "REFUSÉ")
+    end
+    local ts = ns.db.probe.tradeskill
+    if not ts then add("fenêtre de métier pas encore ouverte : ouvre-la, puis retape /coach probe") return end
+    add("relevé de %s : %d recettes", ts.when, ts.count)
+    for _, r in ipairs(ts.recipes) do
+      add("  %s %s | difficulty %s | relativeDifficulty %s | numSkillUps %s | learned %s", tostring(r.recipeID),
+        tostring(r.name), tostring(r.difficulty), tostring(r.relativeDifficulty), tostring(r.numSkillUps), tostring(r.learned))
+    end
+  end)
+
+  run("Sacs", function()
+    add(Presence({ "C_Container.GetContainerNumSlots", "C_Container.GetContainerItemInfo", "C_Container.GetContainerItemID",
+      "GetItemCount" }))
+    local numSlots, itemID = Resolve("C_Container.GetContainerNumSlots"), Resolve("C_Container.GetContainerItemID")
+    local bags, items, first = 0, 0, nil
+    for bag = 0, 5 do
+      local n = S.Get(numSlots, bag)
+      if type(n) == "number" and n > 0 then
+        bags = bags + 1
+        for slot = 1, n do
+          local id = S.Get(itemID, bag, slot)
+          if type(id) == "number" then items = items + 1; first = first or id end
+        end
+      end
+    end
+    add("%d sacs, %d emplacements occupés", bags, items)
+    if first then
+      local r = { S.GetAll(Resolve("C_Item.GetItemInfo"), first) }
+      add("objet %d : prix marchand (11e valeur de C_Item.GetItemInfo) : %s", first, r[1] == "lisible" and Show(r[12]) or r[1])
+    end
+  end)
+
+  -- Aucune sélection (EJ_SelectInstance / EJ_SelectTier) : on lit le palier courant, l'interface du journal ne bouge pas.
+  run("Journal de donjon", function()
+    add(Presence({ "EJ_GetInstanceByIndex", "EJ_SelectInstance", "EJ_GetEncounterInfoByIndex", "EJ_GetLootInfoByIndex",
+      "EJ_GetNumTiers" }))
+    add("C_EncounterJournal : %s", type(Resolve("C_EncounterJournal")) == "table" and "présent" or "absent")
+    local nTiers = S.Get(Resolve("EJ_GetNumTiers"))
+    if type(nTiers) ~= "number" then return end
+    local names = {}
+    for i = 1, nTiers do names[#names + 1] = i .. "=" .. tostring(S.Get(Resolve("EJ_GetTierInfo"), i)) end
+    add("%d paliers (courant : %s) : %s", nTiers, tostring(S.Get(Resolve("EJ_GetCurrentTier"))), table.concat(names, ", "))
+    for i = 1, 10 do
+      local r = { S.GetAll(Resolve("EJ_GetInstanceByIndex"), i, false) }
+      if r[1] ~= "lisible" then break end
+      add("  instance %d : %s (ID %s)", i, Show(r[3]), Show(r[2]))
+    end
+  end)
+
+  run("Addons optionnels", function()
+    local isLoaded = Resolve("C_AddOns.IsAddOnLoaded")
+    for _, name in ipairs({ "Questie", "QuestieDB", "Auctionator" }) do
+      local v = S.Get(isLoaded, name)
+      add("%s : %s", name, type(isLoaded) ~= "function" and "C_AddOns.IsAddOnLoaded absente"
+        or (v == true and "chargé" or "non installé (ou non chargé)"))
+    end
+    local lib = Resolve("LibQuestieDB")
+    if type(lib) ~= "table" then
+      add("LibQuestieDB : non installé")
+    else
+      local ok, res, msg = pcall(lib.RequireContract, 4)
+      add("LibQuestieDB : présente | RequireContract(4) : %s", ok and (tostring(res) .. (msg and (" " .. tostring(msg)) or "")) or "erreur")
+      local Q, N = lib.Quest, lib.Npc
+      if type(Q) == "table" and Q.Get then
+        local startedBy = Q.Get(6561, "startedBy")
+        add("QuestDB.Get(6561) : name %s | startedBy %s | requiredLevel %s", tostring(Q.Get(6561, "name")),
+          Brief(startedBy), tostring(Q.Get(6561, "requiredLevel")))
+        local npcs = type(startedBy) == "table" and startedBy[1]
+        local npcID = type(npcs) == "table" and npcs[1]
+        if npcID and type(N) == "table" and N.Get then add("NpcDB.Get(%s, spawns) : %s", tostring(npcID), Brief(N.Get(npcID, "spawns"))) end
+      end
+    end
+    local price = Resolve("Auctionator.API.v1.GetAuctionPriceByItemID")
+    if type(price) ~= "function" then
+      add("Auctionator.API.v1.GetAuctionPriceByItemID : %s", Resolve("Auctionator") and "ABSENTE" or "non installé")
+    else
+      local ok, v = pcall(price, "PretreCoach", 2589)
+      add("GetAuctionPriceByItemID(2589, étoffe de lin) : %s", ok and Show(v) or ("erreur : " .. tostring(v)))
+    end
+  end)
+end
+
+------------------------------------------------------------------------
 -- rapport
 ------------------------------------------------------------------------
 function ns.Probe()
@@ -484,6 +678,8 @@ function ns.Probe()
 
   section("Contrôle des ID de Data/")
   CheckData(add)
+
+  ExtraSections(add, section)
 
   section("Maître de classe (rempli après une visite)")
   for _, l in ipairs(db.probe.trainer or { "pas encore visité depuis l'installation" }) do add(l) end

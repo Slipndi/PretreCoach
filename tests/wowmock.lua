@@ -80,6 +80,7 @@ function mock.reset()
   SlashCmdList = {}
   PretreCoachDB = nil
   mock.registered, mock.opened = nil, nil
+  mock.pos, mock.recipes, mock.bag, mock.addons, mock.sellPrice, mock.sub, mock.ejSelected = nil, nil, nil, nil, nil, nil, nil
 end
 
 -- Minuteurs : file qu'on vide a la main.
@@ -174,8 +175,31 @@ C_Item = { GetItemInfoInstant = function(id)
   if (mock.unknown.item or {})[id] then return nil end
   return id, "Arme", "Baguette", "", 0, 2, id == 11287 and 19 or 0
 end,
-  GetItemInfo = function(id) if mock.uncached then return nil end return "Baguette " .. id, "lien", 1, 1, 5 end }
-C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { professionName = "Metier" .. id } end }
+  GetItemInfo = function(id) if mock.uncached then return nil end return "Baguette " .. id, "lien", 1, 1, 5, 0, "x", 1, "", 0, mock.sellPrice end }
+-- mock.recipes = nombre de recettes (0 par defaut)
+C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { professionName = "Metier" .. id } end,
+  GetAllRecipeIDs = function() local t = {} for i = 1, mock.recipes or 0 do t[i] = 100 + i end return t end,
+  GetRecipeInfo = function(id) return { recipeID = id, name = "Recette" .. id, difficulty = "optimal", relativeDifficulty = 2,
+    numSkillUps = 1, learned = true } end,
+  GetRecipeSchematic = function() return {} end, IsTradeSkillReady = function() return true end,
+  GetTradeSkillLine = function() return 171 end, GetBaseProfessionInfo = function() return { professionID = 171 } end }
+-- Zone, cible, sacs (mock.bag = { [slot] = itemID } dans le sac 0), addons, journal de donjon
+function GetRealZoneText() return "Tirisfal" end
+function GetSubZoneText() return mock.sub or "Brill" end
+function UnitName() if secretNow() then return mock.SECRET end return "Cible" end
+C_Container = { GetContainerNumSlots = function(bag) return bag == 0 and 4 or 0 end,
+  GetContainerItemID = function(bag, slot) return bag == 0 and (mock.bag or { 2589 })[slot] or nil end,
+  GetContainerItemInfo = function() return { itemID = 2589 } end }
+-- mock.addons = { Questie = true } ; mock.sellPrice = prix de vente (11e valeur de GetItemInfo)
+C_AddOns = { IsAddOnLoaded = function(n) return (mock.addons or {})[n] == true end }
+C_EncounterJournal = {}
+function EJ_GetNumTiers() return 2 end
+function EJ_GetTierInfo(i) return "Palier" .. i end
+function EJ_GetCurrentTier() return 1 end
+function EJ_GetInstanceByIndex(i, raid) if i <= 12 and not raid then return 900 + i, "Donjon" .. i end end
+function EJ_SelectInstance() mock.ejSelected = true end
+function EJ_GetEncounterInfoByIndex() end
+function EJ_GetLootInfoByIndex() end
 C_ActionBar = { FindSpellActionButtons = function() return nil end }
 -- mock.registered = categorie enregistree ; mock.opened = id passe a OpenToCategory
 Settings = {
@@ -208,7 +232,14 @@ function GetActionInfo(slot) local id = (mock.actions or {})[slot] if id then re
 function GetBindingKey(cmd) return (mock.bindings or {})[cmd] end
 function GetBindingText(k) return k end
 C_Spell.GetSpellTexture = function(id) return "tex" .. id end
-C_Map = { GetBestMapForUnit = function() return 1 end, GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = "Tirisfal", parentMapID = id == 1 and 1420 or 0 } end }
+-- mock.pos = { x, y } (fractions) ; mock.pos = false : position nil
+local function vec(x, y) return { GetXY = function() return x, y end } end
+C_Map = { GetPlayerMapPosition = function() if mock.pos == false then return nil end local p = mock.pos or { 0.456, 0.789 } return vec(p[1], p[2]) end,
+  CanSetUserWaypointOnMap = function() return true end, GetUserWaypoint = function() return nil end, SetUserWaypoint = function() end,
+  GetBestMapForUnit = function() return 1 end, GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = "Tirisfal", parentMapID = id == 1 and 1420 or 0 } end }
+
+UiMapPoint = { CreateFromCoordinates = function() return {} end }
+C_SuperTrack = { SetSuperTrackedUserWaypoint = function() end }
 
 -- APIs incertaines sur Forever : mock.setAbsent(true) les retire toutes (passe « absente »), false les remet.
 local UNCERTAIN = [[
@@ -216,6 +247,8 @@ C_Traits C_ClassTalents C_SpecializationInfo GetNumSpecGroups GetNumUnspentTalen
 C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
+UiMapPoint C_SuperTrack C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
+EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end
