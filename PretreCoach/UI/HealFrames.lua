@@ -157,7 +157,7 @@ function H.Build()
     local b = CreateFrame("Button", "PretreCoachHeal" .. i, frame, "SecureUnitButtonTemplate")
     b:SetSize(W, HT)
     b:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(HEAD + (i - 1) * (HT + GAP)))
-    b:RegisterForClicks("AnyUp")
+    b:RegisterForClicks("AnyUp", "AnyDown") -- Retail : le gabarit securise agit sur l'appui ou le relachement selon ActionButtonUseKeyDown
     b.unit = unit
     b.bar = CreateFrame("StatusBar", nil, b)
     b.bar:SetPoint("TOPLEFT", b, "TOPLEFT")

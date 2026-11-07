@@ -66,7 +66,7 @@ local function build()
     local b = CreateFrame("Button", "PretreCoachConsumable" .. i, frame, "SecureActionButtonTemplate")
     b:SetSize(SIZE, SIZE)
     b:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + (i - 1) * (SIZE + GAP), -PAD)
-    b:RegisterForClicks("AnyUp")
+    b:RegisterForClicks("AnyUp", "AnyDown") -- Retail : le gabarit securise agit sur l'appui ou le relachement selon ActionButtonUseKeyDown
     b.cat, b.total = cat, 0
     b.icon = b:CreateTexture(nil, "ARTWORK")
     b.icon:SetAllPoints(b)

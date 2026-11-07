@@ -69,7 +69,7 @@ local function newButton(line)
   b.line = line
   b:SetSize(SIZE, SIZE)
   b:SetFrameStrata("HIGH")
-  b:RegisterForClicks("AnyUp")
+  b:RegisterForClicks("AnyUp", "AnyDown") -- Retail : le gabarit securise agit sur l'appui ou le relachement selon ActionButtonUseKeyDown
   b.icon = b:CreateTexture(nil, "ARTWORK")
   b.icon:SetAllPoints(b)
   b.icon:SetTexture(TRADE[line].tex)
