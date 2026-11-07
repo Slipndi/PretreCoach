@@ -64,7 +64,7 @@ function Calc.PendingSpells(level, knowsFn)
   if not knowsFn then return nil end
   local asked, answered = 0, 0
   for _, sp in ipairs(ns.Data.Spells) do
-    if not sp.talent then
+    if not sp.talent and not sp.noTrainer then
       local top
       for i, r in ipairs(sp.ranks) do
         if r.level and r.level <= level then top = i end

@@ -54,7 +54,8 @@ ns.Data.Spells = {
     ranks = { { id = 14752, level = 30, verify = true }, { id = 14818, level = 40, verify = true },
               { id = 14819, level = 50, verify = true }, { id = 27841, level = 60, verify = true } } }, -- à vérifier : niveau 30 pour tous (spec Forever) ; rangs 2-4 selon Classic (Esprit divin était un talent)
   -- Raciaux mort-vivant
-  { key = "TOUCHWEAK", name = "Toucher de faiblesse", talent = false, racial = true,
+  -- noTrainer : absent chez le maître des prêtres sur Forever (constaté en jeu le 2026-11-07), source inconnue
+  { key = "TOUCHWEAK", name = "Toucher de faiblesse", talent = false, racial = true, noTrainer = true,
     cooldown = nil, duration = 120, manaCost = true,
     ranks = { { id = 2652, level = 10, verify = true }, { id = 19261, level = 20, verify = true }, { id = 19262, level = 30, verify = true },
               { id = 19264, level = 40, verify = true }, { id = 19265, level = 50, verify = true }, { id = 19266, level = 60, verify = true } } }, -- à vérifier : niveaux Forever (10 selon spec), IDs Classic
