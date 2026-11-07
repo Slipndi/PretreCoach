@@ -141,12 +141,24 @@ local commands = {
     if ns.UI.HealFrames then ns.UI.HealFrames.Render() end
   end,
   conso = function() if ns.ToggleCons then ns.ToggleCons() end end,
+  -- /coach pretre, alchimie, herbo, secourisme : maitre le plus proche dans le chat + repere sur la carte (commande = action du joueur)
+  pretre = function() ns.FindTrainer("PRIEST") end,
+  alchimie = function() ns.FindTrainer("ALCHEMY") end,
+  herbo = function() ns.FindTrainer("HERBALISM") end,
+  secourisme = function() ns.FindTrainer("FIRSTAID") end,
   craft = function() if ns.ToggleCraft then ns.ToggleCraft() end end,
   debug = function()
     ns.db.debug = not ns.db.debug
     ns.Print(ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)
   end,
 }
+
+function ns.FindTrainer(role)
+  local d = ns.Goto and ns.Goto.For(role)
+  if not d then return end
+  ns.Print(L.GO_WHERE, d.text)
+  if ns.Goto.CanPlace(d) then ns.Goto.Place(d) end
+end
 
 -- Point d'entrée unique des commandes (slash et menu de la minicarte) ; faux si la commande est inconnue.
 function ns.RunCommand(name)

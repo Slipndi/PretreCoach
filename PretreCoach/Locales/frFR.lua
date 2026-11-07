@@ -3,7 +3,7 @@ local _, ns = ...
 
 ns.L = {
   PREFIX = "|cffb084ffPrêtre Coach|r",
-  HELP = "Commandes : /coach (options), guide, compact, bilan, progress, conso, craft, mana, lock, unlock, reset, probe, here, debug",
+  HELP = "Commandes : /coach (options), guide, compact, bilan, progress, conso, craft, mana, pretre, alchimie, herbo, secourisme, lock, unlock, reset, probe, here, debug",
   LOCK_ON = "Cadres verrouillés.",
   LOCK_OFF = "Cadres déverrouillés.",
   RESET_DONE = "Positions, taille et opacité remises par défaut.",

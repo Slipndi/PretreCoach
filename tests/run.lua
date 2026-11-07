@@ -3308,6 +3308,18 @@ local function suite(label)
     mock.qnpcs[310], mock.qnpcs[311] = nil, nil
   end)
 
+  check("/coach pretre : maitre le plus proche dans le chat et repere pose", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    n.Q.StartIndex(); drain()
+    local np = #mock.printed
+    SlashCmdList.PRETRECOACH("pretre")
+    assert(#mock.printed > np and tostring(mock.printed[np + 1]):find(n.L.GO_ROLE_PRIEST, 1, true), tostring(mock.printed[np + 1]))
+    assert(mock.waypoint ~= nil, "repere pose")
+    SlashCmdList.PRETRECOACH("alchimie")
+    assert(tostring(mock.printed[#mock.printed]):find(n.L.GO_ROLE_ALCHEMY, 1, true) or mock.waypoint ~= nil)
+  end)
+
   check("Questie : ligne de spawn sans y numerique rejetee", function()
     if not LibQuestieDB then return end
     local n = qboot()
