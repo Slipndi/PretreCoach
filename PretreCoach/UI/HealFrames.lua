@@ -16,8 +16,8 @@ local SLOTS = { "1", "2", "shift-1" } -- bouton de souris : clic gauche, clic dr
 local CHOICES = { "LESSERHEAL", "HEAL", "GREATERHEAL", "FLASHHEAL", "RENEW", "PWS", "PWF", "DISPEL", "CUREDISEASE",
   "ABOLISHDISEASE", "FEARWARD", "SHADOWPROT", "RESURRECTION" } -- cles de Data/Spells.lua proposees dans les options
 -- Tailles (px) : colonne du nom, barre de vie, barre de mana (prise dans la rangee, sous la vie), espace entre rangees.
-local NAME_W, BAR_W, BAR_H, MANA_H, GAP = 60, 220, 14, 2, 3
-local PAD, HEAD, NAME_GAP = 6, 14, 4 -- marge dans la bordure doree, hauteur de la legende, espace nom/barre
+local NAME_W, BAR_W, BAR_H, MANA_H, GAP = 70, 200, 18, 3, 4
+local PAD, HEAD, NAME_GAP = 8, 8, 6 -- marge dans la bordure doree (haut : HEAD), espace nom/barre ; plus de legende (les clics sont dans l'infobulle)
 local BAR = "Interface\\TargetingFrame\\UI-StatusBar"
 local ROW_W = NAME_W + NAME_GAP + BAR_W
 
@@ -173,10 +173,6 @@ function H.Build()
   frame:SetSize(ROW_W + 2 * PAD, HEAD + PAD + #UNITS * (BAR_H + GAP) - GAP)
   frame:SetPoint("LEFT", UIParent, "LEFT", 20, 0)
   UI.Movable(frame, "heal")
-  frame.legend = frame:CreateFontString(nil, "OVERLAY", UI.font.small)
-  frame.legend:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -1)
-  frame.legend:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -1)
-  frame.legend:SetJustifyH("LEFT")
   for i, unit in ipairs(UNITS) do
     local b = CreateFrame("Button", "PretreCoachHeal" .. i, frame, "SecureUnitButtonTemplate")
     b:SetSize(ROW_W, BAR_H) -- le bouton couvre toute la rangee (nom + barre)

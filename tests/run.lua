@@ -3002,8 +3002,8 @@ local function suite(label)
     c = b.name.textColor
     mock.noClass = nil
     assert(c[1] == 1 and c[2] == 1 and c[3] == 1, "blanc si classe illisible")
-    assert(b.width == 60 + 4 + 220 and b.height == 14, "le bouton couvre nom + barre")
-    assert(b.bar.width == 220 and b.mana.height == 2 and b.name.width == 60, "tailles")
+    assert(b.width == 70 + 6 + 200 and b.height == 18, "le bouton couvre nom + barre")
+    assert(b.bar.width == 200 and b.mana.height == 3 and b.name.width == 70, "tailles")
     restore()
   end)
 
