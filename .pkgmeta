@@ -1,0 +1,14 @@
+package-as: PretreCoach
+
+move-folders:
+  PretreCoach/PretreCoach: PretreCoach
+
+ignore:
+  - tests
+  - Docs
+  - test.ps1
+  - install.ps1
+  - install.sh
+  - .github
+  - CLAUDE.md
+  - .claude

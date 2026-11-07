@@ -50,7 +50,7 @@ WoW Forever (sorti le 4 novembre 2026) a le contenu de Vanilla (niveau max 60, r
 - **Journal de combat interdit** : enregistrer `COMBAT_LOG_EVENT_UNFILTERED` provoque une erreur. N'en dépends pas.
 - **Pas d'automatisation** : l'addon conseille, il ne lance jamais de sort à la place du joueur. Pas de fonctions protégées en combat, et vérifie `InCombatLockdown()` avant toute modification de cadre sécurisé.
 - **Approche qui marche sur Forever** (utilisée par les addons Forever qui fonctionnent, comme Full Mana Forever ou Lifesworn) : **suivre les propres sorts lancés par le joueur** (événement `UNIT_SPELLCAST_SUCCEEDED` sur l'unité `player`, à vérifier qu'il n'est pas restreint) et tenir ses propres minuteurs : règle des 5 secondes, durée de Mot de l'ombre : Douleur par cible, temps de recharge à partir de durées connues.
-- **Hors combat**, la plupart des données sont lisibles : niveau, zone, équipement, grimoire, talents, métiers, quêtes terminées, mana. Le guide interactif s'appuie surtout sur ces moments-là.
+- **Hors combat**, la plupart des données sont lisibles : niveau, zone, équipement, grimoire, talents, métiers, quêtes terminées, mana (Forever : voir 10.1, vie et mana sont secrets même hors combat). Le guide interactif s'appuie surtout sur ces moments-là.
 - **Régénération du mana continue** : il n'y a pas de « ticks » de 2 secondes. La règle des 5 secondes existe toujours (la regen basée sur l'Esprit s'arrête 5 secondes après un sort qui coûte du mana).
 - **La baguette** (sort « Tir » / Shoot) demande d'être immobile 0,5 seconde avant de tirer.
 - **API différente de Retail sur certains points** : certains modèles (templates) et fonctions de Retail n'existent pas dans Forever. Avant d'utiliser une API (`C_Spell`, `C_SpellBook`, `C_Map`, `C_QuestLog`, `C_Timer`, `Settings`, `C_AssistedCombat`, fonctions du maître de classe, emplacement d'arme à distance, etc.), vérifie qu'elle existe et prévois une solution de repli.
@@ -108,15 +108,15 @@ Une fenêtre « Guide » qui s'ouvre avec `/coach guide` ou un bouton de la mini
 | 4 | Mot de l'ombre : Douleur disponible : ouvre tes combats avec |
 | 5 | Baguette magique inférieure (hôtel des ventes ou récompense de quête). Apprends Herboristerie et Alchimie à Brill, et Secourisme (maître à vérifier) |
 | 6 | Mot de pouvoir : Bouclier avant chaque combat |
-| 10 | Premiers talents : Spécialisation Baguette. Racial : Toucher de faiblesse |
+| 10 | Premiers talents : Spécialisation Baguette. Racial : Toucher de faiblesse (Forever : voir 10.1) |
 | 10 | Rang Compagnon en Herboristerie et Alchimie (compétence 50) |
 | 12-16 | Connexion spirituelle 5/5 |
 | 13 | Baguette magique supérieure (hôtel des ventes). Gouffre de Ragefeu (bâton de quête +18 dégâts des sorts) |
 | 15 | Ruines de Lordaeron et Cavernes des lamentations (bâton de quête +5 dégâts des sorts) |
 | 20 | Racial : Sacrifice sombre. Protection contre la peur et Peste dévorante. Donjon d'Ombrecroc. Rang Expert (compétence 125) |
 | 24-32 | Profondeurs de Brassenoire : quête du Gravestone Scepter (baguette qui renforce Mot de l'ombre : Douleur) |
-| 30 | Esprit divin. Option Pénitence pour les donjons |
-| 32 | Mot de l'ombre : Mort |
+| 30 | Esprit divin. Option Pénitence pour les donjons (Forever : voir 10.1, talent 402174) |
+| 32 | Mot de l'ombre : Mort (Forever : voir 10.1, ID 32379 non valide) |
 | 35 | Rang Artisan (compétence 200). Secourisme Artisan : quête Triage (Hammerfall, Hautes-terres d'Arathi, à vérifier) |
 | 40 | Respec Ombre (31 points) pour la Forme d'Ombre. Double spécialisation : une spé Ombre solo, une spé soin donjons |
 
@@ -145,7 +145,7 @@ Les règles 1 à 4 s'affichent aussi en combat (via les conseils du cycle). Les 
 
 Un panneau avec **une grande icône** (le prochain sort conseillé), **deux petites icônes** (les suivants), et une ligne de texte courte qui explique le conseil (« Pose ton DoT », « Achève à la baguette »). Afficher le raccourci clavier du sort sur l'icône si on le trouve dans les barres d'action.
 
-La logique choisit les règles selon le niveau du joueur et les sorts réellement connus (`IsPlayerSpell` / `IsSpellKnown` ou équivalent). Priorités à coder :
+La logique choisit les règles selon le niveau du joueur et les sorts réellement connus (`IsPlayerSpell` / `IsSpellKnown` ou équivalent ; `GetSpellInfo` est absent, Forever : voir 10.1). Priorités à coder :
 
 **Niveaux 1 à 10, avant la baguette**
 1. Avant d'engager : Mot de pouvoir : Bouclier (dès le niveau 6).
@@ -157,7 +157,7 @@ La logique choisit les règles selon le niveau du joueur et les sorts réellemen
 1. Avant d'engager : Mot de pouvoir : Bouclier.
 2. Ouverture : Attaque mentale, ou Flammes sacrées si apprises.
 3. Mot de l'ombre : Douleur (si pas déjà posé sur cette cible, d'après ton propre minuteur).
-4. Baguette jusqu'à la mort du monstre. Ne reconseiller Attaque mentale que si le mana est haut **et lisible** ; si le mana est secret, rester sur la baguette.
+4. Baguette jusqu'à la mort du monstre. Ne reconseiller Attaque mentale que si le mana est haut **et lisible** ; si le mana est secret, rester sur la baguette (Forever : voir 10.1, le mana est secret en permanence, donc toujours la baguette).
 5. Groupe de monstres : conseiller de poser Mot de l'ombre : Douleur sur 3 ou 4 cibles (changement de cible détecté), puis baguette.
 6. Si un monstre arrive au contact et que la position est lisible : proposer Cri psychique, avec l'avertissement « seulement si l'endroit est dégagé ».
 
@@ -165,15 +165,15 @@ La logique choisit les règles selon le niveau du joueur et les sorts réellemen
 1. Forme d'Ombre active (rappel si elle n'est pas détectée hors combat).
 2. Avant d'engager : Bouclier, puis Attaque mentale.
 3. Mot de l'ombre : Douleur.
-4. Mot de l'ombre : Mort et Attaque mentale dès qu'ils sont disponibles (temps de recharge suivis par ton propre minuteur depuis le lancement).
+4. Mot de l'ombre : Mort et Attaque mentale dès qu'ils sont disponibles (temps de recharge suivis par ton propre minuteur depuis le lancement) (Forever : voir 10.1, ID de sort et recharges secrètes).
 5. Fouet mental pour combler.
 
 Règles générales :
 - Ne jamais conseiller un sort non appris.
 - Si une info nécessaire est secrète, choisir l'option la plus économe en mana (la baguette) plutôt que deviner.
 - Afficher l'icône en gris quand le sort conseillé est en recharge selon ton minuteur.
-- Hors combat, si le mana ou la vie sont bas et lisibles : proposer Cannibalisme (si un cadavre humanoïde ou mort-vivant est à portée et que le sort est utilisable) ou Sacrifice sombre (vie correcte, mana bas), avant de proposer de boire. Si la vie est basse et le mana correct, proposer un **bandage** avant de manger : il ne coûte pas de mana et ne relance pas la règle des 5 secondes ; débuff « Bandage récent » de 60 s, interrompu par les dégâts.
-- En combat : potion de mana conseillée seulement si le mana est lisible ; sinon ne rien conseiller (FullManaForever fait déjà ce travail, ne pas le dupliquer).
+- Hors combat, si le mana ou la vie sont bas et lisibles (Forever : voir 10.1, ils ne le sont pas) : proposer Cannibalisme (si un cadavre humanoïde ou mort-vivant est à portée et que le sort est utilisable) ou Sacrifice sombre (vie correcte, mana bas), avant de proposer de boire. Si la vie est basse et le mana correct, proposer un **bandage** avant de manger : il ne coûte pas de mana et ne relance pas la règle des 5 secondes ; débuff « Bandage récent » de 60 s, interrompu par les dégâts.
+- En combat : potion de mana conseillée seulement si le mana est lisible (Forever : voir 10.1) ; sinon ne rien conseiller (FullManaForever fait déjà ce travail, ne pas le dupliquer).
 
 ---
 
@@ -182,7 +182,7 @@ Règles générales :
 ### 6.1 Rappels d'entraînement (Data/Spells.lua)
 
 - Liste des sorts du prêtre avec, pour chaque rang, l'ID du sort, le niveau requis et si possible le coût en or. Construis-la à partir d'une source fiable pour Forever (par exemple warcraft.wiki.gg, catégorie Forever, ou Wowhead) et **marque comme « à vérifier » tout ce qui n'est pas confirmé**. N'invente pas d'ID.
-- Nouveautés de Forever : Protection contre la peur et Peste dévorante pour tous les prêtres au niveau 20, Esprit divin au niveau 30, Mot de l'ombre : Mort au niveau 32. Sorts raciaux du mort-vivant : Toucher de faiblesse au niveau 10, Sacrifice sombre (Dark Sacrifice) au niveau 20.
+- Nouveautés de Forever : Protection contre la peur et Peste dévorante pour tous les prêtres au niveau 20, Esprit divin au niveau 30, Mot de l'ombre : Mort au niveau 32. Sorts raciaux du mort-vivant : Toucher de faiblesse au niveau 10 (Forever : voir 10.1, non vendu par le maître), Sacrifice sombre (Dark Sacrifice) au niveau 20. Mot de l'ombre : Mort : ID 32379 non valide (Forever : voir 10.1).
 - À chaque montée de niveau : si des sorts ou rangs deviennent disponibles et ne sont pas connus, toast « Nouveaux sorts chez ton maître : X (rang 2), Y ».
 - Compteur discret dans le panneau : « 3 sorts à apprendre ».
 - Quand le joueur ouvre la fenêtre du maître (si l'événement existe) : lire les services proposés pour corriger les données, et surligner ce qu'il reste à apprendre.
@@ -379,6 +379,13 @@ Sonde réelle : client 1.60.1 build 70862, Interface 16001, frFR. Ces faits prim
 - **Noms du client** qui diffèrent : « Gardien de peur » pour Protection contre la peur, « Sombre sacrifice » pour Sacrifice sombre.
 - **Cartes** : `uiMapID` de type Classic (Tirisfal = 1420).
 - **Métiers** : la skillLine est la 7e valeur de `GetProfessionInfo` (Alchimie 171, Herboristerie 182, Secourisme 129, Cuisine 185).
+- **Sorts** : le spellID est lisible en combat. Pénitence est le talent 402174 (pas un sort à ID fixe).
+- **Cartes** : `Enum.UIMapType` n'a pas de `City`. `C_Map.GetPlayerMapPosition(uiMapID, "player")` est lisible.
+- **Objets** : le global `GetItemCount` est absent, utiliser `C_Item.GetItemCount`.
+- **Journal de donjon** : il n'a aucun palier et `EJ_GetLootInfoByIndex` est absent.
+- **Métiers** : `GetRecipeInfo` donne `relativeDifficulty` (0 = optimal) et `numSkillUps`.
+- **Toucher de faiblesse** : n'est pas vendu par le maître des prêtres.
+- **Recharges** : secrètes en combat ; `C_Spell.IsSpellUsable` reste lisible.
 - **Conséquence** : le coach ne décide jamais sur la vie ou le mana. Il affiche une carte « Récupère » après chaque combat.
 
 ### 10.2 Principes
