@@ -77,6 +77,7 @@ function mock.reset()
   mock.dead, mock.canAttack, mock.items, mock.hp, mock.cooldowns, mock.mana = nil, nil, nil, nil, nil, nil
   mock.vitalsReadable, mock.nodes, mock.unspent, mock.usable = nil, nil, nil, nil
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known = 0, "Creature-0", nil, nil, nil
+  mock.level, mock.xp, mock.xpMax, mock.xpSecret = nil, nil, nil, nil
   SlashCmdList = {}
   PretreCoachDB = nil
   mock.registered, mock.opened = nil, nil
@@ -122,7 +123,10 @@ function GetLocale() return "frFR" end
 function GetBuildInfo() return "1.15.0", "60001", "Jan 1 2026", 16001 end
 function UnitClass() return "Pretre", "PRIEST", 5 end
 function UnitRace() return "Mort-vivant", "Scourge" end
-function UnitLevel() return 12 end
+function UnitLevel() return mock.level or 12 end
+-- mock.xp / mock.xpMax = XP du joueur (nil par defaut : illisible) ; mock.xpSecret = valeur secrete
+function UnitXP() if mock.xpSecret or secretNow() then return mock.SECRET end return mock.xp end
+function UnitXPMax() if mock.xpSecret or secretNow() then return mock.SECRET end return mock.xpMax end
 -- Sonde : vie et mana du joueur sont secrets meme hors combat ; mock.vitalsReadable = true les rend lisibles.
 -- mock.hp = vie du joueur (100 par defaut)
 local function vitalsSecret() return secretNow() or (not mock.vitalsReadable and not mock.noSecrets) end
@@ -323,7 +327,7 @@ C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 UiMapPoint C_SuperTrack Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
-EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator
+EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator UnitXP UnitXPMax
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end

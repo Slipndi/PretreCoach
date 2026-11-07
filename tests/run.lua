@@ -199,8 +199,8 @@ local function suite(label)
     local function row(i) return m.rows and m.rows[i] end
     ns.ToggleMinimapMenu(b)
     local btns = N.UI.MenuRows()
-    assert(#btns == 9, "9 lignes cliquables")
-    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", nil }
+    assert(#btns == 10, "10 lignes cliquables")
+    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", nil }
     for i, e in ipairs(expect) do
       calls = {}
       if not m:IsShown() then ns.ToggleMinimapMenu(b) end
@@ -3418,6 +3418,136 @@ local function suite(label)
     local t = mock.lastText
     assert(t:find("GetAreaInfo(85) : ", 1, true) and t:find("(attendu 1420)", 1, true), "ligne conversion")
     if C_Map then assert(t:find("GetAreaInfo(85) : Tirisfal | uiMapID obtenu : 1420", 1, true), t) end
+  end)
+
+  -- Rythme et barre vers le 60 : mock.time pilote GetTime, mock.xp / xpMax / level l'etat du joueur
+  local toasts
+  local function pboot(level, xp, xpMax, secret)
+    mock.reset()
+    mock.level, mock.xp, mock.xpMax, mock.xpSecret = level, xp, xpMax, secret
+    local n = loadAddon()
+    mock.fire("ADDON_LOADED", ADDON)
+    toasts = {}
+    n.Toast = function(t) toasts[#toasts + 1] = t return true end
+    return n
+  end
+  local function gain(at, xp)
+    mock.time, mock.xp = at, xp
+    mock.fire("PLAYER_XP_UPDATE", "player")
+  end
+  local function levelUp(at, lvl, xp, xpMax)
+    mock.time, mock.xp, mock.xpMax = at, xp, xpMax
+    mock.fire("PLAYER_XP_UPDATE", "player")
+    mock.level = lvl
+    mock.fire("PLAYER_LEVEL_UP", lvl)
+  end
+  local function printed() return table.concat(mock.printed, "\n") end
+
+  check("Pace : gains, XP/h, estimation du niveau (seuils 3 gains et 2 min)", function()
+    local n = pboot(10, 0, 1000)
+    if not UnitXP then return end
+    gain(60, 100); gain(120, 250)
+    assert(n.Pace.NextLevel() == nil, "2 gains : pas d'estimation")
+    gain(180, 400)
+    assert(math.abs(n.Pace.Rate() - 8000) < 0.01, "XP/h " .. tostring(n.Pace.Rate()))
+    assert(math.abs(n.Pace.NextLevel() - 270) < 0.01, "estimation en secondes")
+    local t = n.Pace.Text()
+    assert(t:find("8 000 XP/h", 1, true) and t:find("niveau suivant ~5 min", 1, true), t)
+    assert(n.Pace.Fraction() == 0.4)
+    mock.time = 180 + 5000 -- le jeu a continue sans gain : plus de temps actif dans la fenetre
+    assert(n.Pace.Rate() == nil and n.Pace.NextLevel() == nil)
+  end)
+
+  check("Pace : une pause de plus de 5 min est ignoree", function()
+    local n = pboot(10, 0, 1000)
+    if not UnitXP then return end
+    gain(100, 100)
+    gain(1100, 200) -- 1000 s sans gain : ni ce temps ni ce gain ne comptent
+    assert(math.abs(n.Pace.Rate() - 3600) < 0.01, "XP/h " .. tostring(n.Pace.Rate()))
+  end)
+
+  check("Pace : passage de niveau, historique, estimation du 60 et record", function()
+    local n = pboot(10, 0, 1000)
+    if not UnitXP then return end
+    gain(60, 100); gain(120, 250); gain(180, 400)
+    levelUp(240, 11, 50, 1200) -- XP_UPDATE avant LEVEL_UP : 600 + 50
+    assert(toasts[1] == "Niveau 11 en 4m 00s - bravo !", tostring(toasts[1]))
+    assert(#toasts == 1, "premier niveau mesure : pas de record annonce")
+    assert(n.db.pace.levels[10].secs == 240 and n.db.pace.record.secs == 240)
+    local s, need = n.Pace.Sixty()
+    assert(s == nil and need == 2 and n.Pace.Text():find("60 : estimation après 2 niveaux", 1, true), n.Pace.Text())
+    levelUp(300, 12, 10, 1400) -- 60 s : record
+    assert(toasts[2] == "Niveau 12 en 1m 00s - bravo !" and toasts[3] == "Record : niveau 11 en 1m", table.concat(toasts, "|"))
+    -- LEVEL_UP avant XP_UPDATE : le gain doit etre compte une seule fois
+    mock.time, mock.level, mock.xp, mock.xpMax = 400, 13, 5, 1600
+    mock.fire("PLAYER_LEVEL_UP", 13)
+    mock.fire("PLAYER_XP_UPDATE", "player")
+    assert(n.db.pace.levels[12].secs == 100 and n.db.pace.record.secs == 60 and #toasts == 4, "pas de nouveau record")
+    local sixty = n.Pace.Sixty()
+    assert(math.abs(sixty - (240 + 60 + 100) / 3 * (47 - 5 / 1600)) < 0.01, "moyenne des 3 derniers niveaux : " .. tostring(sixty))
+    assert(n.Pace.Text():find("60 dans ~2 h", 1, true), n.Pace.Text())
+    SlashCmdList.PRETRECOACH("bilan")
+    local out = printed()
+    assert(out:find("XP gagnée 3 605", 1, true) and out:find("niveaux pris 3", 1, true), out)
+    assert(out:find("Record : niveau 11 en 1m", 1, true), out)
+    assert(not findSecret(n.db, "db"), "rien de secret dans la base")
+  end)
+
+  check("Pace : niveau commence hors addon, jamais d'historique faux", function()
+    local n = pboot(10, 400, 1000)
+    if not UnitXP then return end
+    levelUp(500, 11, 20, 1200)
+    assert(n.db.pace.levels[10] == nil and n.db.pace.record == nil and toasts[1] == "Niveau 11 - bravo !", tostring(toasts[1]))
+  end)
+
+  check("Pace : gain recu en combat (valeur secrete) rattrape a la fin du combat", function()
+    local n = pboot(10, 0, 1000)
+    if not UnitXP then return end
+    gain(60, 100)
+    mock.setCombat(true)
+    mock.time = 90
+    mock.fire("PLAYER_XP_UPDATE", "player") -- XP secrete : aucune erreur, rien de compte
+    mock.setCombat(false)
+    mock.xp = 300
+    mock.time = 120
+    mock.fire("PLAYER_REGEN_ENABLED")
+    SlashCmdList.PRETRECOACH("bilan")
+    assert(printed():find("XP gagnée 300", 1, true), printed())
+  end)
+
+  check("Pace : XP secrete ou absente, tout est inconnu sans erreur", function()
+    local n = pboot(10, 5, 100, true)
+    gain(60, 5); gain(120, 5); gain(180, 5)
+    levelUp(240, 11, 5, 100)
+    assert(n.Pace.Rate() == nil and n.Pace.NextLevel() == nil and n.Pace.Fraction() == nil)
+    local t = n.Pace.Text()
+    assert(t:find("… XP/h", 1, true) and t:find("niveau suivant …", 1, true), t)
+    SlashCmdList.PRETRECOACH("bilan")
+    assert(printed():find("XP gagnée inconnu", 1, true) and printed():find("inconnu", 1, true), printed())
+    assert(n.UI.ProgressBar.value == 11, "niveau seul")
+    assert(not findSecret(n.db, "db"), "rien de secret dans la base")
+  end)
+
+  check("Barre vers le 60 : remplissage, reperes allumes, option masquer, /coach progress", function()
+    local n = pboot(10, 500, 1000)
+    local B = n.UI.ProgressBar
+    assert(B.value == (UnitXP and 10.5 or 10), tostring(B.value))
+    local lit = {}
+    for i, m in ipairs(B.markers) do lit[i] = m.lit end
+    assert(#lit == 5 and lit[1] and lit[2] and not lit[3] and not lit[4] and not lit[5], "reperes 5 et 10 allumes")
+    assert(B.frame.shown, "affichee par defaut")
+    local pulsed
+    B.markers[3].Pulse = function() pulsed = true end
+    levelUp(100, 24, 0, 5000)
+    assert(B.markers[3].lit and not B.markers[4].lit and pulsed, "repere 24 s'allume avec une animation")
+    n.db.show.progress = false
+    B.Render()
+    assert(not B.frame.shown, "option masquer")
+    SlashCmdList.PRETRECOACH("progress")
+    assert(n.db.show.progress == true and B.frame.shown, "la commande reaffiche")
+    local before = #mock.printed
+    SlashCmdList.PRETRECOACH("bilan")
+    assert(#mock.printed > before and printed():find("Bilan : session", 1, true))
   end)
 end
 

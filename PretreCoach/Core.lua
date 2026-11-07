@@ -70,7 +70,8 @@ end
 
 -- Valeurs par défaut des réglages : complétées sans jamais écraser ce que le joueur a déjà.
 ns.DEFAULTS = {
-  show = { guide = true, rotation = true, rules = true, toasts = true, minimap = true },
+  show = { guide = true, rotation = true, rules = true, toasts = true, minimap = true, progress = true },
+  pace = { levels = {} },
   guide = { manual = {}, done = {}, tab = "now", compact = false },
   training = { every = 1 }, trainer = {},
   locked = false, opacity = 0.9, scale = 1, frames = {}, minimap = { angle = 220 },
@@ -130,6 +131,8 @@ local commands = {
   here = function() ns.Here() end,
   guide = function() if ns.ToggleGuide then ns.ToggleGuide() end end,
   compact = function() if ns.SetCompact then ns.SetCompact() end end,
+  bilan = function() if ns.Pace then ns.Pace.Report() end end,
+  progress = function() if ns.ToggleProgress then ns.ToggleProgress() end end,
   debug = function()
     ns.db.debug = not ns.db.debug
     ns.Print(ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)

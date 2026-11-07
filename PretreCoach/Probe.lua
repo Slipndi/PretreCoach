@@ -173,6 +173,8 @@ local function Snapshot()
     { "Vie max joueur", Status("UnitHealthMax", "player") },
     { "Mana joueur", Status("UnitPower", "player", 0) },
     { "Mana max", Status("UnitPowerMax", "player", 0) },
+    { "XP joueur (UnitXP)", Status("UnitXP", "player") },
+    { "XP max joueur (UnitXPMax)", Status("UnitXPMax", "player") },
     { "Regen mana (GetPowerRegen)", Status("GetPowerRegen") },
     { "Recharge Attaque mentale (C_Spell)", Status("C_Spell.GetSpellCooldown", 8092) },
     { "Recharge globale (61304)", Status("C_Spell.GetSpellCooldown", 61304) },

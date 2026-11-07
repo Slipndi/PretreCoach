@@ -18,6 +18,7 @@ local ENTRIES = {
   { label = L.MENU_PROBE, cmd = "probe" },
   { label = L.MENU_HERE, cmd = "here" },
   { label = L.MENU_DEBUG, cmd = "debug", check = function() return db().debug end },
+  { label = L.MENU_PROGRESS, cmd = "progress", check = function() return db().show and db().show.progress ~= false end },
   "sep",
   { label = L.MENU_CLOSE },
 }
