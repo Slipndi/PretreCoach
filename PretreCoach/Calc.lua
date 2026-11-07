@@ -79,19 +79,36 @@ function Calc.PendingSpells(level, knowsFn)
   return out
 end
 
--- talents[tab][row][col] = rang ; nil = inconnu (API absente). Rend { entry, have, want } pour les entrées
--- du plan dont la fenêtre [from, to] contient le niveau et dont le rang n'est pas atteint (respecs ignorés).
-function Calc.TalentGap(level, talents, plan)
+-- talents = State.talents : { [spellID] = { rank, max, name } } (C_Traits), ou { pos = { [tab][row][col] = rang } } (Classic) ;
+-- nil = illisible. Un talent est trouvé si l'un de ses spellIDs est dans talents, sinon par le nom localisé du 1er spellID
+-- (nameOf), sinon par sa position. Rend (manques, inconnus) pour les entrées du plan dont la fenêtre [from, to] contient
+-- le niveau : manques = { entry, have, want } au rang non atteint (respecs ignorés) ; inconnus = entrées introuvables.
+function Calc.TalentGap(level, talents, plan, nameOf)
   if talents == nil then return nil end
-  local out = {}
-  if type(level) ~= "number" then return out end
+  local out, unknown = {}, {}
+  if type(level) ~= "number" then return out, unknown end
   for _, e in ipairs(plan or {}) do
     if e.tab and level >= e.from and level <= e.to then
-      local have = talents[e.tab] and talents[e.tab][e.row] and talents[e.tab][e.row][e.col] or 0
-      if have < e.rank then out[#out + 1] = { entry = e, have = have, want = e.rank } end
+      local have
+      for _, id in ipairs(e.spellIDs or {}) do
+        if talents[id] then have = talents[id].rank break end
+      end
+      if have == nil and e.spellIDs and nameOf then
+        local name = nameOf(e.spellIDs[1])
+        if name then
+          for _, t in pairs(talents) do
+            if type(t) == "table" and t.name == name then have = t.rank break end
+          end
+        end
+      end
+      if have == nil and talents.pos then
+        have = talents.pos[e.tab] and talents.pos[e.tab][e.row] and talents.pos[e.tab][e.row][e.col] or 0
+      end
+      if have == nil then unknown[#unknown + 1] = e
+      elseif have < e.rank then out[#out + 1] = { entry = e, have = have, want = e.rank } end
     end
   end
-  return out
+  return out, unknown
 end
 
 -- profs = State.profs, data = ns.Data.Professions. Rend 3 valeurs :

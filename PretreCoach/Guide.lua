@@ -64,8 +64,9 @@ function CHECKS.talent(o)
     if x.key == o.arg and x.from <= o.from and (not e or x.from > e.from) then e = x end
   end
   if not e then return nil end
-  local have = t[e.tab] and t[e.tab][e.row] and t[e.tab][e.row][e.col] or 0
-  return have >= e.rank
+  local gap, unknown = Calc.TalentGap(e.from, t, { e }, State.SpellName)
+  if #unknown > 0 then return nil end
+  return #gap == 0
 end
 
 function CHECKS.spells()

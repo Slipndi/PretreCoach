@@ -3,7 +3,9 @@
 -- Les demandes sont groupées (un seul ns.After(0.2) en attente) et ne relisent que la partie concernée.
 -- Une lecture qui échoue (nil) garde la valeur précédente. State.Refresh() relit tout, mais avec ce délai.
 -- QUEST_TURNED_IN ne relit rien : STATE avec changed = { "quests" } (à interroger via State.QuestDone).
--- State.Knows(key) : cache invalidé sur SPELLS_CHANGED / LEARNED_SPELL_IN_TAB (qui émettent STATE { "spells" }) / PLAYER_LEVEL_UP ;
+-- State.Knows(key) : cache invalidé sur SPELLS_CHANGED (qui émet STATE { "spells" }) / PLAYER_LEVEL_UP ;
+-- State.talents = { [spellID] = { rank, max, name } } (C_Traits, seul système de ce client) ; sur un client Classic
+-- (GetTalentInfo présent) : { pos = { [tab][row][col] = rang } }. nil = illisible.
 -- nil (inconnu) si aucun rang du sort n'existe dans le client (pas de nom), sans pouvoir être « à apprendre ».
 local _, ns = ...
 local S = ns.S
@@ -58,7 +60,38 @@ local function readWand()
   return { itemID = id, name = name, reqLevel = minLevel }
 end
 
-local function readTalents()
+-- Arbre moderne : un spellID par entrée de nœud (définition). Un nœud illisible est sauté (le talent sera « inconnu »).
+local function readTraits()
+  local T = C_Traits
+  local cfg = S.Get(C_ClassTalents and C_ClassTalents.GetActiveConfigID)
+  if not (T and type(cfg) == "number") then return nil end
+  local cfgInfo = S.Get(T.GetConfigInfo, cfg)
+  if type(cfgInfo) ~= "table" or type(cfgInfo.treeIDs) ~= "table" then return nil end
+  local out, read = {}, false
+  for _, tree in ipairs(cfgInfo.treeIDs) do
+    local nodes = S.Get(T.GetTreeNodes, tree)
+    for _, nodeID in ipairs(type(nodes) == "table" and nodes or {}) do
+      local node = S.Get(T.GetNodeInfo, cfg, nodeID)
+      if type(node) == "table" and type(node.activeRank) == "number" and type(node.maxRanks) == "number" then
+        read = true
+        local ids = type(node.entryIDs) == "table" and node.entryIDs or {}
+        local active = type(node.activeEntry) == "table" and node.activeEntry.entryID or nil
+        for _, entryID in ipairs(ids) do
+          local entry = S.Get(T.GetEntryInfo, cfg, entryID)
+          local def = type(entry) == "table" and entry.definitionID and S.Get(T.GetDefinitionInfo, entry.definitionID)
+          local spellID = type(def) == "table" and def.spellID
+          if type(spellID) == "number" then
+            local rank = (#ids == 1 or active == entryID) and node.activeRank or 0
+            out[spellID] = { rank = rank, max = node.maxRanks, name = S.Get(C_Spell and C_Spell.GetSpellName, spellID) }
+          end
+        end
+      end
+    end
+  end
+  return read and out or nil
+end
+
+local function readClassic()
   local nTabs = S.Get(GetNumTalentTabs)
   if type(nTabs) ~= "number" then return nil end
   local t = {}
@@ -74,8 +107,13 @@ local function readTalents()
       t[tab][row][col] = rank
     end
   end
-  return t
+  return { pos = t }
 end
+
+local function readTalents() return readTraits() or readClassic() end
+
+-- Nom localisé d'un sort (repli par nom de Calc.TalentGap) ; nil si inconnu.
+function State.SpellName(id) return (S.Get(C_Spell and C_Spell.GetSpellName, id)) end
 
 local function readProfs()
   local profs
@@ -130,8 +168,13 @@ local function refresh()
   if w.wand then keep("wand", readWand()) end
   if w.talents then
     keep("talents", readTalents())
-    keep("unspentTalents", S.Get(GetUnspentTalentPoints))
-    keep("specGroups", S.Get(GetNumTalentGroups) or S.Get(GetNumSpecGroups))
+    local unspent = S.Get(GetNumUnspentTalents)
+    if unspent == nil then -- booléen : 1 ou 0
+      local has = S.Get(C_ClassTalents and C_ClassTalents.HasUnspentTalentPoints)
+      if has ~= nil then unspent = has and 1 or 0 end
+    end
+    keep("unspentTalents", unspent)
+    keep("specGroups", S.Get(GetNumSpecGroups))
   end
   if w.profs then keep("profs", readProfs()) end
   if w.spells then changed[#changed + 1] = "spells" end
@@ -167,6 +210,7 @@ from("ZONE_CHANGED_NEW_AREA", { map = true })
 from("PLAYER_EQUIPMENT_CHANGED", { wand = true })
 from("CHARACTER_POINTS_CHANGED", { talents = true })
 from("PLAYER_TALENT_UPDATE", { talents = true })
+from("ACTIVE_TALENT_GROUP_CHANGED", { talents = true })
 from("SKILL_LINES_CHANGED", { profs = true })
 -- sorts appris : le cache est invalidé et un STATE { "spells" } est émis (groupé par le délai de 0,2 s)
 local function spellsChanged()
@@ -174,7 +218,6 @@ local function spellsChanged()
   request({ spells = true })
 end
 on("SPELLS_CHANGED", spellsChanged)
-on("LEARNED_SPELL_IN_TAB", spellsChanged)
 on("QUEST_TURNED_IN", function() ns.Fire("STATE", { "quests" }) end)
 
 -- UnitLevel peut être en retard : on prend le niveau de l'événement.
@@ -195,7 +238,7 @@ on("PLAYER_REGEN_ENABLED", function() if dirty then refresh() end end)
 
 -- true/false, ou nil si inconnu.
 function State.QuestDone(id)
-  local fn = (C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted) or IsQuestFlaggedCompleted
+  local fn = (C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted) or IsQuestFlaggedCompleted -- repli Classic
   return (S.Get(fn, id))
 end
 

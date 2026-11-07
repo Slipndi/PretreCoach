@@ -7,14 +7,14 @@ local READ_OK = {}
 for w in ([[
 _G assert date error getmetatable ipairs math next pairs pcall select setmetatable string table tinsert tonumber tostring type unpack
 CreateFrame UIParent ChatFontNormal SlashCmdList UISpecialFrames InCombatLockdown geterrorhandler issecretvalue print
-C_Timer C_Spell C_UnitAuras C_Map C_Item C_QuestLog C_TradeSkillUI C_SpellBook C_ActionBar
+C_Timer C_Spell C_UnitAuras C_Map C_Item C_QuestLog C_TradeSkillUI C_SpellBook C_ActionBar C_Traits C_ClassTalents C_SpecializationInfo
 GetActionInfo GetBindingKey GetBindingText GetSpellTexture GetPlayerAuraBySpellID
 UnitCanAttack UnitHealth UnitHealthMax UnitPower UnitPowerMax GetPowerRegen UnitExists UnitGUID UnitIsDead UnitLevel UnitCreatureType
 UnitClass UnitRace CheckInteractDistance GetUnitSpeed IsPlayerMoving GetInventoryItemID GetInventoryItemLink
 IsPlayerSpell IsSpellKnown GetSpellInfo GetSpellCooldown GetLocale GetBuildInfo GetRealZoneText
 GetNumTalentTabs GetProfessions GetProfessionInfo GetNumSkillLines GetSkillLineInfo
 GetNumTrainerServices GetTrainerServiceInfo GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString
-GetTime GetNumTalents GetTalentInfo GetNumTalentGroups GetNumSpecGroups GetUnspentTalentPoints
+GetTime GetNumTalents GetTalentInfo GetNumTalentGroups GetNumSpecGroups GetNumUnspentTalents
 Settings Minimap GameTooltip GetCursorPosition GetItemInfo GetItemCount GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED
 ]]):gmatch("%S+") do READ_OK[w] = true end
 

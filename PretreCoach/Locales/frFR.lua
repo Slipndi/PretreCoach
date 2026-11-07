@@ -90,6 +90,7 @@ ns.L = {
   ROT_BANDAGE = "Bandage : pas de mana, pas de règle des 5 s",
   ROT_DRINK = "Bois pour récupérer du mana",
   ROT_EAT = "Mange pour récupérer de la vie",
+  ROT_RECOVER = "Récupère",
   ROT_SWP_UNKNOWN = "Pose ta Douleur si elle n'est pas là, puis baguette",
   ROT_SWP_GROUP = "Pose ta Douleur sur cette cible aussi (groupe)",
   RULES_TITLE = "Règles d'or",

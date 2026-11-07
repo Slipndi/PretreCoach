@@ -33,7 +33,9 @@ local APIS = {
   "GetNumTalentTabs", "GetTalentTabInfo", "GetTalentInfo", "GetNumTalents",
   "GetUnspentTalentPoints", "UnitCharacterPoints",
   "GetNumTalentGroups", "GetActiveTalentGroup", "GetNumSpecGroups", "GetActiveSpecGroup",
-  "C_ClassTalents.GetActiveConfigID", "C_Traits.GetConfigInfo", "C_SpecializationInfo.GetSpecialization",
+  "C_ClassTalents.GetActiveConfigID", "C_ClassTalents.HasUnspentTalentPoints", "GetNumUnspentTalents",
+  "C_Traits.GetConfigInfo", "C_Traits.GetTreeNodes", "C_Traits.GetNodeInfo", "C_Traits.GetEntryInfo", "C_Traits.GetDefinitionInfo",
+  "C_SpecializationInfo.GetSpecialization", "C_SpecializationInfo.GetActiveSpecGroup", "LegacySystemFrame_LoadUI", "ToggleLegacySystemUI",
   "GetNumTrainerServices", "GetTrainerServiceInfo", "GetTrainerServiceLevelReq", "GetTrainerServiceCost",
   "Settings.RegisterCanvasLayoutCategory", "Settings.RegisterAddOnCategory", "InterfaceOptions_AddCategory",
   "C_AssistedCombat.GetNextCastSpell",
@@ -100,7 +102,7 @@ local function Status(path, ...)
 end
 
 local function SpellName(id)
-  local n = S.Get(C_Spell and C_Spell.GetSpellName, id) or S.Get(GetSpellInfo, id)
+  local n = S.Get(C_Spell and C_Spell.GetSpellName, id)
   return n or "?"
 end
 
@@ -117,7 +119,6 @@ local function Snapshot()
     { "Mana max", Status("UnitPowerMax", "player", 0) },
     { "Regen mana (GetPowerRegen)", Status("GetPowerRegen") },
     { "Recharge Attaque mentale (C_Spell)", Status("C_Spell.GetSpellCooldown", 8092) },
-    { "Recharge Attaque mentale (ancienne)", Status("GetSpellCooldown", 8092) },
     { "Recharge globale (61304)", Status("C_Spell.GetSpellCooldown", 61304) },
     { "Buff joueur n°1", Status("C_UnitAuras.GetAuraDataByIndex", "player", 1, "HELPFUL") },
     { "Vitesse joueur", Status("GetUnitSpeed", "player") },
@@ -144,6 +145,14 @@ local function Snapshot()
   return { lines = t, when = date("%Y-%m-%d %H:%M:%S"), target = hasTarget and true or false }
 end
 
+-- Tables globales dont le nom contient « legacy » ou « forever » (pas seulement C_*) : membres listés ; C_GameRules en entier.
+local function Members(v)
+  local m = {}
+  for fk, fv in pairs(v) do if type(fk) == "string" then m[#m + 1] = fk .. (type(fv) == "function" and "()" or ":" .. type(fv)) end end
+  table.sort(m)
+  return "{ " .. table.concat(m, ", ") .. " }"
+end
+
 local function Discover()
   local hits, pats = {}, { "legacy", "forever", "camelot", "talent", "trainer", "specgroup", "dualspec" }
   local function match(name)
@@ -152,8 +161,11 @@ local function Discover()
   end
   for k, v in pairs(_G) do
     if type(k) == "string" then
+      local l = k:lower()
       if type(v) == "function" and match(k) then
         hits[#hits + 1] = k .. "()"
+      elseif type(v) == "table" and (l:find("legacy", 1, true) or l:find("forever", 1, true) or k == "C_GameRules") then
+        hits[#hits + 1] = k .. " " .. Members(v)
       elseif type(v) == "table" and k:sub(1, 2) == "C_" then
         local fns = {}
         for fk, fv in pairs(v) do
@@ -170,14 +182,51 @@ local function Discover()
   return hits
 end
 
+-- Arbre C_Traits : un nœud par ligne (spellID de la définition, nom, rang/max), puis le sort du plan trouvé ou non.
+local function TraitsReport(add)
+  local T = C_Traits
+  local cfg = S.Get(C_ClassTalents and C_ClassTalents.GetActiveConfigID)
+  if not (T and type(cfg) == "number") then add("C_Traits ou configID indisponible") return end
+  local info = S.Get(T.GetConfigInfo, cfg)
+  add("configID %s | treeIDs : %s", tostring(cfg), type(info) == "table" and type(info.treeIDs) == "table" and table.concat(info.treeIDs, ", ") or "?")
+  local found = {}
+  for _, tree in ipairs(type(info) == "table" and type(info.treeIDs) == "table" and info.treeIDs or {}) do
+    local nodes = S.Get(T.GetTreeNodes, tree)
+    add("arbre %s : %d nœuds", tostring(tree), type(nodes) == "table" and #nodes or 0)
+    for _, nodeID in ipairs(type(nodes) == "table" and nodes or {}) do
+      local node = S.Get(T.GetNodeInfo, cfg, nodeID)
+      if type(node) == "table" then
+        for _, entryID in ipairs(type(node.entryIDs) == "table" and node.entryIDs or {}) do
+          local entry = S.Get(T.GetEntryInfo, cfg, entryID)
+          local def = type(entry) == "table" and S.Get(T.GetDefinitionInfo, entry.definitionID)
+          local spellID = type(def) == "table" and def.spellID
+          if type(spellID) == "number" then
+            found[spellID] = { rank = node.activeRank, max = node.maxRanks }
+            add("  nœud %s : spellID %s | %s | %s/%s", tostring(nodeID), tostring(spellID), SpellName(spellID),
+              Show(node.activeRank), Show(node.maxRanks))
+          else
+            add("  nœud %s : définition illisible", tostring(nodeID))
+          end
+        end
+      end
+    end
+  end
+  add("Plan de talents :")
+  for _, e in ipairs(ns.Data.TalentPlan) do
+    if e.spellIDs then
+      local hit
+      for _, id in ipairs(e.spellIDs) do if found[id] then hit = { id = id, n = found[id] } break end end
+      add("  %s : %s", e.name, hit and ("trouvé (spellID %d, rang %s/%s)"):format(hit.id, Show(hit.n.rank), Show(hit.n.max)) or "introuvable")
+    end
+  end
+end
+
 local function SlotLine(slot)
   local id, st = S.Get(GetInventoryItemID, "player", slot)
   local head = ("emplacement %d : %s | lien : %s"):format(slot,
     id and ("objet " .. tostring(id)) or (st == "nil" and "vide" or st), Dump("GetInventoryItemLink", "player", slot))
   if not id then return head end
-  local instant = (C_Item and C_Item.GetItemInfoInstant) and "C_Item.GetItemInfoInstant" or "GetItemInfoInstant"
-  local info = (C_Item and C_Item.GetItemInfo) and "C_Item.GetItemInfo" or "GetItemInfo"
-  return head .. (" | instant : %s | infos : %s"):format(Dump(instant, id), Dump(info, id))
+  return head .. (" | instant : %s | infos : %s"):format(Dump("C_Item.GetItemInfoInstant", id), Dump("C_Item.GetItemInfo", id))
 end
 
 ------------------------------------------------------------------------
@@ -313,7 +362,7 @@ local function CheckData(add)
   for _, s in ipairs(D.Spells or {}) do
     for _, r in ipairs(s.ranks or {}) do spells[#spells + 1] = { r.id, s.key } end
   end
-  CheckIds(add, "Sorts", spells, (C_Spell and C_Spell.GetSpellName) or GetSpellInfo)
+  CheckIds(add, "Sorts", spells, C_Spell and C_Spell.GetSpellName)
 
   for _, w in ipairs(D.Wands or {}) do items[#items + 1] = { w.itemID, w.name } end
   for _, p in pairs(D.Professions or {}) do
@@ -321,7 +370,7 @@ local function CheckData(add)
       for _, e in ipairs(list) do items[#items + 1] = { e.itemID, e.name } end
     end
   end
-  CheckIds(add, "Objets", items, (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant)
+  CheckIds(add, "Objets", items, C_Item and C_Item.GetItemInfoInstant)
 
   for id, z in pairs(D.Zones or {}) do maps[#maps + 1] = { id, z[3] } end
   for _, d in ipairs(D.Dungeons or {}) do maps[#maps + 1] = { d.zoneMapID, d.name } end
@@ -393,16 +442,15 @@ function ns.Probe()
   add("Dernier sort lancé EN COMBAT (spellID lisible ?) : %s", lc and ("%s %s (%s)"):format(tostring(lc.id), tostring(lc.name), tostring(lc.when)) or "aucun")
 
   section("Talents et double spécialisation")
-  add("GetNumTalentTabs : %s", Dump("GetNumTalentTabs"))
-  for tab = 1, 3 do add("GetTalentTabInfo(%d) : %s", tab, Dump("GetTalentTabInfo", tab)) end
-  add("GetNumTalents(1) : %s", Dump("GetNumTalents", 1))
-  add("GetTalentInfo(1,1) : %s", Dump("GetTalentInfo", 1, 1))
-  add("GetUnspentTalentPoints : %s | UnitCharacterPoints : %s", Dump("GetUnspentTalentPoints"), Dump("UnitCharacterPoints", "player"))
-  add("GetNumTalentGroups : %s | GetActiveTalentGroup : %s", Dump("GetNumTalentGroups"), Dump("GetActiveTalentGroup"))
-  add("GetNumSpecGroups : %s | GetActiveSpecGroup : %s", Dump("GetNumSpecGroups"), Dump("GetActiveSpecGroup"))
+  add("GetNumSpecGroups : %s | C_SpecializationInfo.GetActiveSpecGroup : %s", Dump("GetNumSpecGroups"), Dump("C_SpecializationInfo.GetActiveSpecGroup"))
+  add("GetNumUnspentTalents : %s | C_ClassTalents.HasUnspentTalentPoints : %s", Dump("GetNumUnspentTalents"), Dump("C_ClassTalents.HasUnspentTalentPoints"))
   add("C_ClassTalents.GetActiveConfigID : %s", Dump("C_ClassTalents.GetActiveConfigID"))
 
-  section("API découvertes (legacy / forever / talent / trainer)")
+  section("Arbre de talents (C_Traits)")
+  local okT, errT = pcall(TraitsReport, add)
+  if not okT then add("erreur : %s", tostring(errT)) end
+
+  section("API découvertes (legacy / forever / talent / trainer / C_GameRules)")
   local ok, hits = pcall(Discover)
   if ok then for _, h in ipairs(hits) do add(h) end else add("erreur : %s", tostring(hits)) end
 
@@ -429,16 +477,10 @@ function ns.Probe()
       end
     end
   end
-  add("GetSkillLineInfo ne voit pas les en-têtes repliés (compétences d'une catégorie fermée absentes)")
-  local n = S.Get(GetNumSkillLines)
-  for i = 1, math.min(n or 0, 40) do
-    local st, name, header, _, rank = S.GetAll(GetSkillLineInfo, i)
-    if st == "lisible" and not header then add("  compétence : %s %s", Show(name), Show(rank)) end
-  end
 
   section("Quêtes")
-  local questFn = (C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted) and "C_QuestLog.IsQuestFlaggedCompleted" or "IsQuestFlaggedCompleted"
-  add("Quête %d (Blackfathom Villainy / Gravestone Scepter) terminée : %s", ns.Data.GravestoneQuest, Dump(questFn, ns.Data.GravestoneQuest))
+  add("Quête %d (Blackfathom Villainy / Gravestone Scepter) terminée : %s", ns.Data.GravestoneQuest,
+    Dump("C_QuestLog.IsQuestFlaggedCompleted", ns.Data.GravestoneQuest))
 
   section("Contrôle des ID de Data/")
   CheckData(add)

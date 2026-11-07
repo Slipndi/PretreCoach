@@ -19,17 +19,19 @@ end
 
 -- Ligne « plan non suivi » (texte), nil si le plan est suivi ou si les talents sont illisibles.
 function Talents.GapLine()
-  local gap = Calc.TalentGap(State.level, State.talents, D.TalentPlan)
+  local gap = Calc.TalentGap(State.level, State.talents, D.TalentPlan, State.SpellName)
   if not gap or #gap == 0 then return nil end
   return L.TALENT_GAP:format(gap[1].entry.name)
 end
 
 local function label(e) return e.rank and L.GUIDE_POINTS:format(e.name, e.rank) or e.name end
 
--- Talent à prendre : le premier manquant du plan à ce niveau ; talents illisibles : le premier de la fenêtre.
+-- Talent à prendre : le premier manquant du plan à ce niveau, sinon le premier introuvable ; talents illisibles : le
+-- premier de la fenêtre.
 local function nextEntry(level)
-  local gap = Calc.TalentGap(level, State.talents, D.TalentPlan)
-  if gap then return gap[1] and gap[1].entry end
+  local gap, unknown = Calc.TalentGap(level, State.talents, D.TalentPlan, State.SpellName)
+  if gap and gap[1] then return gap[1].entry end
+  if gap then return unknown[1] end
   for _, e in ipairs(D.TalentPlan) do
     if e.key and level >= e.from and level <= e.to then return e end
   end

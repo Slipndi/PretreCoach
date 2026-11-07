@@ -18,6 +18,7 @@ local GROUP_MAX = 3          -- Douleurs déjà posées au-delà desquelles on r
 local BURST_MIN_HP = 25  -- cible presque morte : pas de sort, on achève
 local SMITE_UNTIL = 35   -- Châtiment tant que la vie de la cible est au-dessus
 local HP_LOW, HP_OK, MANA_LOW = 60, 70, 50
+local RECOVER_SECS = 30  -- carte « Récupère » après un combat (vie et mana secrets : pas de seuil)
 local SMITE_BLIND = 2    -- Châtiments avant le corps à corps quand la vie de la cible est illisible
 
 local AURA = { SHIELD_WEAK = 6788, SHADOWFORM = 15473, BANDAGE = 11196 }
@@ -76,7 +77,20 @@ function Rotation.Compute(ctx)
     end
     local hp, mp = ctx.hpPct, ctx.manaPct
     if hp == nil or mp == nil then
-      if #keys == 0 then out.reason = "vie ou mana illisible : rien à récupérer" end
+      -- vie ou mana secrets : après le combat, la liste de ce qui est possible, sans seuil
+      if ctx.recover == true then
+        if ctx.targetDead == true and edible[ctx.targetCreatureType] and ctx.cannibalUsable == true and ready("CANNIBAL") then
+          add("CANNIBAL", L.ROT_CANNIBAL, "cadavre humanoïde ou mort-vivant")
+        end
+        if (ctx.bandageCount or 0) > 0 and ctx.recentlyBandaged ~= true then
+          add("BANDAGE", L.ROT_BANDAGE, "bandage disponible")
+        end
+        if ready("DARKSAC") then add("DARKSAC", L.ROT_DARKSAC, "Sacrifice sombre prêt") end
+        add("DRINK", L.ROT_DRINK, "boire")
+        add("EAT", L.ROT_EAT, "manger")
+        out.text = L.ROT_RECOVER .. " : " .. out.text
+        out.reason = "récupération après combat (vie ou mana secrets) : " .. out.reason
+      elseif #keys == 0 then out.reason = "vie ou mana illisible : rien à récupérer" end
       return out
     end
     local hpLow, mpLow = hp < HP_LOW, mp < MANA_LOW
@@ -282,6 +296,7 @@ for _, r in ipairs(spellByKey.HOLYFIRE.ranks) do holyFireIDs[r.id] = true end
 local holyGuids, holyThisTarget = {}, false
 -- hystérésis (mémoire de l'état « mana haut ») ; Compute les reçoit par ctx
 local mbHigh, flayHigh
+local recoverUntil -- GetTime() de la fin de la carte « Récupère » ; nil = pas de carte
 
 local function hyst(flag, mana, on, off)
   if mana == nil then return flag end
@@ -384,9 +399,11 @@ function Rotation.Context()
       ctx.shieldUp = shieldUp()
     end
   end
-  -- récupération : seulement hors combat, sans cible hostile, avec une vie lisible et basse
+  if ctx.hasHostileTarget then recoverUntil = nil end
+  ctx.recover = not ctx.inCombat and not ctx.hasHostileTarget and recoverUntil ~= nil and GetTime() < recoverUntil
+  -- récupération : seulement hors combat, sans cible hostile, avec une vie lisible et basse (ou la carte « Récupère »)
   if not ctx.inCombat and not ctx.hasHostileTarget then
-    if ctx.hpPct ~= nil and ctx.hpPct < HP_LOW then
+    if ctx.recover or (ctx.hpPct ~= nil and ctx.hpPct < HP_LOW) then
       ctx.recentlyBandaged = aura(AURA.BANDAGE)
       ctx.bandageCount = bandages()
     end
@@ -450,9 +467,11 @@ on("PLAYER_TARGET_CHANGED", function()
   smites, holyThisTarget, tgtT = 0, false, now
   if reset or timersT ~= now then update() end
 end)
-on("PLAYER_REGEN_DISABLED", update)
+on("PLAYER_REGEN_DISABLED", function() recoverUntil = nil update() end)
 on("PLAYER_REGEN_ENABLED", function()
   holyGuids = {}
+  recoverUntil = GetTime() + RECOVER_SECS
+  ns.After(RECOVER_SECS + 0.5, update)
   if Rotation.dirty then Rotation.Rescan() else update() end
 end)
 on("PLAYER_STARTED_MOVING", update)

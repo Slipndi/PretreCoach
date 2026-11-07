@@ -71,6 +71,13 @@ check("garde-fou : pas d'appel direct aux API secretes", function()
   end
 end)
 
+-- State.talents au format C_Traits : tl{ [spellID] = rang } (Connexion spirituelle 15270, Specialisation Baguette 14524)
+local function tl(t)
+  local o = {}
+  for id, r in pairs(t) do o[id] = { rank = r, max = 5, name = "Sort" .. id } end
+  return o
+end
+
 local function suite(label)
   prefix = label .. " : "
   mock.reset()
@@ -440,12 +447,22 @@ local function suite(label)
 
   check("Calc.TalentGap", function()
     local plan = D.TalentPlan
-    assert(C.TalentGap(12, nil, plan) == nil, "talents nil = inconnu")
-    local gap = C.TalentGap(12, {}, plan)
-    assert(#gap == 1 and gap[1].entry.name == "Connexion spirituelle" and gap[1].have == 0 and gap[1].want == 5)
-    assert(#C.TalentGap(12, { [3] = { [1] = { [3] = 5 } } }, plan) == 0)
-    assert(#C.TalentGap(40, {}, plan) == 1, "respec ignore, Forme d'Ombre attendue")
+    assert(C.TalentGap(12, nil, plan) == nil, "talents nil = illisible")
+    local gap, unk = C.TalentGap(12, {}, plan)
+    assert(#gap == 0 and #unk == 1 and unk[1].name == "Connexion spirituelle", "entree introuvable : inconnue, pas manquante")
+    gap, unk = C.TalentGap(12, tl{ [15335] = 2 }, plan)
+    assert(#gap == 1 and gap[1].have == 2 and gap[1].want == 5 and #unk == 0, "rang insuffisant : manquant")
+    assert(#C.TalentGap(12, tl{ [15338] = 5 }, plan) == 0, "plan trouve")
+    gap, unk = C.TalentGap(40, {}, plan)
+    assert(#gap == 0 and #unk == 1 and unk[1].key == "SHADOWFORM", "respec ignore, Forme d'Ombre attendue")
     assert(#C.TalentGap(nil, {}, plan) == 0)
+    -- repli par nom : le noeud porte un autre spellID, meme nom localise que le 1er spellID du plan
+    local byName = { [99999] = { rank = 1, max = 5, name = "Connexion" } }
+    gap, unk = C.TalentGap(12, byName, plan, function(id) return id == 15270 and "Connexion" or nil end)
+    assert(#gap == 1 and gap[1].have == 1 and #unk == 0, "repli par nom")
+    -- repli Classic par position
+    gap = C.TalentGap(12, { pos = { [3] = { [1] = { [3] = 3 } } } }, plan)
+    assert(#gap == 1 and gap[1].have == 3, "repli par position")
   end)
 
   check("Calc.ProfessionTodo", function()
@@ -467,20 +484,21 @@ local function suite(label)
   local St = N.State
 
   check("State : rafraichi sur PLAYER_LOGIN", function()
-    mock.talentList = { [3] = { { 1, 3, 5 } } }
+    mock.nodes = { { 15270, 5, 5 } }
     mock.fire("PLAYER_LOGIN")
     mock.flushTimers()
     assert(St.level == 12, "niveau")
     assert(C_Map and (St.mapID == 1 and St.zone == 1420) or (St.mapID == nil and St.zone == nil), "zone (chaine parentMapID)")
     assert(#msgs == 1 and msgs[1]:find("level", 1, true), "message STATE attendu")
-    if GetNumTalentTabs then
-      assert(St.talents[3][1][3] == 5 and St.unspentTalents == 0 and St.specGroups == 1 and St.wand == false)
+    if C_Traits then
+      assert(St.talents[15270].rank == 5 and St.talents[15270].max == 5 and St.talents[15270].name == "Sort15270")
+      assert(St.unspentTalents == 0 and St.specGroups == 1 and St.wand == false)
       assert(St.profs[182].rank == 100 and St.profs[171].max == 300, "metiers")
     else
       assert(St.talents == nil and St.unspentTalents == nil and St.specGroups == nil and St.profs == nil and St.wand == nil)
     end
     local n = #msgs
-    mock.fire("SPELLS_CHANGED"); mock.fire("LEARNED_SPELL_IN_TAB"); mock.flushTimers()
+    mock.fire("SPELLS_CHANGED"); mock.fire("SPELLS_CHANGED"); mock.flushTimers()
     -- sans minuteur, ns.After est immediat : un STATE par evenement
     local k = C_Timer and 1 or 2
     assert(#msgs == n + k and msgs[#msgs] == "spells", "STATE { spells } groupe par le delai")
@@ -540,18 +558,70 @@ local function suite(label)
   end)
 
   check("State : talents illisibles = nil (pas de table partielle), ancienne valeur gardee", function()
-    if not GetTalentInfo then return end
-    local gt, sentinel = GetTalentInfo, { [1] = {} }
-    GetTalentInfo = function() error("boom") end
+    if not C_Traits then return end
+    local gn, sentinel = C_Traits.GetNodeInfo, { [1] = {} }
+    C_Traits.GetNodeInfo = function() error("boom") end
     St.talents = nil
     mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
     assert(St.talents == nil and C.TalentGap(12, St.talents, D.TalentPlan) == nil, "talents inconnus")
     St.talents = sentinel
     mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
     assert(St.talents == sentinel, "lecture ratee : valeur precedente gardee")
-    GetTalentInfo = gt
+    C_Traits.GetNodeInfo = gn
+    mock.fire("ACTIVE_TALENT_GROUP_CHANGED"); mock.flushTimers()
+    assert(St.talents ~= sentinel and St.talents[15270].rank == 5)
+  end)
+
+  check("State : talents C_Traits (plan trouve, rang insuffisant, entree introuvable), repli Classic", function()
+    if not C_Traits then return end
+    local function gap(level) return C.TalentGap(level, St.talents, D.TalentPlan, St.SpellName) end
+    mock.nodes = { { 15335, 5, 5 } } -- un rang intermediaire du talent : meme talent
     mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
-    assert(St.talents ~= sentinel and St.talents[3][1][3] == 5)
+    local g, u = gap(12)
+    assert(#g == 0 and #u == 0, "plan trouve")
+    mock.nodes = { { 15270, 2, 5 } }
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+    g, u = gap(12)
+    assert(#g == 1 and g[1].have == 2 and g[1].want == 5 and #u == 0, "rang insuffisant : manquant")
+    mock.nodes = { { 1, 1, 1 } }
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+    g, u = gap(12)
+    assert(#g == 0 and #u == 1, "entree introuvable : inconnue, pas manquante")
+    -- client Classic : GetTalentInfo existe, C_Traits non
+    local keep = C_Traits
+    C_Traits = nil
+    GetNumTalentTabs = function() return 3 end
+    GetNumTalents = function() return 1 end
+    GetTalentInfo = function() return "Talent", 0, 1, 3, 4, 5 end
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+    g = gap(12)
+    GetNumTalentTabs, GetNumTalents, GetTalentInfo, C_Traits = nil, nil, nil, keep
+    assert(#g == 1 and g[1].have == 4, "position Classic")
+    mock.nodes = { { 15270, 5, 5 } }
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+  end)
+
+  check("State : unspentTalents par GetNumUnspentTalents, puis HasUnspentTalentPoints, sinon nil", function()
+    if not C_ClassTalents then return end
+    mock.unspent = 3
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+    assert(St.unspentTalents == 3, "GetNumUnspentTalents")
+    local keep = GetNumUnspentTalents
+    GetNumUnspentTalents = nil
+    mock.unspent = 0
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+    assert(St.unspentTalents == 0, "booleen faux = 0")
+    mock.unspent = 2
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+    assert(St.unspentTalents == 1, "booleen vrai = 1, recu " .. tostring(St.unspentTalents))
+    local keepC = C_ClassTalents
+    C_ClassTalents = nil
+    St.unspentTalents = nil
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+    assert(St.unspentTalents == nil, "aucune API : inconnu")
+    C_ClassTalents, GetNumUnspentTalents = keepC, keep
+    mock.unspent = nil
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
   end)
 
   check("State : PLAYER_LEVEL_UP en combat, rafraichi a la sortie", function()
@@ -569,11 +639,12 @@ local function suite(label)
 
   check("State : repli des metiers par GetSkillLineInfo", function()
     if not GetProfessions then return end
-    local gp, gs = GetProfessions, GetSkillLineInfo
+    local gp = GetProfessions
     GetProfessions = nil
+    GetNumSkillLines = function() return 1 end -- absent de ce client : repli Classic seulement s'il existe
     GetSkillLineInfo = function() return "Herboristerie", false, 0, 120, 0, 0, 300 end
     mock.fire("SKILL_LINES_CHANGED"); mock.flushTimers()
-    GetProfessions, GetSkillLineInfo = gp, gs
+    GetProfessions, GetNumSkillLines, GetSkillLineInfo = gp, nil, nil
     assert(St.profs[182].rank == 120 and St.profs[182].max == 300)
   end)
 
@@ -591,7 +662,7 @@ local function suite(label)
     mock.fire("SPELLS_CHANGED")
     assert(St.Knows("SWP") == 2)
     mock.known = {}
-    mock.fire("LEARNED_SPELL_IN_TAB")
+    mock.fire("SPELLS_CHANGED")
     assert(St.Knows("SWP") == 0)
     mock.known = { [594] = true }
     mock.fire("PLAYER_LEVEL_UP", 13); mock.flushTimers()
@@ -834,14 +905,14 @@ local function suite(label)
     setState(n, { level = 12 })
     assert(st(ev(n, "spirittap")) == "unknown")
     n.State.talents = {}
+    assert(st(ev(n, "spirittap")) == "unknown", "aucun noeud correspondant : inconnu")
+    n.State.talents = tl{ [15270] = 4 }
     assert(st(ev(n, "spirittap")) == "todo")
-    n.State.talents = { [3] = { [1] = { [3] = 4 } } }
-    assert(st(ev(n, "spirittap")) == "todo")
-    n.State.talents[3][1][3] = 5
+    n.State.talents[15270].rank = 5
     assert(st(ev(n, "spirittap")) == "done")
-    n.State.level, n.State.talents = 41, { [1] = { [1] = { [2] = 2 } } }
-    assert(st(ev(n, "wandspec2")) == "done" and ev(n, "wandspec") == nil, "plan de 41+ : meme position")
-    n.State.talents = {}
+    n.State.level, n.State.talents = 41, tl{ [14526] = 2 }
+    assert(st(ev(n, "wandspec2")) == "done" and ev(n, "wandspec") == nil, "plan de 41+ : meme talent, un autre rang connu")
+    n.State.talents = tl{ [14524] = 0 }
     assert(st(ev(n, "wandspec2")) == "todo")
     assert(st(ev(n, "dualspec")) == "unknown")
     n.State.specGroups = 1
@@ -931,25 +1002,25 @@ local function suite(label)
   check("Guide : toast unique, rien au premier chargement, rien si deja fait", function()
     local o = fresh()
     local n = o.n
-    setState(n, { level = 12, talents = { [3] = { [1] = { [3] = 3 } } } })
+    setState(n, { level = 12, talents = tl{ [15270] = 3 } })
     n.Fire("STATE", { "level" })
     assert(#o.toasts == 0 and o.gui == 0, "premiere evaluation : silence")
-    n.State.talents[3][1][3] = 5
+    n.State.talents[15270].rank = 5
     n.Fire("STATE", { "talents" })
     assert(#o.toasts == 1 and o.gui == 1, "un seul toast, recu " .. #o.toasts)
     assert(o.toasts[1].text == "Connexion spirituelle 5/5 : bien joué" and o.toasts[1].key == "obj:spirittap")
     assert(n.db.guide.done.spirittap == true, "id fait memorise")
     n.Fire("STATE", { "talents" })
     assert(#o.toasts == 1 and o.gui == 1, "pas de doublon")
-    n.State.talents[3][1][3] = 4; n.Fire("STATE", {})
-    n.State.talents[3][1][3] = 5; n.Fire("STATE", {})
+    n.State.talents[15270].rank = 4; n.Fire("STATE", {})
+    n.State.talents[15270].rank = 5; n.Fire("STATE", {})
     assert(#o.toasts == 1, "deja annonce : memorise")
     local o2 = fresh(n.db) -- rechargement : objectif deja fait, aucune annonce
-    setState(o2.n, { level = 12, talents = { [3] = { [1] = { [3] = 5 } } } })
+    setState(o2.n, { level = 12, talents = tl{ [15270] = 5 } })
     o2.n.Fire("STATE", {})
     assert(#o2.toasts == 0 and o2.gui == 0)
     local o3 = fresh() -- base neuve mais objectif deja fait au premier passage
-    setState(o3.n, { level = 12, talents = { [3] = { [1] = { [3] = 5 } } } })
+    setState(o3.n, { level = 12, talents = tl{ [15270] = 5 } })
     o3.n.Fire("STATE", {})
     assert(#o3.toasts == 0 and o3.n.db.guide.done.spirittap == true)
   end)
@@ -958,7 +1029,7 @@ local function suite(label)
     local o = fresh()
     local n = o.n
     knows({})
-    setState(n, { level = 39, specGroups = 1, talents = {} })
+    setState(n, { level = 39, specGroups = 1, talents = tl{ [14524] = 0 } })
     n.Fire("STATE", { "level" })
     assert(#o.toasts == 0, "premier chargement : silence")
     n.State.level = 41
@@ -972,7 +1043,7 @@ local function suite(label)
     assert(t.text:find("Forme d'Ombre", 1, true) and t.text:find("Double spécialisation", 1, true))
     -- en combat : rien ; a la sortie : l'evaluation
     mock.setCombat(true)
-    n.State.talents = { [1] = { [1] = { [2] = 2 } } }
+    n.State.talents = tl{ [14524] = 2 }
     n.Fire("STATE", { "talents" })
     assert(#o.toasts == 1, "rien en combat")
     mock.setCombat(false)
@@ -986,7 +1057,7 @@ local function suite(label)
     setState(n, { level = nil })
     assert(#n.Guide.Evaluate() == 0 and n.Guide.Next() == nil)
     for _, m in ipairs(n.Guide.Milestones()) do assert(m.state == "futur") end
-    setState(n, { level = 12, talents = {}, profs = {} })
+    setState(n, { level = 12, talents = tl{ [14524] = 0, [15270] = 0 }, profs = {} })
     local list = n.Guide.Evaluate()
     assert(list[1].id == "wandspec" and list[2].id == "spirittap" and list[3].id == "rank_comp", "priorites d'abord : " .. list[1].id)
     assert(n.Guide.Next().id == "wandspec")
@@ -1415,6 +1486,83 @@ local function suite(label)
     rk(merge(c, { flayHigh = true, manaPct = 24 }), "MINDFLAY,SHOOT", "la memoire prime ici aussi")
   end)
 
+  check("Rotation : carte Recupere (vie et mana secrets), seuils lisibles prioritaires", function()
+    local sec = { hasHostileTarget = false, recover = true }
+    sec.hpPct, sec.manaPct = nil, nil
+    local corpse = merge(sec, { targetDead = true, targetCreatureType = N.L.CT_HUMANOID, cannibalUsable = true, bandageCount = 2, recentlyBandaged = false })
+    rk(corpse, "CANNIBAL,BANDAGE,DARKSAC", "secret + fenetre : cadavre, bandage, Sacrifice sombre (3 conseils max)")
+    assert(N.Rotation.Compute(rctx(corpse)).text:find(N.L.ROT_RECOVER, 1, true), "titre Recupere")
+    rk(merge(sec, {}), "DARKSAC,DRINK,EAT", "sans cadavre ni bandage")
+    local off = merge(sec, { recover = false }) rk(off, "", "fenetre close : baguette seule")
+    rk(merge(sec, { inCombat = true }), "", "en combat : rien")
+    assert(not N.Rotation.Compute(rctx(merge(sec, { hasHostileTarget = true }))).text:find(N.L.ROT_RECOVER, 1, true), "cible hostile : pas de carte")
+    -- seuils lisibles : ils priment, la carte n'apparait pas
+    local ok = merge(sec, { hpPct = 100, manaPct = 100 })
+    rk(ok, "", "lisible et plein : rien malgre la fenetre")
+    local r = N.Rotation.Compute(rctx(merge(ok, { manaPct = 20 })))
+    assert(not r.text:find(N.L.ROT_RECOVER, 1, true), "pas de titre si lisible")
+    rk(merge(ok, { manaPct = 20 }), "DARKSAC,DRINK", "mana lisible bas : seuils habituels")
+  end)
+
+  check("Rotation : Context ouvre la fenetre Recupere 30 s apres le combat", function()
+    isolated(function()
+      local n = loadAddon()
+      mock.hasTarget = false
+      mock.time = 100
+      assert(n.Rotation.Context().recover == false, "avant tout combat")
+      mock.fire("PLAYER_REGEN_DISABLED")
+      mock.fire("PLAYER_REGEN_ENABLED")
+      assert(n.Rotation.Context().recover == true, "juste apres")
+      mock.time = 129
+      assert(n.Rotation.Context().recover == true, "29 s")
+      mock.time = 131
+      assert(n.Rotation.Context().recover == false, "31 s")
+      mock.time = 100
+      assert(n.Rotation.Context().recover == true, "rouverte (horloge remontee)")
+      mock.hasTarget = true
+      assert(n.Rotation.Context().recover == false, "cible hostile")
+      mock.hasTarget = false
+      assert(n.Rotation.Context().recover == false, "cible hostile : fenetre fermee pour de bon")
+      mock.fire("PLAYER_REGEN_ENABLED")
+      mock.setCombat(true)
+      assert(n.Rotation.Context().recover == false, "en combat")
+      mock.setCombat(false)
+      mock.fire("PLAYER_REGEN_DISABLED")
+      assert(n.Rotation.Context().recover == false, "nouveau combat")
+      -- vitales lisibles : la fenetre existe mais les seuils priment dans Compute
+      mock.fire("PLAYER_REGEN_ENABLED")
+      mock.vitalsReadable = true
+      local c = n.Rotation.Context()
+      assert(c.recover == true and c.hpPct == 100 and c.manaPct == 100)
+      assert(#n.Rotation.Compute(c).keys == 0, "lisible et plein : pas de carte")
+    end, function() mock.hasTarget, mock.time, mock.vitalsReadable = true, 0, nil mock.setCombat(false) end)
+  end)
+
+  check("aucune globale absente du client Forever n'est appelee", function()
+    isolated(function()
+      local absent = { "GetSpellInfo", "GetSpellCooldown", "IsUsableSpell", "IsSpellInRange", "IsQuestFlaggedCompleted",
+        "GetItemInfo", "GetItemInfoInstant",
+        "UnitCharacterPoints", "InterfaceOptions_AddCategory" }
+      local hits = {}
+      for _, name in ipairs(absent) do
+        assert(rawget(_G, name) == nil, name .. " ne doit pas exister dans le mock")
+        rawset(_G, name, function() hits[#hits + 1] = name end)
+      end
+      local ok, err = pcall(function()
+        local n = loadAddon()
+        mock.fire("ADDON_LOADED", ADDON)
+        mock.fire("PLAYER_LOGIN")
+        for _, e in ipairs({ "SPELLS_CHANGED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "PLAYER_LEVEL_UP",
+          "ACTIVE_TALENT_GROUP_CHANGED", "TRAINER_SHOW", "PLAYER_EQUIPMENT_CHANGED" }) do mock.fire(e) end
+        n.Rotation.Context()
+        SlashCmdList.PRETRECOACH("probe")
+      end)
+      for _, name in ipairs(absent) do rawset(_G, name, nil) end
+      assert(ok, err)
+      assert(#hits == 0, "globale absente appelee : " .. table.concat(hits, ","))
+    end)
+  end)
+
   check("Rotation : Cri psychique absent du texte si aucun conseil", function()
     local res = N.Rotation.Compute(rctx({ level = 20, hasHostileTarget = false, hpPct = 100, manaPct = 100, targetMelee = true }))
     assert(#res.keys == 0 and not res.text:find(N.L.ROT_PSCREAM, 1, true))
@@ -1455,6 +1603,7 @@ local function suite(label)
     n.State.profs = { [129] = { rank = 30, max = 75 } }
     mock.items = { [1251] = 3, [2581] = 4, [6452] = 5 }
     mock.auras = { [6788] = true }
+    mock.vitalsReadable = true
     local c = n.Rotation.Context()
     assert(c.level == 12 and c.inCombat == false and c.hasHostileTarget == true and c.hasWand == true)
     assert(c.knows == n.State.Knows and type(c.cd) == "function")
@@ -1486,7 +1635,7 @@ local function suite(label)
       assert(c.hasHostileTarget == true, "cible supposee attaquable")
     end
     mock.setCombat(false)
-    mock.items, mock.auras = nil, nil
+    mock.items, mock.auras, mock.vitalsReadable = nil, nil, nil
   end)
 
   check("Rotation : compteur de Chatiments, remis a zero au changement de cible", function()
@@ -1736,7 +1885,7 @@ local function suite(label)
         local c = n.Rotation.Context()
         a, i = calls()
         assert(a == 1 and i == 0 and c.bandageCount == nil, "sans cible, vie pleine : ni bandages ni aura de bandage")
-        zero() mock.hp = 40
+        zero() mock.hp, mock.vitalsReadable = 40, true
         c = n.Rotation.Context()
         a, i = calls()
         assert(a == 2 and c.bandageCount ~= nil and (GetItemCount == nil or i > 0), "vie basse : bandages lus")
@@ -1745,7 +1894,7 @@ local function suite(label)
         a, i = calls()
         assert(a == 1 and i == 0, "vie basse mais en combat : pas de bandages")
       end)
-    end, function() mock.hp = nil end)
+    end, function() mock.hp, mock.vitalsReadable = nil, nil end)
   end)
 
   check("Rotation : recharge reelle hors combat quand Timers est degrade, inconnue en combat", function()
@@ -1767,9 +1916,12 @@ local function suite(label)
         assert(c.cd("MINDBLAST") == 0, "recharge globale seule : prete")
         mock.cooldowns = { [id] = { 0, 0 } }
         assert(c.cd("MINDBLAST") == 0 and c.cd("SWD") == nil, "sort non appris : inconnue")
-        C_Spell.GetSpellCooldown = nil -- ancienne API : GetSpellCooldown(id)
+        C_Spell.GetSpellCooldown = nil -- repli Classic, seulement si la globale existe
+        GetSpellCooldown = function() return 95, 8, 1 end
         mock.cooldowns = { [id] = { 95, 8 } }
         assert(c.cd("MINDBLAST") == 3, "ancienne API")
+        GetSpellCooldown = nil
+        assert(c.cd("MINDBLAST") == nil, "ni C_Spell ni globale : inconnue")
         C_Spell.GetSpellCooldown = keepC
         mock.setCombat(true)
         assert(c.cd("MINDBLAST") == nil, "en combat : jamais suppose pret")
@@ -1787,6 +1939,7 @@ local function suite(label)
   check("Rotation : le Context tient l'hysteresis de mana", function()
     isolated(function()
       local n = loadAddon()
+      mock.vitalsReadable = true
       local function st(mana) mock.mana = mana local c = n.Rotation.Context() return c.mbHigh, c.flayHigh end
       local mb, fl = st(70) assert(mb == true and fl == true)
       mb, fl = st(55) assert(mb == true and fl == true, "55 % : reste haut")
@@ -1798,10 +1951,11 @@ local function suite(label)
       _, fl = st(30) assert(fl == true)
       if not mock.noSecrets then
         mock.setCombat(true)
+        mock.vitalsReadable = false
         mb, fl = st(10)
         assert(mb == false and fl == true, "mana secret : etat conserve")
       end
-    end, function() mock.mana = nil mock.setCombat(false) end)
+    end, function() mock.mana, mock.vitalsReadable = nil, nil mock.setCombat(false) end)
   end)
 
   check("Rotation : Flammes sacrees notees par GUID, remises a zero hors combat ; sans GUID, au changement de cible", function()
@@ -2401,10 +2555,10 @@ local function suite(label)
   check("Talents : plan non suivi, un seul toast par session, ligne dans le guide", function()
     local o = fresh()
     local n = o.n
-    setState(n, { level = 12, unspentTalents = 0, talents = { [3] = { [1] = { [3] = 0 } } } })
+    setState(n, { level = 12, unspentTalents = 0, talents = tl{ [15270] = 0 } })
     n.Fire("STATE", { "talents" })
     n.Fire("STATE", { "talents" })
-    setState(n, { level = 13, unspentTalents = 0, talents = { [3] = { [1] = { [3] = 1 } } } })
+    setState(n, { level = 13, unspentTalents = 0, talents = tl{ [15270] = 1 } })
     n.Fire("STATE", { "level", "talents" })
     local t = pcToasts(o, "^pc:talentgap")
     assert(#t == 1 and t[1].text == "Plan de talents non suivi : Connexion spirituelle", "un seul toast : " .. #t)
