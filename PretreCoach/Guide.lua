@@ -271,6 +271,8 @@ function REFERENCE.profs(level)
       sub, hi = L.GUIDE_NOT_LEARNED, true
     else
       sub, hi = ("%d/%d"):format(p.rank or 0, p.max or 0), false
+      -- Herboristerie (route des herbes par tranche) n'a pas de fenetre de recettes
+      if ns.Prof and not D.Professions[id].herbs then sub = sub .. "\n" .. ns.Prof.Text(id) end
       for _, t in ipairs(todo or {}) do if t.skillLine == id then hi = true end end
     end
     out[#out + 1] = { text = D.Professions[id].name, sub = sub, highlight = hi }

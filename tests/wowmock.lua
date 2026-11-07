@@ -82,6 +82,7 @@ function mock.reset()
   mock.registered, mock.opened = nil, nil
   mock.waypoint, mock.superTracked, mock.canWaypoint, mock.areas, mock.mapKids, mock.mapNames = nil, nil, nil, nil, nil, nil
   if mock.qinit then mock.qinit() end
+  mock.recipeInfo, mock.schematics, mock.tsNotReady = nil, nil, nil
   mock.pos, mock.recipes, mock.bag, mock.addons, mock.sellPrice, mock.sub, mock.ejSelected = nil, nil, nil, nil, nil, nil, nil
 end
 
@@ -181,10 +182,16 @@ end,
 -- mock.recipes = nombre de recettes (0 par defaut)
 C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { professionName = "Metier" .. id } end,
   GetAllRecipeIDs = function() local t = {} for i = 1, mock.recipes or 0 do t[i] = 100 + i end return t end,
-  GetRecipeInfo = function(id) return { recipeID = id, name = "Recette" .. id, difficulty = "optimal", relativeDifficulty = 2,
-    numSkillUps = 1, learned = true } end,
-  GetRecipeSchematic = function() return {} end, IsTradeSkillReady = function() return true end,
-  GetTradeSkillLine = function() return 171 end, GetBaseProfessionInfo = function() return { professionID = 171 } end }
+  -- mock.recipeInfo = { [id] = champs a modifier } ; mock.schematics = { [id] = schema } ; mock.tsNotReady = fenetre pas prete
+  GetRecipeInfo = function(id)
+    local t = { recipeID = id, name = "Recette" .. id, relativeDifficulty = 0, numSkillUps = 1, learned = true, craftable = false, numAvailable = 0 }
+    for k, v in pairs((mock.recipeInfo or {})[id] or {}) do t[k] = v end
+    return t
+  end,
+  GetRecipeSchematic = function(id, isRecraft) assert(isRecraft == false) return (mock.schematics or {})[id] or {} end,
+  IsTradeSkillReady = function() return not mock.tsNotReady end,
+  GetTradeSkillLine = function() return 171, "Alchimie", 50, 75 end,
+  GetBaseProfessionInfo = function() return { professionID = 171, skillLevel = 50, maxSkillLevel = 75 } end }
 -- Zone, cible, sacs (mock.bag = { [slot] = itemID } dans le sac 0), addons, journal de donjon
 function GetRealZoneText() return "Tirisfal" end
 function GetSubZoneText() return mock.sub or "Brill" end
@@ -290,7 +297,8 @@ C_Map = { GetPlayerMapPosition = function() if mock.pos == false then return nil
   GetMapChildrenInfo = function(root)
     return (mock.mapKids or { [946] = { { mapID = 1420, name = "Tirisfal" }, { mapID = 1458, name = "Fossoyeuse" }, { mapID = 1411, name = "Orgrimmar" } } })[root] or {}
   end }
-Enum = { UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, Dungeon = 4, Micro = 5, Orphan = 6 } }
+Enum = { UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, Dungeon = 4, Micro = 5, Orphan = 6 },
+  TradeskillRelativeDifficulty = { Optimal = 0, Medium = 1, Easy = 2, Trivial = 3 } }
 
 -- mock.waypoint = dernier repere pose ; mock.superTracked = dernier appel de suivi ; mock.canWaypoint = false : carte refusee
 UiMapPoint = { CreateFromCoordinates = function(mapID, x, y) return { mapID = mapID, x = x, y = y } end }

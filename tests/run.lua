@@ -2688,6 +2688,77 @@ local function suite(label)
     assert(#pcToasts(o, "^pc:prof:") == before, "profs illisibles : rien de plus")
   end)
 
+  check("Professions L16a : recettes lues en direct, tri, cout et marge, combat, toast unique, API absente", function()
+    local o = fresh()
+    local n = o.n
+    n.db.prof = nil
+    setState(n, { level = 10, profs = { [171] = { rank = 50, max = 75 }, [129] = { rank = 1, max = 75 } } })
+    local function rows() local t = {} for _, r in ipairs(n.Guide.Reference("profs")) do t[r.text] = r end return t end
+    assert(rows()["Alchimie"].sub:find("Ouvre la fenêtre du métier pour une liste à jour", 1, true), "jamais ouvert")
+    assert(rows()["Secourisme"].sub:find("Bandage à utiliser : Bandage en lin", 1, true), "bandage relie")
+    local function open() mock.fire("TRADE_SKILL_SHOW") mock.fire("TRADE_SKILL_LIST_UPDATE") mock.flushTimers() end
+    if not C_TradeSkillUI then
+      open() -- API absente : aucune erreur, rien de lu
+      assert(n.Prof.Get(171) == nil and rows()["Alchimie"].sub:find("Ouvre la fenêtre", 1, true))
+      return
+    end
+    -- 101 orange (manque 2x objet 10), 102 jaune (composant 12 sans prix), 103 verte, 104 orange fabricable, 105 grise, 106 non apprise
+    mock.recipes = 6
+    mock.recipeInfo = { [102] = { relativeDifficulty = 1, craftable = true }, [103] = { relativeDifficulty = 2 },
+      [104] = { numAvailable = 3 }, [105] = { relativeDifficulty = 3 }, [106] = { learned = false } }
+    local function sch(item, q, out) return { outputItemID = out, reagentSlotSchematics = { { quantityRequired = q, reagents = { { itemID = item } } } } } end
+    mock.schematics = { [101] = sch(10, 2, 900), [102] = sch(12, 1, 902), [104] = sch(11, 1, 901) }
+    mock.ah = { [10] = { 50, 1 }, [900] = { 160, 1 }, [11] = { 30, 1 }, [901] = { 40, 1 }, [902] = { 500, 1 } }
+    mock.items = { [11] = 5 }
+    -- combat : lecture differee jusqu'a la fin du combat
+    mock.setCombat(true)
+    open()
+    assert(n.Prof.Get(171) == nil, "aucune lecture en combat")
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED") mock.flushTimers()
+    local adv = n.Prof.Advice[171]
+    assert(adv and adv.rank == 50 and adv.max == 75 and adv.when, "lecture apres le combat")
+    local ids = {}
+    for i, e in ipairs(adv.list) do ids[i] = e.recipeID end
+    assert(table.concat(ids, ",") == "101,104,102", "tri : oranges (marge 60 > 10), puis jaune ; verte, grise, non apprise ecartees : " .. table.concat(ids, ","))
+    local e1, e3 = adv.list[1], adv.list[3]
+    assert(e1.cost == 100 and e1.value == 160 and e1.margin == 60 and not e1.craftable and e1.missing[1].n == 2, "cout et marge")
+    assert(e3.cost == nil and e3.margin == nil and e3.value == 500 and e3.craftable, "composant sans prix : cout inconnu, jamais invente")
+    assert(adv.list[2].craftable, "numAvailable > 0 vaut fabricable")
+    assert(n.db.prof[171] == adv and not findSecret(n.db.prof, "prof"), "conserve dans la base, sans secret")
+    local t = pcToasts(o, "^pc:prof:craft")
+    assert(#t == 1 and t[1].text == "Alchimie : fabrique Recette101 pour monter", "un toast")
+    local sub = rows()["Alchimie"].sub
+    assert(sub:find("Fabrique : Recette101 (orange, +1 pt) - coût COIN:100 - marge +COIN:60", 1, true), sub)
+    assert(sub:find("Il te manque : 2x Baguette 10", 1, true), sub)
+    open() -- deuxieme passe identique : ni doublon ni changement
+    assert(#pcToasts(o, "^pc:prof:craft") == 1 and n.Prof.Advice[171] ~= adv and n.Prof.Advice[171].list[1].recipeID == 101)
+    assert(rows()["Herboristerie"] == nil or not rows()["Herboristerie"].sub:find("Ouvre", 1, true), "herbes : pas de fenetre")
+    -- sans Auctionator : ni cout ni marge, l'ordre passe au « fabricable »
+    local ah = Auctionator
+    Auctionator = nil
+    open()
+    Auctionator = ah
+    adv = n.Prof.Advice[171]
+    assert(adv.list[1].recipeID == 104 and adv.list[1].cost == nil and adv.list[1].margin == nil and adv.list[2].recipeID == 101, "sans prix : fabricable d'abord")
+    t = pcToasts(o, "^pc:prof:craft")
+    assert(#t == 2 and t[2].text == "Alchimie : fabrique Recette104 pour monter", "toast quand la meilleure recette change")
+    sub = rows()["Alchimie"].sub
+    assert(sub:find("Fabrique : Recette104 (orange, +1 pt)", 1, true) and not sub:find("coût", 1, true) and not sub:find("marge", 1, true), sub)
+    -- fenetre pas prete : rien de lu
+    mock.tsNotReady = true
+    n.Prof.Advice[171] = nil
+    n.db.prof = nil
+    open()
+    assert(n.Prof.Get(171) == nil, "fenetre non prete")
+    -- format monetaire maison si GetCoinTextureString est absente
+    local g = GetCoinTextureString
+    GetCoinTextureString = nil
+    assert(n.Prof.Money(12000) == "1 po 20 pa" and n.Prof.Money(0) == "0 pc" and n.Prof.Money(5) == "5 pc")
+    GetCoinTextureString = g
+    mock.recipes = nil
+  end)
+
   ------------------------------------------------------------------------
   -- L9 : options, commandes, finitions
   ------------------------------------------------------------------------
