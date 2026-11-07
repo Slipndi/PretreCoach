@@ -24,6 +24,7 @@ local ENTRIES = {
   { label = L.MENU_CRAFT, cmd = "craft", check = function() return db().show and db().show.craft ~= false end },
   { label = L.MENU_MANA, cmd = "mana", check = function() return db().show and db().show.mana ~= false end },
   { label = L.MENU_WANDBAR, cmd = "wand", check = function() return db().show and db().show.wandbar ~= false end },
+  { label = L.MENU_GOLD, cmd = "gold", check = function() return db().show and db().show.gold ~= false end },
   "sep",
   { label = L.MENU_CLOSE },
 }

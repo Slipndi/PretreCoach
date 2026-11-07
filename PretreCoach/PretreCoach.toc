@@ -39,6 +39,7 @@ Training.lua
 Talents.lua
 Professions.lua
 Sell.lua
+Gold.lua
 Pace.lua
 Consumables.lua
 UI\Style.lua

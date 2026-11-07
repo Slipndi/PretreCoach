@@ -398,7 +398,15 @@ function Guide.Goals()
   if not text then text, detail = xpText(xp) end
   out[1] = { kind = "xp", label = L.GUIDE_XP, e = xp, text = text, detail = detail, go = go, quest = quest }
   local profs = State.profs
-  if type(profs) ~= "table" then return out end
+  -- Or : derniere rangee, masquable (show.gold)
+  local function withGold()
+    if ns.Gold and not (ns.db and ns.db.show and ns.db.show.gold == false) then
+      local b = ns.Gold.Best()
+      out[#out + 1] = { kind = "gold", label = L.GOLD_LABEL, text = b.text, detail = ns.Gold.SessionText() or b.detail, go = b.go, best = b }
+    end
+    return out
+  end
+  if type(profs) ~= "table" then return withGold() end
   local lines, seen = {}, {}
   for _, id in ipairs(PROF_ORDER) do lines[#lines + 1] = id seen[id] = true end
   local rest = {}
@@ -426,7 +434,7 @@ function Guide.Goals()
       if g.text then out[#out + 1] = g end
     end
   end
-  return out
+  return withGold()
 end
 
 local function levels(from, to)

@@ -202,8 +202,8 @@ local function suite(label)
     local function row(i) return m.rows and m.rows[i] end
     ns.ToggleMinimapMenu(b)
     local btns = N.UI.MenuRows()
-    assert(#btns == 15, "15 lignes cliquables")
-    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", "heal", "conso", "craft", "mana", "wand", nil }
+    assert(#btns == 16, "16 lignes cliquables")
+    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", "heal", "conso", "craft", "mana", "wand", "gold", nil }
     for i, e in ipairs(expect) do
       calls = {}
       if not m:IsShown() then ns.ToggleMinimapMenu(b) end
@@ -3783,16 +3783,16 @@ local function suite(label)
     local n = fresh().n
     setState(n, { level = 12, profs = { [182] = { rank = 60, max = 75 }, [171] = { rank = 10, max = 75 } } })
     local goals = n.Guide.Goals()
-    assert(#goals == 3 and goals[1].kind == "xp" and goals[2].line == 182 and goals[3].line == 171, "XP, Herboristerie, Alchimie")
+    assert(#goals == 4 and goals[1].kind == "xp" and goals[2].line == 182 and goals[3].line == 171 and goals[4].kind == "gold", "XP, Herboristerie, Alchimie, Or")
     assert(goals[1].e and not goals[1].e.prof, "XP : objectif sans metier")
     for i = 2, 3 do assert(goals[i].kind == "prof" and goals[i].e and goals[i].e.prof == goals[i].line, "objectif du metier") end
     assert(goals[2].label == "Herboristerie" and goals[3].label == "Alchimie")
     for _, g in ipairs(goals) do assert(g.line ~= 129, "pas de Secourisme : metier non appris") end
     n.State.profs[129] = { rank = 1, max = 75 }
     goals = n.Guide.Goals()
-    assert(#goals == 4 and goals[4].line == 129, "Secourisme appris : sa ligne arrive en dernier")
+    assert(#goals == 5 and goals[4].line == 129 and goals[5].kind == "gold", "Secourisme appris : apres les metiers, Or en dernier")
     n.State.profs = nil
-    assert(#n.Guide.Goals() == 1, "metiers illisibles : XP seul")
+    assert(#n.Guide.Goals() == 2, "metiers illisibles : XP et Or seuls")
   end)
 
   check("Guide : Goals, repli XP et repli metier (rang chez le maitre, Prof.Text)", function()
@@ -3817,7 +3817,7 @@ local function suite(label)
     n.SetCompact(true)
     local rows = G.card.rows
     assert(G.card.used == #goals, "une rangee par categorie")
-    local want = { "Expérience", "Herboristerie", "Alchimie" }
+    local want = { "Expérience", "Herboristerie", "Alchimie", "Or" }
     for i, g in ipairs(goals) do
       assert(rows[i].shown and rows[i].label.text == want[i], "libelle " .. i)
       assert(rows[i].text.text:find(g.text, 1, true) and not rows[i].text.text:find("^" .. want[i]), "texte sans prefixe " .. i)
@@ -3827,7 +3827,7 @@ local function suite(label)
     assert(G.card.height and G.card.height > 0, "hauteur de la carte calculee")
     n.State.profs = { [182] = { rank = 10, max = 75 } } -- moins d'entrees : pas de rangee en trop
     n.Fire("GUIDE")
-    assert(G.card.used == 2 and rows[2].shown and not rows[3].shown, "rangee en trop masquee")
+    assert(G.card.used == 3 and rows[3].shown and not rows[4].shown, "rangee en trop masquee")
     n.State.profs = { [182] = { rank = 10, max = 75 }, [171] = { rank = 10, max = 75 } }
     n.Fire("GUIDE")
     local pool = #rows
@@ -4554,6 +4554,166 @@ local function suite(label)
     assert(row.sub.text:find("Où aller", 1, true) and row.go.shown == true, "Maintenant")
   end)
 
+  ---------------------------------------------------------------------------------------------------
+  -- Or : meilleure action, suivi de session, rangee Or, onglet Or
+  ---------------------------------------------------------------------------------------------------
+  local function goldNs(profs)
+    local n = fresh().n
+    setState(n, { level = 12, profs = profs or { [182] = { rank = 60, max = 75 } } })
+    mock.ah, mock.bagInfo, mock.sellPrice, mock.money = {}, nil, nil, nil
+    return n
+  end
+  local function bagScan(n) mock.fire("BAG_UPDATE_DELAYED") mock.flushTimers() end
+  local function bags(n)
+    mock.bagInfo = { { itemID = 101, stackCount = 20, quality = 1 } }
+    mock.sellPrice = { [101] = 10 }
+    mock.ah = { [101] = { 1000, 2 }, [765] = { 30, 1 } } -- 20 x 1000 pc a l'HdV contre 200 pc au marchand ; Feuillargent 30 pc
+    bagScan(n)
+  end
+  local function adviceWith(n, margin) n.Prof.Advice[171] = { list = { { name = "Potion X", margin = margin } } } end
+
+  check("Or : la vente HdV est choisie quand elle vaut le plus", function()
+    if not Auctionator then return end
+    if not C_Container then return end
+    local n = goldNs({ [182] = { rank = 60, max = 75 }, [171] = { rank = 50, max = 75 } })
+    adviceWith(n, 45)
+    bags(n)
+    local b = n.Gold.Best()
+    assert(b.kind == "sell" and b.value == 19800, "vente : " .. tostring(b.kind) .. " " .. tostring(b.value))
+    assert(b.text == "Vends 20 Baguette 101 à l'HdV (≈ " .. n.Prof.Money(20000) .. ")", b.text)
+    local c = n.Gold.Candidates()
+    assert(#c == 3 and c[1].kind == "sell" and c[2].kind == "gather" and c[3].kind == "craft", "tri par valeur")
+    mock.ah[101] = { 1000, 10 } -- prix trop ancien : la vente n'est plus proposee
+    bagScan(n)
+    assert(n.Gold.Best().kind ~= "sell", "prix ancien ecarte")
+  end)
+
+  check("Or : craft rentable", function()
+    if not Auctionator then return end
+    local n = goldNs({ [171] = { rank = 50, max = 75 } })
+    adviceWith(n, 45)
+    local b = n.Gold.Best()
+    assert(b.kind == "craft" and b.value == 45 and b.text == "Fabrique Potion X : marge ≈ " .. n.Prof.Money(45) .. "", b.text)
+    adviceWith(n, -5)
+    assert(n.Gold.Best().kind == "tip", "marge negative : pas de conseil de craft")
+  end)
+
+  check("Or : cueillette avec prix, ici puis ailleurs", function()
+    if not Auctionator then return end
+    local n = goldNs()
+    mock.ah = { [765] = { 30, 1 }, [2447] = { 10, 1 }, [2449] = { 5, 1 }, [3820] = { 900, 1 } } -- 3820 : herbe d'un rang trop haut
+    n.State.zone, n.State.mapID = 1420, 1420
+    local b = n.Gold.Best()
+    assert(b.kind == "gather" and b.text == "Cueille Feuillargent ici : ≈ " .. n.Prof.Money(30) .. " pièce à l'HdV", b.text)
+    n.State.zone, n.State.mapID = 1424, 1424
+    b = n.Gold.Best()
+    assert(b.kind == "gather" and b.text:find("^Cueille Feuillargent %(") and b.text:find(n.Prof.Money(30), 1, true) and not b.text:find("ici", 1, true), b.text)
+    n.State.profs = { [171] = { rank = 50, max = 75 } }
+    assert(n.Gold.Best().kind == "tip", "sans Herboristerie : pas de cueillette")
+  end)
+
+  check("Or : rien a vendre ni a crafter, conseil generique", function()
+    local n = goldNs()
+    local b = n.Gold.Best()
+    assert(b.kind == "tip" and b.value == 0 and b.text:find("vends-les à l'hôtel des ventes", 1, true), b.text)
+    assert(#n.Gold.Candidates() == 0 and not b.text:find("|T", 1, true), "aucun montant")
+  end)
+
+  check("Or : sans Auctionator, aucun montant invente", function()
+    local n = goldNs({ [182] = { rank = 60, max = 75 }, [171] = { rank = 50, max = 75 } })
+    adviceWith(n, 45)
+    if C_Container then bags(n) end
+    local ah = Auctionator
+    Auctionator = nil
+    local b = n.Gold.Best()
+    Auctionator = nil
+    assert(b.kind == "tip" and #n.Gold.Candidates() == 0, "conseil generique")
+    assert(not b.text:find("|T", 1, true) and b.detail:find("Installe Auctionator", 1, true), "ni montant, et la note Auctionator")
+    for _, r in ipairs(n.Gold.Rows()) do assert(not r.text:find("≈") or r.text:find("Session"), "pas de montant d'action : " .. r.text) end
+    Auctionator = ah
+  end)
+
+  check("Or : or de session et or par heure", function()
+    local n = goldNs()
+    mock.money, mock.time = 10000, 0
+    local net, perHour = n.Gold.Session()
+    assert(net == 0 and perHour == nil, "debut : rien, pas d'or/heure avant une minute")
+    mock.money, mock.time = 22000, 1800
+    net, perHour = n.Gold.Session()
+    assert(net == 12000 and perHour == 24000, "net et or/heure : " .. tostring(net) .. " " .. tostring(perHour))
+    assert(n.Gold.SessionText() == "Session : +" .. n.Prof.Money(12000) .. " (≈ " .. n.Prof.Money(24000) .. "/h)", n.Gold.SessionText())
+    mock.money = 4000 -- depenses chez les maitres : le net, simplement
+    assert(n.Gold.SessionText() == "Session : -" .. n.Prof.Money(6000) .. " (≈ -" .. n.Prof.Money(12000) .. "/h)", n.Gold.SessionText())
+    if not mock.noSecrets then
+      mock.moneySecret = true
+      assert(n.Gold.Session() == nil and n.Gold.SessionText() == nil, "argent secret : rien")
+      mock.moneySecret = nil
+    end
+    mock.money = nil
+  end)
+
+  check("Or : rangee Or apres les metiers, masquable, carte", function()
+    local n, G = gw()
+    n.State.profs = { [182] = { rank = 10, max = 75 }, [171] = { rank = 10, max = 75 } }
+    mock.money, mock.time = 5000, 0
+    local goals = n.Guide.Goals()
+    local g = goals[#goals]
+    assert(#goals == 4 and g.kind == "gold" and g.label == "Or" and goals[3].line == 171, "dernier, apres les metiers")
+    assert(g.text == n.Gold.Best().text and g.detail:find("Session : +", 1, true), "texte de Best et detail de session : " .. tostring(g.detail))
+    n.SetCompact(true)
+    local r = G.card.rows[4]
+    assert(G.card.used == 4 and r.label.text == "Or" and r.icon.tex == "Interface\\Icons\\INV_Misc_Coin_01", "carte : icone de piece")
+    n.db.show.gold = false
+    n.Fire("GUIDE")
+    assert(#n.Guide.Goals() == 3 and G.card.used == 3 and not G.card.rows[4].shown, "show.gold = false masque la rangee")
+    SlashCmdList.PRETRECOACH("gold")
+    assert(n.db.show.gold == true and #n.Guide.Goals() == 4, "/coach gold la reaffiche")
+    mock.money = nil
+  end)
+
+  check("Or : case des options", function()
+    local n, restore = boot()
+    local c, db = controls(n), n.db
+    assert(c.gold and db.show.gold == true, "case cochee par defaut")
+    click(c.gold)
+    assert(db.show.gold == false and #n.Guide.Goals() >= 1, "decochee : rangee masquee")
+    for _, g in ipairs(n.Guide.Goals()) do assert(g.kind ~= "gold") end
+    restore()
+  end)
+
+  check("Or : onglet Or, top 5 puis session", function()
+    if not Auctionator then return end
+    if not C_Container then return end
+    local n, G = gw()
+    n.State.profs = { [182] = { rank = 60, max = 75 }, [171] = { rank = 50, max = 75 } }
+    adviceWith(n, 45)
+    mock.money, mock.time = 1000, 0
+    bags(n)
+    n.ToggleGuide()
+    local idx
+    for i, k in ipairs({ "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell", "gold" }) do if k == "gold" then idx = i end end
+    assert(G.win.tabs[idx].label.text == "Or", "onglet Or a cote de Vente")
+    G.win.tabs[idx].scripts.OnClick(G.win.tabs[idx])
+    assert(n.db.guide.tab == "gold" and G.used == 4, "3 actions puis la session : " .. G.used)
+    local rows = n.Gold.Rows()
+    assert(rows[1].text:find("Vends 20", 1, true) and rows[2].text:find("Cueille", 1, true) and rows[3].text:find("Fabrique", 1, true), "tri par valeur")
+    assert(rows[4].text:find("Session :", 1, true), "session en dernier")
+    mock.money = nil
+  end)
+
+  check("Or : rien de secret, rien d'ecrit dans la base", function()
+    local n = goldNs({ [182] = { rank = 60, max = 75 } })
+    local before = {}
+    for k in pairs(n.db) do before[k] = true end
+    mock.money, mock.time = 1000, 0
+    mock.ah = { [765] = { 30, 1 } }
+    n.Gold.Best() n.Gold.Rows() n.Gold.SessionText() n.Guide.Goals()
+    assert(not findSecret(n.db, "db"))
+    for k in pairs(n.db) do assert(before[k], "cle ajoutee a la base : " .. tostring(k)) end
+    for k in pairs(n.db) do assert(not tostring(k):lower():find("gold"), "rien de l'or dans la base") end
+    mock.money = nil
+  end)
+
   check("Rang bloquant : Goto absent ou illisible, aucun lieu invente", function()
     local n = rankBoot(75, 20, nil) -- Goto.For ne trouve rien
     local s = n.Prof.Steps(182)
@@ -4840,6 +5000,7 @@ local function suite(label)
       mock.inCombat = false
     end)
   end)
+
 end
 
 suite("presentes")

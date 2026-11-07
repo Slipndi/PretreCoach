@@ -9,6 +9,7 @@ ns.Sell = Sell
 
 local MAX_ROWS = 15
 local OLD_DAYS = 7
+Sell.OLD_DAYS = OLD_DAYS
 -- shortcut: seuil d'HdV fixe (x1,5 du marchand ET 50 pc de plus en tout), a regler apres usage reel.
 local RATIO, MIN_GAIN = 1.5, 50
 local BAGS = { 0, 1, 2, 3, 4 }

@@ -5,7 +5,7 @@ local UI, L, Guide = ns.UI, ns.L, ns.Guide
 local C = UI.color
 
 local WIN_NAME, CARD_NAME = "PretreCoachGuideFrame", "PretreCoachCompactFrame"
-local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell" }
+local TABS = { "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell", "gold" }
 local BADGE = { -- statut de zone -> couleur
   adaptee = { 0.75, 0.95, 0.8 }, bientot = C.warn, verte = C.bad, haute = C.warn, neutre = { 0.6, 0.6, 0.65 },
 }
@@ -189,7 +189,7 @@ local function items()
     for _, g in ipairs(Guide.Goals()) do
       local e = g.e
       rowsNow[#rowsNow + 1] = {
-        id = e and e.id or ("goal:" .. (g.line or "xp")), text = L.GW_GOAL:format(g.label, g.text),
+        id = e and e.id or ("goal:" .. (g.line or g.kind)), text = L.GW_GOAL:format(g.label, g.text),
         done = e and e.done or false, unknown = e and e.unknown or false, manual = e and e.manual or false,
         go = g.kind == "xp" and e and e.go or g.go, sub = g.detail or (e and e.sub), alert = g.alert,
       }
@@ -198,6 +198,7 @@ local function items()
   end
   if t == "next" then return "next", Guide.Milestones(), L.GW_EMPTY end
   if t == "sell" then return "ref", ns.Sell.Rows(), L.GW_SELL_EMPTY end
+  if t == "gold" then return "ref", ns.Gold.Rows(), L.GW_GOLD_EMPTY end
   return "ref", Guide.Reference(t), L.GW_EMPTY
 end
 
@@ -237,6 +238,7 @@ end
 local CARD_W, CARD_TEXT_W, ICON = 260, 206, 24
 -- Icones et sorts de metier : a verifier en jeu (spellID Vanilla, chemins de repli classiques).
 local XP_ICON = "Interface\\Icons\\XP_Icon"
+local GOLD_ICON = "Interface\\Icons\\INV_Misc_Coin_01"
 local PROF_ICON = {
   [182] = { spell = 2366, tex = "Interface\\Icons\\Trade_Herbalism", color = { 0.45, 0.9, 0.45 } },
   [171] = { spell = 2259, tex = "Interface\\Icons\\Trade_Alchemy", color = { 0.4, 0.75, 1 } },
@@ -284,6 +286,7 @@ end
 
 local function goalIcon(g)
   if g.kind == "xp" then return XP_ICON, C.accent end
+  if g.kind == "gold" then return GOLD_ICON, { 1, 0.82, 0.2 } end
   local p = PROF_ICON[g.line] or PROF_DEFAULT
   local ok, tex = false, nil
   if p.spell and C_Spell and C_Spell.GetSpellTexture then ok, tex = pcall(C_Spell.GetSpellTexture, p.spell) end
@@ -386,7 +389,7 @@ end)
 local function setTab(key)
   if ns.db and ns.db.guide then ns.db.guide.tab = key end
   if scroll then scroll:SetVerticalScroll(0) end
-  if key == "sell" then ns.Sell.Scan() end -- lecture des sacs hors combat seulement
+  if key == "sell" or key == "gold" then ns.Sell.Scan() end -- lecture des sacs hors combat seulement
   if win and win:IsShown() then refreshWin() end
 end
 
