@@ -199,8 +199,8 @@ local function suite(label)
     local function row(i) return m.rows and m.rows[i] end
     ns.ToggleMinimapMenu(b)
     local btns = N.UI.MenuRows()
-    assert(#btns == 11, "11 lignes cliquables")
-    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", "heal", nil }
+    assert(#btns == 12, "12 lignes cliquables")
+    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", "heal", "conso", nil }
     for i, e in ipairs(expect) do
       calls = {}
       if not m:IsShown() then ns.ToggleMinimapMenu(b) end
@@ -2929,7 +2929,7 @@ local function suite(label)
     local before = #mock.secure
     local n, restore = boot()
     local H = n.UI.HealFrames
-    assert(#H.buttons == 5 and #mock.secure - before == 5 and mock.secureInCombat == 0, "5 boutons securises crees hors combat")
+    assert(#H.buttons == 5 and (function() local k = 0 for i = before + 1, #mock.secure do if mock.secure[i].template == "SecureUnitButtonTemplate" then k = k + 1 end end return k end)() == 5 and mock.secureInCombat == 0, "5 boutons securises crees hors combat")
     local lesser, renew, pws = H.SpellName("LESSERHEAL"), H.SpellName("RENEW"), H.SpellName("PWS")
     for _, b in ipairs(H.buttons) do
       assert(b.template == "SecureUnitButtonTemplate" and (b.watched or not RegisterUnitWatch), "gabarit securise et RegisterUnitWatch")
@@ -3600,6 +3600,118 @@ local function suite(label)
     local before = #mock.printed
     SlashCmdList.PRETRECOACH("bilan")
     assert(#mock.printed > before and printed():find("Bilan : session", 1, true))
+  end)
+
+  -- Consommables : { id, sous-classe, nom, niveau d'objet, niveau requis } ; toutes de classe 0 (consommable)
+  local CONS_ITEMS = {
+    { 4540, 5, "Pain tendre", 5, 1 }, { 4541, 5, "Pain de seigle", 15, 15 }, { 4601, 5, "Pain blanc", 15, 15 },
+    { 4599, 5, "Pain de maïs", 25, 25 }, { 159, 5, "Eau fraîche", 5, 1 }, { 1179, 5, "Eau pure", 15, 10 },
+    { 118, 1, "Potion de soins mineure", 5, 1 }, { 858, 1, "Potion de soins inférieure", 10, 3 },
+    { 2455, 1, "Potion de mana mineure", 5, 5 }, { 500, 1, "Potion de vitesse", 30, 1 },
+    { 1251, 7, "Bandage en lin", 1, 1 }, { 2589, 0, "Tissu de lin", 1, 1 },
+  }
+  -- sacs : { [emplacement] = { id, pile } }
+  local function cbag(slots)
+    mock.bagInfo = {}
+    for slot, s in pairs(slots) do mock.bagInfo[slot] = { itemID = s[1], stackCount = s[2], iconFileID = 9000 + s[1] } end
+  end
+  local FULL_BAG = { { 4540, 20 }, { 4541, 18 }, { 4601, 5 }, { 4599, 3 }, { 159, 10 }, { 1179, 3 }, { 118, 2 }, { 858, 1 },
+    { 2455, 2 }, { 500, 4 }, { 1251, 7 }, { 2589, 40 } }
+  local function cboot(level, slots)
+    mock.reset()
+    mock.level, mock.itemClass, mock.itemSub, mock.itemInfo = level, {}, {}, {}
+    for _, it in ipairs(CONS_ITEMS) do
+      mock.itemClass[it[1]], mock.itemSub[it[1]], mock.itemInfo[it[1]] = 0, it[2], { it[3], it[4], it[5], 7000 + it[1] }
+    end
+    cbag(slots or FULL_BAG)
+    local n = loadAddon()
+    mock.fire("ADDON_LOADED", ADDON)
+    mock.fire("BAG_UPDATE_DELAYED")
+    return n
+  end
+  local CAT = { food = 1, water = 2, heal = 3, mana = 4, bandage = 5 }
+
+  check("Consommables : classement par categorie, rien d'autre (tissu, potion inconnue)", function()
+    if not C_Container then return end
+    local C = cboot(20).Cons
+    assert(C.Best.food and C.Best.water and C.Best.heal and C.Best.mana and C.Best.bandage, "5 categories trouvees")
+    assert(C.Best.food.id ~= 2589 and C.Best.heal.id ~= 500 and C.Best.mana.id ~= 500, "objets hors categorie ignores")
+    assert(C.Best.bandage.id == 1251 and C.Best.mana.id == 2455 and C.Best.water.id == 1179, "eau separee de la nourriture")
+  end)
+
+  check("Consommables : meilleur choix selon le niveau (requis, niveau d'objet, plus petit tas)", function()
+    if not C_Container then return end
+    local n = cboot(20)
+    assert(n.Cons.Best.food.id == 4601, "a niveau d'objet egal : le plus petit tas")
+    assert(n.Cons.Best.heal.id == 858 and n.Cons.Best.water.id == 1179)
+    n = cboot(5)
+    assert(n.Cons.Best.food.id == 4540 and n.Cons.Best.water.id == 159 and n.Cons.Best.heal.id == 858, "requis > niveau : ecarte")
+    n = cboot(2)
+    assert(n.Cons.Best.heal.id == 118 and n.Cons.Best.mana == nil, "potion de mana niveau 5 ecartee a 2")
+    mock.fire("PLAYER_LEVEL_UP", 15)
+    assert(n.Cons.Best.food.id == 4601 and n.Cons.Best.mana.id == 2455, "rescan au niveau gagne")
+    cbag({ { 4599, 3 } })
+    mock.fire("PLAYER_LEVEL_UP", 24)
+    assert(n.Cons.Best.food == nil)
+    mock.fire("PLAYER_LEVEL_UP", 25)
+    assert(n.Cons.Best.food.id == 4599)
+  end)
+
+  check("Consommables : compteurs par categorie (objets utilisables seulement)", function()
+    if not C_Container then return end
+    local C = cboot(20).Cons
+    assert(C.Total.food == 43, tostring(C.Total.food)) -- 20 + 18 + 5 ; les 3 pains de mais (niveau 25) ne comptent pas
+    assert(C.Total.water == 13 and C.Total.heal == 3 and C.Total.mana == 2 and C.Total.bandage == 7)
+    local C5 = cboot(5).Cons
+    assert(C5.Total.food == 20 and C5.Total.water == 10, "niveau 5 : seul le pain tendre est utilisable")
+  end)
+
+  check("Barre consommables : attributs poses hors combat, icone, compteur, grise a 0", function()
+    if not C_Container then return end
+    local n = cboot(20)
+    local B = n.UI.ConsumablesBar
+    assert(#B.buttons == 5 and B.frame.shown, "5 boutons, barre affichee par defaut")
+    local food, bandage = B.buttons[CAT.food], B.buttons[CAT.bandage]
+    assert(food.attrs.type1 == "item" and food.attrs.item1 == "item:4601", "attributs de la nourriture")
+    assert(B.buttons[CAT.water].attrs.item1 == "item:1179" and B.buttons[CAT.mana].attrs.item1 == "item:2455")
+    assert(food.count.text == "43" and food.icon.tex == 9000 + 4601, "icone et compteur")
+    assert(not food.icon.desat and not bandage.icon.desat)
+    cbag({ { 4540, 20 } })
+    mock.fire("BAG_UPDATE_DELAYED")
+    assert(bandage.count.text == "" and bandage.icon.desat == true, "grise a 0")
+    assert(bandage.attrs.item1 == nil and food.attrs.item1 == "item:4540", "attributs suivent les sacs hors combat")
+  end)
+
+  check("Barre consommables : en combat attributs en attente, appliques a la fin du combat", function()
+    if not C_Container then return end
+    local n = cboot(20)
+    local food = n.UI.ConsumablesBar.buttons[CAT.food]
+    assert(food.attrs.item1 == "item:4601")
+    mock.setCombat(true)
+    cbag({ { 4540, 20 }, { 4541, 18 } }) -- le pain blanc a ete mange
+    mock.fire("BAG_UPDATE_DELAYED")
+    assert(food.attrs.item1 == "item:4601", "attribut inchange en combat")
+    assert(food.count.text == "38", "le compteur, lui, suit : " .. tostring(food.count.text))
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED")
+    assert(food.attrs.item1 == "item:4541", "applique a la fin du combat")
+  end)
+
+  check("Barre consommables : option masquer, /coach conso, rien de secret dans la base", function()
+    if not C_Container then return end
+    local n = cboot(20)
+    local B = n.UI.ConsumablesBar
+    assert(n.db.show.cons == true and B.frame.shown)
+    n.db.show.cons = false
+    B.Render()
+    assert(not B.frame.shown, "option masquer")
+    mock.fire("BAG_UPDATE_DELAYED")
+    assert(not B.frame.shown, "un rescan ne la reaffiche pas")
+    SlashCmdList.PRETRECOACH("conso")
+    assert(n.db.show.cons == true and B.frame.shown, "la commande reaffiche")
+    SlashCmdList.PRETRECOACH("conso")
+    assert(n.db.show.cons == false and not B.frame.shown, "et la masque")
+    assert(not findSecret(n.db, "db"))
   end)
 end
 

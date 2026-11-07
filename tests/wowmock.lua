@@ -38,6 +38,10 @@ function FRAME.RegisterUnitEvent(self, e, unit)
   self.unit[e] = unit
 end
 function FRAME.SetValue(self, v) self.value = v end
+function FRAME.SetDesaturated(self, b) self.desat = b end
+function FRAME.SetTexture(self, t) self.tex = t end
+function FRAME.SetAttribute(self, k, v) self.attrs = self.attrs or {} self.attrs[k] = v end
+function FRAME.GetAttribute(self, k) return (self.attrs or {})[k] end
 function FRAME.SetColorTexture(self, ...) self.color = { ... } end
 function FRAME.SetText(self, t) mock.lastText = t self.text = t end
 function FRAME.Show(self) local was = self.shown self.shown = true if not was and self.scripts.OnShow then self.scripts.OnShow(self) end end
@@ -104,7 +108,7 @@ function mock.reset()
   mock.waypoint, mock.superTracked, mock.canWaypoint, mock.areas, mock.mapKids, mock.mapNames = nil, nil, nil, nil, nil, nil
   if mock.qinit then mock.qinit() end
   mock.recipeInfo, mock.schematics, mock.tsNotReady = nil, nil, nil
-  mock.bagInfo, mock.itemClass = nil, nil
+  mock.bagInfo, mock.itemClass, mock.itemSub, mock.itemInfo = nil, nil, nil, nil
   mock.pos, mock.recipes, mock.bag, mock.addons, mock.sellPrice, mock.sub, mock.ejSelected = nil, nil, nil, nil, nil, nil, nil
 end
 
@@ -205,9 +209,13 @@ function GetItemCount(id) return (mock.items or {})[id] or 0 end
 -- 11287 = baguette (classe 2, sous-classe 19) ; les autres IDs : un objet quelconque
 C_Item = { GetItemInfoInstant = function(id)
   if (mock.unknown.item or {})[id] then return nil end
-  return id, "Arme", "Baguette", "", 0, (mock.itemClass or {})[id] or 2, id == 11287 and 19 or 0
+  return id, "Arme", "Baguette", "", 0, (mock.itemClass or {})[id] or 2, (mock.itemSub or {})[id] or (id == 11287 and 19 or 0)
 end,
-  GetItemInfo = function(id) if mock.uncached then return nil end return "Baguette " .. id, "lien", 1, 1, 5, 0, "x", 1, "", 0, type(mock.sellPrice) == "table" and mock.sellPrice[id] or (type(mock.sellPrice) == "number" and mock.sellPrice or nil) end }
+  -- mock.itemInfo = { [id] = { nom, niveau d'objet, niveau requis, icone } }
+  GetItemInfo = function(id)
+    local c = (mock.itemInfo or {})[id]
+    if c and not mock.uncached then return c[1], "lien", 1, c[2], c[3], "x", "x", 20, "", c[4] end
+    if mock.uncached then return nil end return "Baguette " .. id, "lien", 1, 1, 5, 0, "x", 1, "", 0, type(mock.sellPrice) == "table" and mock.sellPrice[id] or (type(mock.sellPrice) == "number" and mock.sellPrice or nil) end }
 -- mock.recipes = nombre de recettes (0 par defaut)
 C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { professionName = "Metier" .. id } end,
   GetAllRecipeIDs = function() local t = {} for i = 1, mock.recipes or 0 do t[i] = 100 + i end return t end,

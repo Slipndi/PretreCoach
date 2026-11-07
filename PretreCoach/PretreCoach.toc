@@ -37,6 +37,7 @@ Talents.lua
 Professions.lua
 Sell.lua
 Pace.lua
+Consumables.lua
 UI\Style.lua
 UI\Toast.lua
 UI\Minimap.lua
@@ -46,5 +47,6 @@ UI\RotationPanel.lua
 UI\RulesBar.lua
 UI\ProgressBar.lua
 UI\HealFrames.lua
+UI\ConsumablesBar.lua
 UI\Options.lua
 Probe.lua

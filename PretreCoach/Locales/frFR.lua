@@ -3,7 +3,7 @@ local _, ns = ...
 
 ns.L = {
   PREFIX = "|cffb084ffPrêtre Coach|r",
-  HELP = "Commandes : /coach (options), guide, compact, bilan, progress, lock, unlock, reset, probe, here, debug",
+  HELP = "Commandes : /coach (options), guide, compact, bilan, progress, conso, lock, unlock, reset, probe, here, debug",
   LOCK_ON = "Cadres verrouillés.",
   LOCK_OFF = "Cadres déverrouillés.",
   RESET_DONE = "Positions, taille et opacité remises par défaut.",
@@ -234,4 +234,11 @@ ns.L = {
   PROGRESS_MS_24 = "Niveaux 24 à 32 : Profondeurs de Brassenoire",
   PROGRESS_MS_40 = "Niveau 40 : Forme d'Ombre et double spécialisation",
   PROGRESS_MS_60 = "Niveau 60",
+  OPT_CONS = "Afficher la barre des consommables",
+  MENU_CONS = "Barre des consommables",
+  CONS_food = "Nourriture",
+  CONS_water = "Eau",
+  CONS_heal = "Potion de soins",
+  CONS_mana = "Potion de mana",
+  CONS_bandage = "Bandage",
 }

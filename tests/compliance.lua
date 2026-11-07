@@ -26,6 +26,10 @@ local PREFIX_OK = { SecureHandler = true } -- SecureHandlerBaseTemplate etc. : p
 local HEAL = "PretreCoach/UI/HealFrames.lua"
 local ALLOW = { [HEAL] = { SecureUnitButtonTemplate = true, SecureActionButtonTemplate = true,
   SecureGroupHeaderTemplate = true, SetAttribute = true, RegisterUnitWatch = true } }
+-- Exception approuvee par l'utilisateur (2026-11-07) : la barre Consommables (boutons d'objet securises, clic du joueur).
+-- macrotext et UseContainerItem restent interdits partout, ce fichier compris.
+local CONS = "PretreCoach/UI/ConsumablesBar.lua"
+ALLOW[CONS] = { SecureActionButtonTemplate = true, SetAttribute = true }
 
 -- Retire les commentaires Lua en gardant les chaines et les numeros de ligne.
 local function strip(src)
@@ -85,6 +89,12 @@ assert(#find_hits(HEAL, secure) == 0, "auto-test : motifs securises refuses dans
 assert(#find_hits("PretreCoach/UI/Autre.lua", secure) == 3, "auto-test : motif securise accepte hors HealFrames.lua")
 assert(#find_hits(HEAL, 'f:SetAttribute("macrotext", "/cast X")\n') == 1, "auto-test : macrotext accepte dans HealFrames.lua")
 assert(#find_hits(HEAL, 'CastSpellByName("X")\nSetBindingClick("1", "x")\n') == 2, "auto-test : CastSpell/SetBinding acceptes dans HealFrames.lua")
+-- Exception CONS : permise dans ce seul fichier, refusee ailleurs ; macrotext et UseContainerItem toujours refuses.
+secure = 'CreateFrame("Button", nil, f, "SecureActionButtonTemplate")\nb:SetAttribute("type1", "item")\n'
+assert(#find_hits(CONS, secure) == 0, "auto-test : exception CONS non appliquee")
+assert(#find_hits("PretreCoach/UI/Other.lua", secure) == 2, "auto-test : exception CONS trop large")
+assert(#find_hits(CONS, 'b:SetAttribute("macrotext", "/cast X")\n') == 1, "auto-test : macrotext doit rester interdit")
+assert(#find_hits(CONS, "UseContainerItem(0, 1)\n") == 1, "auto-test : UseContainerItem doit rester interdit")
 print("auto-test : detection OK")
 
 local sep = package.config:sub(1, 1)
