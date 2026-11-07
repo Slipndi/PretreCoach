@@ -5,8 +5,6 @@
 local _, ns = ...
 local S, L = ns.S, ns.L
 
-local GRAVESTONE_QUEST = 6922 -- Baron Aquanis (récompense Gravestone Scepter), d'après Questie
-
 -- ID de base (rang 1). Sources : WoWForeverRot/Data.lua et IDs Classic. La sonde les valide.
 local SPELLS = {
   { 585, "Châtiment" }, { 589, "Mot de l'ombre : Douleur" }, { 17, "Mot de pouvoir : Bouclier" },
@@ -294,6 +292,49 @@ local function ShowText(text)
 end
 
 ------------------------------------------------------------------------
+-- contrôle des ID de Data/ : une ligne par ID qui ne répond pas, un « N/M OK » par catégorie
+------------------------------------------------------------------------
+local function CheckIds(add, label, ids, fn)
+  if type(fn) ~= "function" then add("%s : non vérifiable (API absente)", label) return end
+  local ok, n, seen = 0, 0, {}
+  for _, e in ipairs(ids) do
+    if e[1] and not seen[e[1]] then
+      seen[e[1]] = true
+      n = n + 1
+      if S.Get(fn, e[1]) ~= nil then ok = ok + 1 else add("  %s %s : ne répond pas", tostring(e[1]), tostring(e[2])) end
+    end
+  end
+  add("%s : %d/%d OK", label, ok, n)
+end
+
+local function CheckData(add)
+  local D = ns.Data
+  local spells, items, maps = {}, {}, {}
+  for _, s in ipairs(D.Spells or {}) do
+    for _, r in ipairs(s.ranks or {}) do spells[#spells + 1] = { r.id, s.key } end
+  end
+  CheckIds(add, "Sorts", spells, (C_Spell and C_Spell.GetSpellName) or GetSpellInfo)
+
+  for _, w in ipairs(D.Wands or {}) do items[#items + 1] = { w.itemID, w.name } end
+  for _, p in pairs(D.Professions or {}) do
+    for _, list in ipairs({ p.bandages or {}, p.recipes or {} }) do
+      for _, e in ipairs(list) do items[#items + 1] = { e.itemID, e.name } end
+    end
+  end
+  CheckIds(add, "Objets", items, (C_Item and C_Item.GetItemInfoInstant) or GetItemInfoInstant)
+
+  for id, z in pairs(D.Zones or {}) do maps[#maps + 1] = { id, z[3] } end
+  for _, d in ipairs(D.Dungeons or {}) do maps[#maps + 1] = { d.zoneMapID, d.name } end
+  CheckIds(add, "Cartes", maps, C_Map and C_Map.GetMapInfo)
+
+  CheckIds(add, "Quêtes", { { D.GravestoneQuest, "Blackfathom Villainy" } }, C_QuestLog and C_QuestLog.GetTitleForQuestID)
+
+  local byLine = C_TradeSkillUI and C_TradeSkillUI.GetProfessionInfoBySkillLineID
+  CheckIds(add, "Métiers", { { 182, "Herboristerie" }, { 171, "Alchimie" }, { 129, "Secourisme" } },
+    byLine and function(id) local i = byLine(id) return i and i.professionName ~= "" and i.professionName or nil end)
+end
+
+------------------------------------------------------------------------
 -- rapport
 ------------------------------------------------------------------------
 function ns.Probe()
@@ -397,7 +438,10 @@ function ns.Probe()
 
   section("Quêtes")
   local questFn = (C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted) and "C_QuestLog.IsQuestFlaggedCompleted" or "IsQuestFlaggedCompleted"
-  add("Quête %d (Baron Aquanis / Gravestone Scepter) terminée : %s", GRAVESTONE_QUEST, Dump(questFn, GRAVESTONE_QUEST))
+  add("Quête %d (Blackfathom Villainy / Gravestone Scepter) terminée : %s", ns.Data.GravestoneQuest, Dump(questFn, ns.Data.GravestoneQuest))
+
+  section("Contrôle des ID de Data/")
+  CheckData(add)
 
   section("Maître de classe (rempli après une visite)")
   for _, l in ipairs(db.probe.trainer or { "pas encore visité depuis l'installation" }) do add(l) end

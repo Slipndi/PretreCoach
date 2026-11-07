@@ -14,6 +14,7 @@ Data\Dungeons.lua
 Data\Milestones.lua
 Data\Gear.lua
 Data\Professions.lua
+Data\Spells.lua
 Data\Talents.lua
 Secrets.lua
 Core.lua

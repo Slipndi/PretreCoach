@@ -144,6 +144,40 @@ local function suite(label)
     SlashCmdList.PRETRECOACH("probe")
     assert(mock.lastText:find("EN COMBAT") and mock.lastText:find("589"), "rapport sans le dernier sort en combat")
   end)
+  check("controle des ID de Data/ : section, resumes, ligne pour un ID muet", function()
+    mock.unknown = { spell = { [594] = true }, item = { [1251] = true }, map = { [1413] = true } }
+    SlashCmdList.PRETRECOACH("probe")
+    local t = mock.lastText
+    assert(t:find("== Contrôle des ID de Data/ ==", 1, true), "section absente")
+    for _, c in ipairs({ "Sorts", "Objets", "Cartes", "Quêtes", "Métiers" }) do
+      assert(t:find(c .. " : ", 1, true) and (t:find(c .. " : %d+/%d+ OK") or t:find(c .. " : non vérifiable", 1, true)),
+        "resume absent : " .. c)
+    end
+    assert(t:find("594 SWP : ne répond pas", 1, true), "ligne du sort muet absente")
+    assert(t:find("1251 Bandage en lin : ne répond pas", 1, true), "ligne de l'objet muet absente")
+    assert(mock.noSecrets or t:find("1413 ", 1, true) and t:find("ne répond pas", 1, true), "ligne de la carte muette absente")
+    assert(not t:find("585 SMITE : ne répond pas", 1, true), "un ID qui repond est liste")
+    mock.unknown = {}
+  end)
+  check("coherence des donnees de Data/", function()
+    local ns3 = loadAddon() -- chaque fichier du .toc se charge ; Data/ y compris
+    local D = ns3.Data
+    for _, name in ipairs({ "Zones", "Dungeons", "Spells", "Wands", "Professions", "Milestones" }) do
+      assert(type(D[name]) == "table", "Data." .. name .. " absent")
+    end
+    local keys = {}
+    for _, s in ipairs(D.Spells) do
+      assert(not keys[s.key], "cle de sort en double : " .. tostring(s.key))
+      keys[s.key] = true
+      local last
+      for _, r in ipairs(s.ranks) do
+        if r.level and last then assert(r.level >= last, "rangs non tries : " .. s.key) end
+        if r.level then last = r.level end
+      end
+    end
+    for id, z in pairs(D.Zones) do assert(z[1] <= z[2], "plage Zones inversee : " .. id) end
+    for _, d in ipairs(D.Dungeons) do assert(d.min <= d.max, "plage Dungeons inversee : " .. d.key) end
+  end)
   check("aucune valeur secrete en SavedVariables", function()
     local hit = findSecret(PretreCoachDB, "PretreCoachDB")
     assert(not hit, "valeur secrete stockee a " .. tostring(hit))

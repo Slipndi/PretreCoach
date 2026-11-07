@@ -8,9 +8,9 @@ ns.Data.Wands = {
 	{ level = 18, itemID = 7001, name = "Gravestone Scepter", source = "Quête des Profondeurs de Brassenoire", verify = true }, -- à vérifier : 7001 vient de warcraft.wiki.gg (Vanilla) ; niveau 18-25 selon la spec
 }
 
--- Questie (questTagInfoCorrections.lua:474) : 6922 = Baron Aquanis, tag Donjon.
--- à vérifier : Wowhead Classic donne Outlaw Sabre / Witch's Finger pour 6922 ; lien avec le Gravestone Scepter non prouvé
-ns.Data.GravestoneQuest = 6922
+-- 6561 = « Blackfathom Villainy », version Horde (Questie, questTagInfoCorrections.lua:438) ; la récompense
+-- Gravestone Scepter de cette quête vient de warcraft.wiki.gg. À vérifier en jeu sur Forever.
+ns.Data.GravestoneQuest = 6561
 ns.Data.GravestoneQuestVerify = true
 
 ns.Data.StatAdvice = "Puissance des sorts au début, puis Esprit dès 40 à 50 de puissance des sorts, puis Intelligence et Endurance."

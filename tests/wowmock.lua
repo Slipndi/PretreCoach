@@ -1,5 +1,6 @@
 -- Fausse API WoW minimale : seulement ce que PretreCoach appelle. Charger avec dofile, rend le module `mock`.
-local mock = { errors = {}, printed = {}, events = {}, timers = {}, inCombat = false, hasTarget = true, noSecrets = false }
+local mock = { errors = {}, printed = {}, events = {}, timers = {}, inCombat = false, hasTarget = true, noSecrets = false,
+  unknown = {} } -- unknown.spell / .item / .map : { [id] = true } = l'API ne repond pas pour cet ID
 
 -- Valeur secrete simulee : toute operation autre que issecretvalue leve une erreur.
 local function deny(op) return function() error("attempt to " .. op .. " a secret value", 2) end end
@@ -56,6 +57,7 @@ end
 function mock.reset()
   mock.events, mock.timers, mock.errors, mock.printed = {}, {}, {}, {}
   mock.inCombat, mock.hasTarget, mock.rejectEvents, mock.noRegisterUnitEvent, mock.lastText = false, true, nil, false, nil
+  mock.unknown = {}
   SlashCmdList = {}
   PretreCoachDB = nil
 end
@@ -117,25 +119,27 @@ function GetTrainerServiceInfo(i) return "Sort" .. i, "", "available" end
 function GetTrainerServiceLevelReq() return 10 end
 function GetTrainerServiceCost() return 100 end
 C_SpellBook = { IsSpellKnown = function() return true end }
-C_QuestLog = { IsQuestFlaggedCompleted = function() return false end }
+C_QuestLog = { IsQuestFlaggedCompleted = function() return false end, GetTitleForQuestID = function() return "Titre" end }
+C_Item = { GetItemInfoInstant = function(id) if (mock.unknown.item or {})[id] then return nil end return id end }
+C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { professionName = "Metier" .. id } end }
 C_ActionBar = { FindSpellActionButtons = function() return nil end }
 Settings = { RegisterCanvasLayoutCategory = function() end, RegisterAddOnCategory = function() end }
 GetSpellCooldown = sec(0)
 C_Spell = {
-  GetSpellName = function(id) return "Sort" .. id end,
+  GetSpellName = function(id) if (mock.unknown.spell or {})[id] then return nil end return "Sort" .. id end,
   GetSpellCooldown = function() return secretNow() and mock.SECRET or { startTime = 0, duration = 0, isEnabled = true } end,
   IsSpellUsable = sec(true),
   IsSpellInRange = sec(true),
 }
 C_UnitAuras = { GetAuraDataByIndex = function() return secretNow() and mock.SECRET or nil end }
-C_Map = { GetBestMapForUnit = function() return 1 end, GetMapInfo = function() return { name = "Tirisfal" } end }
+C_Map = { GetBestMapForUnit = function() return 1 end, GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = "Tirisfal" } end }
 
 -- APIs incertaines sur Forever : mock.setAbsent(true) les retire toutes (passe « absente »), false les remet.
 local UNCERTAIN = [[
 GetTalentTabInfo GetTalentInfo GetNumTalentTabs GetNumTalentGroups GetActiveTalentGroup GetUnspentTalentPoints
 C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo GetSkillLineInfo GetNumSkillLines
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
-GetTrainerServiceLevelReq GetTrainerServiceCost GetInventoryItemID C_ActionBar issecretvalue
+GetTrainerServiceLevelReq GetTrainerServiceCost GetInventoryItemID C_ActionBar issecretvalue C_TradeSkillUI
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end
