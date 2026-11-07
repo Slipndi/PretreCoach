@@ -109,7 +109,7 @@ end
 
 -- Position du joueur en fractions 0..1, ou nil si illisible (API absente, nil ou secrète).
 local function PlayerXY(mapID)
-  local pos = mapID and S.Get(C_Map and C_Map.GetPlayerMapPosition, "player", mapID)
+  local pos = mapID and S.Get(C_Map and C_Map.GetPlayerMapPosition, mapID, "player")
   if not pos then return nil end
   local ok, x, y = pcall(function()
     if pos.GetXY then return pos:GetXY() end

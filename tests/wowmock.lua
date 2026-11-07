@@ -287,7 +287,7 @@ function GetBindingText(k) return k end
 C_Spell.GetSpellTexture = function(id) return "tex" .. id end
 -- mock.pos = { x, y } (fractions) ; mock.pos = false : position nil
 local function vec(x, y) return { GetXY = function() return x, y end } end
-C_Map = { GetPlayerMapPosition = function() if mock.pos == false then return nil end local p = mock.pos or { 0.456, 0.789 } return vec(p[1], p[2]) end,
+C_Map = { GetPlayerMapPosition = function(mapID, unit) assert(type(mapID) == "number" and unit == "player", "GetPlayerMapPosition(uiMapID, unit)") if mock.pos == false then return nil end local p = mock.pos or { 0.456, 0.789 } return vec(p[1], p[2]) end,
   CanSetUserWaypointOnMap = function() return mock.canWaypoint ~= false end, GetUserWaypoint = function() return nil end,
   SetUserWaypoint = function(p) mock.waypoint = p end,
   GetBestMapForUnit = function() return 1 end,
