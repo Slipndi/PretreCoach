@@ -1244,7 +1244,9 @@ local function suite(label)
       assert(n.db.guide.tab == key, "onglet memorise : " .. key)
     end
     G.win.tabs[1].scripts.OnClick(G.win.tabs[1])
-    assert(G.used == #n.Guide.Evaluate() and G.used > 0, "Maintenant : une ligne par objectif")
+    local todo = 0
+    for _, e in ipairs(n.Guide.Evaluate()) do if not e.done then todo = todo + 1 end end
+    assert(G.used == todo and G.used > 0, "Maintenant : une ligne par objectif restant")
     G.win.tabs[2].scripts.OnClick(G.win.tabs[2])
     assert(G.used == #n.Guide.Milestones(), "Etapes : une ligne par jalon")
     G.win.tabs[3].scripts.OnClick(G.win.tabs[3])
@@ -1266,10 +1268,11 @@ local function suite(label)
     row.box.scripts.OnClick(row.box)
     assert(#calls == 1 and calls[1][1] == "legacy_toa" and calls[1][2] == true, "SetManual(id, true)")
     assert(n.db.guide.manual.legacy_toa == true, "coche memorisee")
-    for i = 1, G.used do if G.rows[i].entry.id == "legacy_toa" then row = G.rows[i] end end
-    assert(row.entry.done and not row.entry.unknown, "ligne redessinee (GUIDE)")
-    row.box.scripts.OnClick(row.box)
-    assert(calls[2][2] == false, "decoche a la main")
+    local still
+    for i = 1, G.used do if G.rows[i].entry.id == "legacy_toa" then still = true end end
+    assert(not still, "objectif coche : retire de la liste")
+    n.Guide.SetManual("legacy_toa", false)
+    assert(calls[2][2] == false and not n.db.guide.manual.legacy_toa, "decoche")
     row.box.scripts.OnEnter(row.box); row.box.scripts.OnLeave(row.box)
   end)
 

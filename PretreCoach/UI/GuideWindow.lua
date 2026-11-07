@@ -182,7 +182,12 @@ end
 
 local function items()
   local t = tab()
-  if t == "now" then return "now", Guide.Evaluate(), L.GW_NOW_EMPTY end
+  if t == "now" then
+    -- objectifs faits : retirés de la liste (seul ce qui reste à faire s'affiche)
+    local todo = {}
+    for _, e in ipairs(Guide.Evaluate()) do if not e.done then todo[#todo + 1] = e end end
+    return "now", todo, L.GW_NOW_EMPTY
+  end
   if t == "next" then return "next", Guide.Milestones(), L.GW_EMPTY end
   return "ref", Guide.Reference(t), L.GW_EMPTY
 end
