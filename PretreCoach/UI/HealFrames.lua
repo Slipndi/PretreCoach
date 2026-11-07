@@ -72,8 +72,24 @@ local function applyClicks(b)
   end
 end
 
+-- « Clic gauche : Soins inférieurs », … : ce que fait chaque bouton de souris, d'apres le reglage du joueur.
+function H.Bindings()
+  local out, spells = {}, spellsDB()
+  for _, slot in ipairs(SLOTS) do out[#out + 1] = L.HEAL_SLOT[slot] .. " : " .. (H.SpellName(spells[slot]) or "?") end
+  return out
+end
+
+-- Legende courte en tete du cadre : G = clic gauche, D = clic droit, Maj = maj + clic gauche.
+local function legend()
+  if not frame or not frame.legend then return end
+  local spells, t = spellsDB(), {}
+  for _, slot in ipairs(SLOTS) do t[#t + 1] = L.HEAL_SHORT[slot] .. " " .. (H.SpellName(spells[slot]) or "?") end
+  frame.legend:SetText(table.concat(t, "  ·  "))
+end
+
 function H.Apply()
   if not built then return end
+  legend()
   if InCombatLockdown() then dirty = true return end
   dirty = false
   for _, b in ipairs(H.buttons) do applyClicks(b) end
@@ -109,7 +125,7 @@ function H.Refresh(b)
   pcall(b.name.SetText, b.name, UnitName(u))
   local gone = S.Get(UnitIsConnected, u) == false
   local dead = S.Get(UnitIsDeadOrGhost, u) == true
-  b.state:SetText(gone and L.HEAL_OFFLINE or (dead and L.HEAL_DEAD or ""))
+  if not (b.fbUntil and GetTime() < b.fbUntil) then b.state:SetText(gone and L.HEAL_OFFLINE or (dead and L.HEAL_DEAD or "")) end
   b:SetAlpha(S.Get(UnitInRange, u) == false and 0.45 or 1) -- portee illisible : le cadre reste opaque
 end
 
@@ -133,6 +149,10 @@ function H.Build()
   frame:SetSize(W + 2 * PAD, HEAD + PAD + #UNITS * (HT + GAP))
   frame:SetPoint("LEFT", UIParent, "LEFT", 20, 0)
   UI.Movable(frame, "heal")
+  frame.legend = frame:CreateFontString(nil, "OVERLAY", UI.font.small)
+  frame.legend:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -1)
+  frame.legend:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -PAD, -1)
+  frame.legend:SetJustifyH("LEFT")
   for i, unit in ipairs(UNITS) do
     local b = CreateFrame("Button", "PretreCoachHeal" .. i, frame, "SecureUnitButtonTemplate")
     b:SetSize(W, HT)
@@ -158,10 +178,23 @@ function H.Build()
     b.name:SetPoint("LEFT", b, "LEFT", 4, 0)
     b.state = b.bar:CreateFontString(nil, "OVERLAY", UI.font.small)
     b.state:SetPoint("RIGHT", b, "RIGHT", -4, 0)
+    -- scripts non securises : infobulle des clics et memoire du dernier clic (retour visuel), aucun lancement
+    b:SetScript("OnEnter", function(self)
+      pcall(function()
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(UnitName(self.unit) or self.unit)
+        for _, line in ipairs(H.Bindings()) do GameTooltip:AddLine(line, 1, 1, 1) end
+        GameTooltip:AddLine(L.HEAL_HOWTO, 0.7, 0.7, 0.7, true)
+        GameTooltip:Show()
+      end)
+    end)
+    b:SetScript("OnLeave", function() pcall(function() GameTooltip:Hide() end) end)
+    b:SetScript("PostClick", function(self) H.lastClick = { b = self, t = GetTime() } end)
     H.buttons[i], byUnit[unit] = b, b
     applyClicks(b)
     if RegisterUnitWatch then RegisterUnitWatch(b) end
   end
+  legend()
   -- portee : relue deux fois par seconde tant que les cadres sont visibles
   local t = 0
   frame:SetScript("OnUpdate", function(_, dt)
@@ -182,6 +215,20 @@ ns.On("PLAYER_REGEN_ENABLED", function()
   H.Render()
 end)
 ns.On("GROUP_ROSTER_UPDATE", H.Render)
+
+-- Retour visuel : sort reussi ou rate dans les 3 s qui suivent un clic sur un cadre (spellID lisible meme en combat).
+local function feedback(ok, spellID)
+  local c = H.lastClick
+  if not c or GetTime() - c.t > 3 then return end
+  H.lastClick = nil
+  local name = type(spellID) == "number" and S.Get(C_Spell and C_Spell.GetSpellName, spellID) or nil
+  local text = (ok and "|cff33ff33✓ " or "|cffff4444✗ ") .. (type(name) == "string" and name or "") .. "|r"
+  c.b.state:SetText(text)
+  c.b.fbUntil = GetTime() + 2 -- Refresh laisse le message 2 s
+  H.feedbackText = text
+end
+ns.OnUnit("UNIT_SPELLCAST_SUCCEEDED", "player", function(_, _, _, spellID) feedback(true, spellID) end)
+ns.OnUnit("UNIT_SPELLCAST_FAILED", "player", function(_, _, _, spellID) feedback(false, spellID) end)
 for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_CONNECTION", "UNIT_NAME_UPDATE", "UNIT_FLAGS" }) do
   ns.On(e, function(_, u)
     local b = built and byUnit[u]
