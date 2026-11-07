@@ -26,7 +26,7 @@ local lastOn = {}                   -- guid -> { key, t, nonShoot }
 local function prune(now)
   for g, e in pairs(swpEnd) do if e <= now then swpEnd[g] = nil end end
   for g, l in pairs(lastOn) do if l.t + LAST_TTL <= now then lastOn[g] = nil end end
-  for k, e in pairs(cdEnd) do if e <= now then cdEnd[k] = nil end end
+  for k, e in pairs(cdEnd) do if e + 1 <= now then cdEnd[k] = nil end end -- +1 : garde la place d'une marge
   if swpCurrent and swpCurrent <= now then swpCurrent, swpCurGuid = nil, nil end
 end
 
@@ -89,18 +89,20 @@ ns.On("PLAYER_DEAD", reset)
 ns.On("PLAYER_ENTERING_WORLD", reset)
 
 -- Secondes restantes avant la fin de la règle des 5 s (0 si finie) ; nil en mode dégradé.
-function T.FiveSecRemaining()
+-- margin (optionnelle) : secondes ajoutées pour ne pas annoncer la fin trop tôt (latence du serveur).
+function T.FiveSecRemaining(margin)
   if T.degraded then return nil end
-  local r = fiveEnd - GetTime()
+  local r = fiveEnd + (margin or 0) - GetTime()
   return r > 0 and r or 0
 end
 
 -- Secondes de recharge restantes du sort `key` (0 si prêt ou non suivi) ; nil en mode dégradé.
-function T.CooldownRemaining(key)
+function T.CooldownRemaining(key, margin)
   if T.degraded then return nil end
   prune(GetTime())
   local e = cdEnd[key]
-  return e and e - GetTime() or 0
+  local r = e and e + (margin or 0) - GetTime() or 0
+  return r > 0 and r or 0
 end
 
 -- Douleur active sur la cible actuelle ? nil en mode dégradé ; faux (et oubliée) si la cible est morte.

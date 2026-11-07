@@ -308,6 +308,9 @@ local holyGuids, holyThisTarget = {}, false
 local mbHigh, flayHigh
 local recoverUntil -- GetTime() de la fin de la carte « Récupère » ; nil = pas de carte
 local fightStart, lastFightSecs -- durée du dernier combat (le mana et la vie étant secrets)
+-- conseils « prêt » / « 5 s écoulées » retardés de cette marge : l'événement du sort arrive avec la latence
+-- du serveur (retour en jeu du 2026-11-07 : « le timing de dispo est limite »)
+local TIMING_MARGIN = 0.5
 
 local function hyst(flag, mana, on, off)
   if mana == nil then return flag end
@@ -358,7 +361,7 @@ local function cooldownFallback(key)
 end
 
 local function cooldown(key)
-  local r = ns.Timers.CooldownRemaining(key)
+  local r = ns.Timers.CooldownRemaining(key, TIMING_MARGIN)
   if r ~= nil then return r end
   return cooldownFallback(key)
 end
@@ -398,7 +401,7 @@ function Rotation.Context()
   if type(speed) == "number" then ctx.moving = speed > 0
   else ctx.moving = S.Get(IsPlayerMoving) end
   ctx.smitesOnTarget = smites
-  ctx.fiveSec = ns.Timers.FiveSecRemaining()
+  ctx.fiveSec = ns.Timers.FiveSecRemaining(TIMING_MARGIN)
   -- plus assez de mana : IsSpellUsable(Châtiment) rend (false, true), lisible en combat d'après la sonde
   local smiteID = Rotation.SpellID("SMITE")
   if smiteID and C_Spell and C_Spell.IsSpellUsable then
