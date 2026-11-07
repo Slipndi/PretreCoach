@@ -482,7 +482,11 @@ local function ExtraSections(add, section)
 
   run("Carte et repères", function()
     add(Presence({ "C_Map.SetUserWaypoint", "C_Map.GetUserWaypoint", "C_Map.CanSetUserWaypointOnMap",
-      "C_Map.GetPlayerMapPosition", "UiMapPoint.CreateFromCoordinates", "C_SuperTrack.SetSuperTrackedUserWaypoint" }))
+      "C_Map.GetPlayerMapPosition", "UiMapPoint.CreateFromCoordinates", "C_SuperTrack.SetSuperTrackedUserWaypoint",
+      "C_Map.GetAreaInfo", "C_Map.GetMapChildrenInfo" }))
+    -- conversion AreaID -> uiMapID de Ext/Questie.lua : Tirisfal (85) doit donner 1420
+    add("GetAreaInfo(85) : %s | uiMapID obtenu : %s (attendu 1420)", tostring(S.Get(C_Map and C_Map.GetAreaInfo, 85)),
+      tostring(ns.Q.MapFor(85)))
     local mapID = S.Get(C_Map and C_Map.GetBestMapForUnit, "player")
     add("CanSetUserWaypointOnMap(%s) : %s | GetUserWaypoint : %s", tostring(mapID),
       Dump("C_Map.CanSetUserWaypointOnMap", mapID), Dump("C_Map.GetUserWaypoint"))

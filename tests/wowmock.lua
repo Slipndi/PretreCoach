@@ -80,6 +80,7 @@ function mock.reset()
   SlashCmdList = {}
   PretreCoachDB = nil
   mock.registered, mock.opened = nil, nil
+  mock.waypoint, mock.superTracked, mock.canWaypoint, mock.areas, mock.mapKids, mock.mapNames = nil, nil, nil, nil, nil, nil
   if mock.qinit then mock.qinit() end
   mock.pos, mock.recipes, mock.bag, mock.addons, mock.sellPrice, mock.sub, mock.ejSelected = nil, nil, nil, nil, nil, nil, nil
 end
@@ -230,12 +231,12 @@ LibQuestieDB = {
   RequireContract = function(v) if v <= 4 then return true end return false, "trop recent" end,
   Enum = { npcFlags = { TRAINER = 16, AUCTIONEER = 4096 }, zoneIDs = { UNDERCITY = 1497, ORGRIMMAR = 1637, THUNDER_BLUFF = 1638 } },
   Npc = { Get = qGet, GetAllIds = function() return qIds() end },
-  Quest = { Get = function(id, key) if mock.qboom then error("boom") end if id == 6561 then return key == "name" and "Quete" or nil end end },
+  Quest = { Get = function(id, key) if mock.qboom then error("boom") end if id == 6561 then return key == "name" and "Quete" or (key == "startedBy" and { { 375 } }) or nil end end },
 }
 -- mock.ah = { [itemID] = { prix, age } } ; mock.ahBoom = l'API leve une erreur
 Auctionator = { API = { v1 = {
   GetAuctionPriceByItemID = function(caller, id) assert(type(caller) == "string") if mock.ahBoom then error("boom") end local e = (mock.ah or {})[id] return e and e[1] end,
-  GetAuctionAgeByItemID = function(caller, id) assert(type(caller) == "string") local e = (mock.ah or {})[id] return e and e[2] end,
+  GetAuctionAgeByItemID = function(caller, id) assert(type(caller) == "string") if mock.ahBoom then error("boom") end local e = (mock.ah or {})[id] return e and e[2] end,
 } } }
 C_EncounterJournal = {}
 function EJ_GetNumTiers() return 2 end
@@ -280,11 +281,20 @@ C_Spell.GetSpellTexture = function(id) return "tex" .. id end
 -- mock.pos = { x, y } (fractions) ; mock.pos = false : position nil
 local function vec(x, y) return { GetXY = function() return x, y end } end
 C_Map = { GetPlayerMapPosition = function() if mock.pos == false then return nil end local p = mock.pos or { 0.456, 0.789 } return vec(p[1], p[2]) end,
-  CanSetUserWaypointOnMap = function() return true end, GetUserWaypoint = function() return nil end, SetUserWaypoint = function() end,
-  GetBestMapForUnit = function() return 1 end, GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = "Tirisfal", parentMapID = id == 1 and 1420 or 0 } end }
+  CanSetUserWaypointOnMap = function() return mock.canWaypoint ~= false end, GetUserWaypoint = function() return nil end,
+  SetUserWaypoint = function(p) mock.waypoint = p end,
+  GetBestMapForUnit = function() return 1 end,
+  GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = (mock.mapNames or {})[id] or "Tirisfal", parentMapID = id == 1 and 1420 or 0 } end,
+  -- mock.areas = { [areaID] = nom } ; mock.mapKids = { [racine] = { { mapID, name }, ... } } (defauts : Tirisfal, Fossoyeuse, Orgrimmar sous 946)
+  GetAreaInfo = function(id) return (mock.areas or { [85] = "Tirisfal", [1497] = "Fossoyeuse", [1637] = "Orgrimmar" })[id] end,
+  GetMapChildrenInfo = function(root)
+    return (mock.mapKids or { [946] = { { mapID = 1420, name = "Tirisfal" }, { mapID = 1458, name = "Fossoyeuse" }, { mapID = 1411, name = "Orgrimmar" } } })[root] or {}
+  end }
+Enum = { UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, Dungeon = 4, Micro = 5, Orphan = 6 } }
 
-UiMapPoint = { CreateFromCoordinates = function() return {} end }
-C_SuperTrack = { SetSuperTrackedUserWaypoint = function() end }
+-- mock.waypoint = dernier repere pose ; mock.superTracked = dernier appel de suivi ; mock.canWaypoint = false : carte refusee
+UiMapPoint = { CreateFromCoordinates = function(mapID, x, y) return { mapID = mapID, x = x, y = y } end }
+C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) mock.superTracked = v end }
 
 -- APIs incertaines sur Forever : mock.setAbsent(true) les retire toutes (passe « absente »), false les remet.
 local UNCERTAIN = [[
@@ -292,7 +302,7 @@ C_Traits C_ClassTalents C_SpecializationInfo GetNumSpecGroups GetNumUnspentTalen
 C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
-UiMapPoint C_SuperTrack C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
+UiMapPoint C_SuperTrack Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
 EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator
 ]]
 local saved = {}

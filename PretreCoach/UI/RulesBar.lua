@@ -38,7 +38,12 @@ local function toggleDetail(i)
   end
   picked = i
   local rule = ns.Rules.list[i]
-  detail.text:SetText(i .. ". " .. rule.title .. "\n" .. rule.explain)
+  local d = rule.go and ns.Goto.For(rule.go)
+  local can = ns.Goto.CanPlace(d)
+  detail.dest = d
+  detail.text:SetText(i .. ". " .. rule.title .. "\n" .. rule.explain .. (d and ("\n" .. L.GO_WHERE:format(d.text)) or ""))
+  detail.go:SetShown(can)
+  detail:SetHeight(math.max(70, 16 + (detail.text:GetStringHeight() or 54) + (can and 20 or 0)))
   detail:Show()
 end
 
@@ -91,6 +96,17 @@ local function build()
   detail.text:SetPoint("TOPLEFT", detail, "TOPLEFT", 8, -8)
   detail.text:SetWidth(204)
   detail.text:SetJustifyH("LEFT")
+  detail.go = CreateFrame("Button", nil, detail)
+  detail.go:SetSize(48, 16)
+  detail.go:SetPoint("BOTTOMRIGHT", detail, "BOTTOMRIGHT", -6, 5)
+  detail.go.bg = detail.go:CreateTexture(nil, "BACKGROUND")
+  detail.go.bg:SetAllPoints(detail.go)
+  detail.go.bg:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.2)
+  detail.go.label = detail.go:CreateFontString(nil, "OVERLAY", UI.font.small)
+  detail.go.label:SetPoint("CENTER", detail.go, "CENTER")
+  detail.go.label:SetText(L.GO_PLACE)
+  detail.go:SetScript("OnClick", function() ns.Goto.Place(detail.dest) end)
+  detail.go:Hide()
   detail:Hide()
 end
 

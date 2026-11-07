@@ -121,7 +121,7 @@ local function guideDB() return ns.db and ns.db.guide end
 local function evalOne(o)
   local check = CHECKS[o.check]
   local r = check and check(o)
-  local e = { id = o.id, text = o.text, priority = o.priority, done = r == true, unknown = false, manual = false }
+  local e = { id = o.id, text = o.text, priority = o.priority, go = o.go, done = r == true, unknown = false, manual = false }
   if r == nil then
     local g = guideDB()
     e.manual = true

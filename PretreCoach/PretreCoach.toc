@@ -27,6 +27,7 @@ Ext\Auctionator.lua
 Calc.lua
 State.lua
 Timers.lua
+Goto.lua
 Guide.lua
 Rotation.lua
 GoldenRules.lua

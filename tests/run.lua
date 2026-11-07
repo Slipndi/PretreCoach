@@ -318,6 +318,7 @@ local function suite(label)
     mock.pos = nil
   end)
   check("probe : Questie et Auctionator presents, Auctionator qui plante", function()
+    local lib0, ah0 = LibQuestieDB, Auctionator -- a restaurer : les etapes Questie plus bas en ont besoin
     mock.addons = { Questie = true, QuestieDB = true, Auctionator = true }
     _G.LibQuestieDB = { RequireContract = function(n) return n == 4 end,
       Quest = { Get = function(_, k) return ({ name = "Pierre", startedBy = { { 3000 } }, requiredLevel = 5 })[k] end },
@@ -332,7 +333,7 @@ local function suite(label)
     _G.LibQuestieDB.RequireContract = function() error("boom") end
     t = probeText()
     assert(t:find("(2589, étoffe de lin) : erreur", 1, true) and t:find("RequireContract(4) : erreur", 1, true), "erreurs absorbees")
-    _G.LibQuestieDB, _G.Auctionator, mock.addons = nil, nil, nil
+    _G.LibQuestieDB, _G.Auctionator, mock.addons = lib0, ah0, nil
   end)
   check("/coach here : coordonnees lisibles, puis nil, historique plafonne a 20", function()
     mock.sub = "Brill"
@@ -2932,7 +2933,7 @@ local function suite(label)
     local n = qboot()
     assert(n.Q.Quest(6561, "name") == "Quete")
     local w = n.Q.Where(375)
-    assert(w.areaID == 1497 and w.uiMapID == nil and w.x == 52.3 and w.y == 41.2, "x et y restent en pourcentage")
+    assert(w.areaID == 1497 and w.uiMapID == (C_Map and 1458 or nil) and w.x == 52.3 and w.y == 41.2, "x et y restent en pourcentage")
     assert(n.Q.Where(377).areaID == 85 and n.Q.Where(308) == nil and n.Q.Where(1) == nil and n.Q.Where(999) == nil)
   end)
 
@@ -2981,8 +2982,8 @@ local function suite(label)
     mock.qreads = 0
     local n2 = qboot(saved)
     assert(n2.Q.StartIndex() == false and mock.qreads == 0 and n2.db.qindex.ver == "1.0.11", "cache reutilise")
-    mock.qver = "1.0.12"
     local n3 = qboot(saved)
+    mock.qver = "1.0.12" -- apres qboot : mock.reset remet la version d'origine
     assert(n3.Q.StartIndex() == true); drain()
     assert(n3.db.qindex.ver == "1.0.12" and mock.qreads > 0, "reconstruit")
   end)
@@ -3000,6 +3001,107 @@ local function suite(label)
     assert(n.Q.Nearest("AUCTIONEER") == 304 and n.Q.Nearest("INCONNU") == nil)
     n.db.qindex.trainers.ALCHEMY = { 377 }
     assert(n.Q.Nearest("ALCHEMY", nil, 999) == nil, "ni meme zone ni capitale : rien")
+  end)
+
+  -- L15 : « Ou aller » (conversion AreaID -> uiMapID, Goto, repere de carte)
+  local function gboot(withIndex)
+    local n = qboot()
+    mock.mapNames = { [1458] = "Fossoyeuse", [1420] = "Tirisfal" }
+    if withIndex then n.Q.StartIndex(); drain() end
+    return n
+  end
+
+  check("Goto : AreaID -> uiMapID en direct (presente, introuvable, absente)", function()
+    local n = gboot()
+    if C_Map then
+      assert(n.Q.MapFor(1497) == 1458 and n.Q.MapFor(85) == 1420, "noms localises")
+      assert(n.Q.MapFor(99999) == nil, "nom introuvable")
+      mock.areas = { [5] = "Zone Inconnue" }
+      assert(n.Q.MapFor(5) == nil, "nom sans carte")
+    else
+      assert(n.Q.MapFor(1497) == nil, "API absente : nil, sans erreur")
+    end
+  end)
+
+  check("Goto : For avec et sans Questie, cible inconnue", function()
+    local n = gboot(LibQuestieDB ~= nil)
+    for _, t in ipairs({ "WAND", "PRIEST", "ALCHEMY", "HERBALISM", "FIRSTAID", "Q6561", "Q1" }) do
+      local d = n.Goto.For(t)
+      assert(type(d) == "table" and type(d.text) == "string" and d.text ~= "", t)
+      assert(not d.text:find("Trainer") and not d.text:find("Auctioneer") and not d.text:find("Gravestone"), "nom anglais : " .. d.text)
+    end
+    assert(n.Goto.For("INCONNU") == nil)
+    if LibQuestieDB and C_Map then
+      local d = n.Goto.For("PRIEST")
+      assert(d.mapID == 1458 and d.x == 52.3 and d.y == 41.2 and d.text:find("Fossoyeuse", 1, true), d.text)
+      assert(n.Goto.For("WAND").text:find("Hôtel des ventes de Fossoyeuse", 1, true) and n.Goto.For("WAND").mapID == 1458)
+      local q = n.Goto.For("Q6561")
+      assert(q.mapID == 1458 and q.x == 52.3, "donneur de quete")
+      local none = n.Goto.For("Q1")
+      assert(none.mapID == nil and none.x == nil, "quete sans donneur : texte seul")
+    else
+      assert(n.Goto.For("PRIEST").x == nil and n.Goto.For("WAND").text:find("Hôtel des ventes de Fossoyeuse", 1, true), "repli sans coordonnees")
+    end
+  end)
+
+  check("Goto : Place pose le repere, sinon ecrit dans le chat, sans erreur", function()
+    local n = gboot(LibQuestieDB ~= nil)
+    local d = { text = "Quelque part", mapID = 1458, x = 52.3, y = 41.2 }
+    local np = #mock.printed
+    if C_Map and UiMapPoint and C_SuperTrack then
+      assert(n.Goto.Place(d) == true and mock.waypoint and mock.waypoint.mapID == 1458 and mock.superTracked == true)
+      assert(math.abs(mock.waypoint.x - 0.523) < 1e-9 and #mock.printed == np, "coordonnees en 0-1, pas de message")
+      mock.waypoint = nil
+      mock.canWaypoint = false
+      assert(n.Goto.Place(d) == false and mock.waypoint == nil and #mock.printed == np + 1, "carte refusee : message")
+      assert(mock.printed[#mock.printed]:find("Quelque part", 1, true))
+    else
+      assert(n.Goto.Place(d) == false and #mock.printed == np + 1, "API absente : message")
+    end
+    assert(n.Goto.Place(nil) == false and n.Goto.Place({ text = "x" }) == false)
+    assert(not n.Goto.CanPlace({ text = "x" }) and not n.Goto.CanPlace(nil) and n.Goto.CanPlace(d))
+  end)
+
+  check("Goto : guide, regles et QINDEX (bouton masque sans coordonnees)", function()
+    local n, G = gw()
+    mock.mapNames = { [1458] = "Fossoyeuse", [1420] = "Tirisfal" }
+    n.ToggleGuide()
+    local c = G.count
+    n.Fire("QINDEX")
+    assert(G.count == c + 1, "QINDEX rafraichit le guide")
+  end)
+
+  check("Goto : detail de la regle 1, bouton masque sans coordonnees", function()
+    isolated(function()
+      local n = loadAddon()
+      n.db = { show = { toasts = false, rules = true }, guide = { manual = {}, done = {} } }
+      mock.mapNames = { [1458] = "Fossoyeuse", [1420] = "Tirisfal" }
+      mock.fire("ADDON_LOADED", ADDON)
+      local R = n.UI.RulesBar
+      local b = R.buttons[1]
+      b.scripts.OnClick(b)
+      assert(R.detail.shown and not R.detail.go.shown, "sans coordonnees : bouton masque")
+      assert(R.detail.text.text:find("Où aller", 1, true), "ligne Ou aller")
+      b.scripts.OnClick(b) -- referme
+      if LibQuestieDB and C_Map then
+        n.Q.StartIndex(); drain()
+        b.scripts.OnClick(b)
+        assert(R.detail.go.shown and R.detail.dest.mapID == 1458, "avec index : bouton visible")
+      end
+    end, rcleanup)
+  end)
+
+  check("Goto : toast R1 cite l'hotel des ventes", function()
+    local n = gboot()
+    assert(n.Goto.For("WAND").where:find("Hôtel des ventes de Fossoyeuse", 1, true))
+  end)
+
+  check("Sonde : GetAreaInfo(85) et uiMapID attendu 1420", function()
+    gboot()
+    suiteSlash("probe")
+    local t = mock.lastText
+    assert(t:find("GetAreaInfo(85) : ", 1, true) and t:find("(attendu 1420)", 1, true), "ligne conversion")
+    if C_Map then assert(t:find("GetAreaInfo(85) : Tirisfal | uiMapID obtenu : 1420", 1, true), t) end
   end)
 end
 

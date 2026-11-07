@@ -1,6 +1,7 @@
 -- Pont optionnel vers LibQuestieDB (addon QuestieDB) : lecture seule, tout sous pcall, rien n'est embarque (GPL).
 -- Sans QuestieDB, Available() rend false et le reste rend nil. Format lu dans QuestieDB/src/meta/npcMeta.lua.
 local _, ns = ...
+local S = ns.S
 local Q = {}
 ns.Q = Q
 
@@ -26,9 +27,40 @@ end
 function Q.Quest(id, key) return read("Quest", id, key) end
 function Q.Npc(id, key) return read("Npc", id, key) end
 
+-- AreaID -> uiMapID sans donnee embarquee : nom localise (C_Map.GetAreaInfo) puis table nom -> uiMapID construite en direct
+-- depuis les cartes Zone/City sous Cosmic (946), Kalimdor (1414) et Royaumes de l'Est (1415). Cache en memoire seulement.
+-- shortcut: homonymes de zones (premier trouve), nil si l'API manque ou si le nom ne correspond a aucune carte.
+local byName, areaMap = nil, {}
+local function mapIndex()
+  if byName then return byName end
+  local idx, T = {}, (Enum and Enum.UIMapType) or {}
+  for _, root in ipairs({ 946, 1414, 1415 }) do
+    for _, kind in ipairs({ T.Zone, T.City }) do
+      local kids = S.Get(C_Map and C_Map.GetMapChildrenInfo, root, kind, true)
+      for _, m in ipairs(type(kids) == "table" and kids or {}) do
+        if type(m) == "table" and type(m.name) == "string" and type(m.mapID) == "number" and not idx[m.name] then idx[m.name] = m.mapID end
+      end
+    end
+  end
+  if next(idx) then byName = idx end -- vide (API pas prete) : on reessaiera
+  return idx
+end
+
+function Q.MapFor(areaID)
+  local c = areaMap[areaID]
+  if c ~= nil then return c or nil end
+  local idx = mapIndex()
+  if not byName then return nil end
+  local name = S.Get(C_Map and C_Map.GetAreaInfo, areaID)
+  local id = type(name) == "string" and idx[name] or false
+  areaMap[areaID] = id
+  return id or nil
+end
+
 -- Premier point d'apparition. Verifie : spawns = { [areaID] = { { x, y }, ... } }, x et y DEJA en pourcentage 0-100
 -- (QuestieDB/Types/LibQuestieDB.t.lua:44 ; valeurs reelles ~40-50). (-1, -1) = instance : ignore.
--- shortcut: uiMapID reste nil, la table AreaID -> uiMapID de QuestieDB est du texte Lua qui exige loadstring (interdit, Regle 0).
+-- shortcut: uiMapID vient de Q.MapFor (nom de zone localise) et reste nil si la conversion echoue ; la table AreaID -> uiMapID
+-- de QuestieDB est du texte Lua qui exige loadstring (interdit, Regle 0), donc non utilisee.
 function Q.Where(npcID)
   local spawns = Q.Npc(npcID, "spawns")
   if type(spawns) ~= "table" then return nil end
@@ -40,7 +72,7 @@ function Q.Where(npcID)
   local rows = area and spawns[area]
   local row = type(rows) == "table" and rows[1]
   if type(row) ~= "table" or type(row[1]) ~= "number" or row[1] < 0 then return nil end
-  return { areaID = area, uiMapID = nil, x = row[1], y = row[2] }
+  return { areaID = area, uiMapID = Q.MapFor(area), x = row[1], y = row[2] }
 end
 
 ------------------------------------------------------------------------

@@ -10,8 +10,9 @@ local Rules = {}
 ns.Rules = Rules
 
 Rules.list = {}
+local GO = { [1] = "WAND", [7] = "Q" .. D.GravestoneQuest } -- cible « Où aller » (Goto.lua) des règles concernées
 for i = 1, 8 do
-  Rules.list[i] = { id = i, title = L["RULE_" .. i .. "_TITLE"], explain = L["RULE_" .. i .. "_EXPLAIN"] }
+  Rules.list[i] = { id = i, title = L["RULE_" .. i .. "_TITLE"], explain = L["RULE_" .. i .. "_EXPLAIN"], go = GO[i] }
 end
 
 -- R2 : au moins 70 % de monstres achevés à la baguette (comparaison en entiers : wand * 10 >= total * 7)
@@ -68,7 +69,7 @@ local function evaluate()
   local ws, best = Calc.WandStatus(level, State.wand)
   if ws == "aucune" then
     set(1, "bad", L.RULE_R1_NONE)
-    if not inCombat and best then ns.Toast(L.RULE_R1_TOAST_NONE:format(best.source), { key = "r1:none" }) end
+    if not inCombat and best then ns.Toast(L.RULE_R1_TOAST_NONE:format(ns.Goto.For("WAND").where, best.source), { key = "r1:none" }) end
   elseif ws == "depassee" then
     set(1, "warn", L.RULE_R1_OLD)
     if not inCombat and best then ns.Toast(L.RULE_R1_TOAST_OLD:format(best.name, best.level), { key = "r1:old" }) end

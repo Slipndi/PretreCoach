@@ -76,6 +76,11 @@ local function newRow()
   b.q:SetText("?")
   setColor(b.q, C.warn)
   r.box = b
+  -- « Repère » : pose un repère de carte vers r.dest (clic du joueur seulement)
+  r.go = textButton(r, L.GO_PLACE, 48, 16)
+  r.go:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", -4, 4)
+  r.go:SetScript("OnClick", function() ns.Goto.Place(r.dest) end)
+  r.go:Hide()
   -- petite animation de la coche quand l'objectif passe à fait
   r.pop = b.check:CreateAnimationGroup()
   local a = r.pop:CreateAnimation("Alpha")
@@ -110,9 +115,15 @@ local function fill(r, mode, item, y, w)
   r.text:SetWidth(w - tx - 6)
   r.text:SetText(item.text or "")
   local sub = item.sub
+  -- « Où aller » : objectif pas encore fait et doté d'une cible ; le bouton n'existe que s'il y a des coordonnées
+  local d = mode == "now" and not item.done and item.go and ns.Goto.For(item.go) or nil
+  r.dest = d
+  local can = ns.Goto.CanPlace(d)
+  if d then sub = L.GO_WHERE:format(d.text) end
+  r.go:SetShown(can)
   r.sub:ClearAllPoints()
   r.sub:SetPoint("TOPLEFT", r.text, "BOTTOMLEFT", 0, -1)
-  r.sub:SetWidth(w - tx - 6)
+  r.sub:SetWidth(w - tx - 6 - (can and 52 or 0))
   r.sub:SetText(sub or "")
   r.sub:SetShown(sub ~= nil and sub ~= "")
 
@@ -212,9 +223,15 @@ local function refreshCard()
   local e = Guide.Next()
   local text = e and ((e.unknown and "? " or "") .. e.text) or L.GW_NEXT_NONE
   card.text:SetText(text)
+  local d = e and not e.done and e.go and ns.Goto.For(e.go) or nil
+  card.dest = d
+  local can = ns.Goto.CanPlace(d)
+  card.where:SetText(d and L.GO_WHERE:format(d.text) or "")
+  card.go:SetShown(can)
   local count = ns.Training.CountText()
   card.count:SetText(count)
-  card:SetHeight(30 + (card.text:GetStringHeight() or 14) + (count ~= "" and 12 or 0))
+  card:SetHeight(30 + (card.text:GetStringHeight() or 14) + (d and ((card.where:GetStringHeight() or 12) + 2) or 0)
+    + ((count ~= "" or can) and 14 or 0))
 end
 
 local function request()
@@ -226,6 +243,7 @@ end
 
 ns.Listen("GUIDE", request)
 ns.Listen("STATE", request)
+ns.Listen("QINDEX", request) -- les lieux "Ou aller" dependent de l'index
 ns.On("PLAYER_REGEN_ENABLED", function()
   if waiting then
     waiting = false
@@ -334,6 +352,13 @@ local function buildCard()
   card.text = fontString(card, UI.font.text)
   card.text:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -22)
   card.text:SetWidth(240)
+  card.where = fontString(card, UI.font.small)
+  card.where:SetPoint("TOPLEFT", card.text, "BOTTOMLEFT", 0, -2)
+  card.where:SetWidth(240)
+  card.go = textButton(card, L.GO_PLACE, 48, 16)
+  card.go:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -6, 5)
+  card.go:SetScript("OnClick", function() ns.Goto.Place(card.dest) end)
+  card.go:Hide()
   card.count = fontString(card, UI.font.small)
   card.count:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 10, 6)
   setColor(card.count, C.accent)
