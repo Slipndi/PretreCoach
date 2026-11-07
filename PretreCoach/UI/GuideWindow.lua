@@ -341,11 +341,13 @@ end
 local function refreshCard()
   local goals = Guide.Goals()
   local y, shown = 22, 0
+  card.profAnchor = {} -- ancres des rangees metier (line -> cadre) pour l'icone de craft
   for i, g in ipairs(goals) do
     local r = cardRows[i]
     if not r and not InCombatLockdown() then r = newCardRow() cardRows[i] = r end
     if not r then waiting = true break end -- pas de creation de cadre en combat : reprise apres le combat
     y = y + fillCardRow(r, g, i, y)
+    if g.kind == "prof" then card.profAnchor[g.line] = r end
     shown = i
   end
   for i = shown + 1, #cardRows do cardRows[i]:Hide() cardRows[i].entry = nil end
@@ -354,6 +356,7 @@ local function refreshCard()
   card.count:SetText(count)
   card.count:SetShown(count ~= "")
   card:SetHeight(y + (count ~= "" and 18 or 4))
+  ns.Fire("CARDROWS")
 end
 
 local function request()
@@ -485,7 +488,7 @@ local function buildCard()
   expand:SetScript("OnEnter", function(self) tooltip(self, L.GW_EXPAND) end)
   expand:SetScript("OnLeave", function() pcall(function() GameTooltip:Hide() end) end)
   card:SetScript("OnShow", function() setOpen(true) refreshCard() end)
-  card:SetScript("OnHide", function() setOpen(false) end)
+  card:SetScript("OnHide", function() setOpen(false) ns.Fire("CARDROWS") end)
 end
 
 ------------------------------------------------------------------------

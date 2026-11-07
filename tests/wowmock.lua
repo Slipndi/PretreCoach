@@ -2,7 +2,7 @@
 -- client (GetSpellInfo, GetSpellCooldown, IsUsableSpell, GetItemInfo, GetSkillLineInfo, GetTalentInfo, ...) ne sont PAS définies.
 -- Fausse API WoW minimale : seulement ce que PretreCoach appelle. Charger avec dofile, rend le module `mock`.
 local mock = { errors = {}, printed = {}, events = {}, timers = {}, inCombat = false, hasTarget = true, noSecrets = false,
-  unknown = {}, time = 0, guid = "Creature-0", secure = {}, attrCalls = 0, attrInCombat = 0, secureInCombat = 0 } -- unknown.spell / .item / .map : { [id] = true } = l'API ne repond pas pour cet ID
+  unknown = {}, time = 0, guid = "Creature-0", secure = {}, attrCalls = 0, attrInCombat = 0, secureInCombat = 0, moveInCombat = 0 } -- unknown.spell / .item / .map : { [id] = true } = l'API ne repond pas pour cet ID
 
 -- Valeur secrete simulee : toute operation autre que issecretvalue leve une erreur.
 local function deny(op) return function() error("attempt to " .. op .. " a secret value", 2) end end
@@ -44,8 +44,10 @@ function FRAME.SetAttribute(self, k, v) self.attrs = self.attrs or {} self.attrs
 function FRAME.GetAttribute(self, k) return (self.attrs or {})[k] end
 function FRAME.SetColorTexture(self, ...) self.color = { ... } end
 function FRAME.SetText(self, t) mock.lastText = t self.text = t end
-function FRAME.Show(self) local was = self.shown self.shown = true if not was and self.scripts.OnShow then self.scripts.OnShow(self) end end
-function FRAME.Hide(self) local was = self.shown self.shown = false if was and self.scripts.OnHide then self.scripts.OnHide(self) end end
+-- Show/Hide/SetPoint/ClearAllPoints sur un cadre securise en combat : interdit en jeu, compte ici
+local function guard(self) if mock.inCombat and self.template and self.template:find("Secure") then mock.moveInCombat = mock.moveInCombat + 1 end end
+function FRAME.Show(self) guard(self) local was = self.shown self.shown = true if not was and self.scripts.OnShow then self.scripts.OnShow(self) end end
+function FRAME.Hide(self) guard(self) local was = self.shown self.shown = false if was and self.scripts.OnHide then self.scripts.OnHide(self) end end
 function FRAME.SetShown(self, b) if b then FRAME.Show(self) else FRAME.Hide(self) end end
 function FRAME.IsShown(self) return self.shown == true end
 function FRAME.SetScale(self, s) self.scale = s end
@@ -56,8 +58,8 @@ function FRAME.HookScript(self, name, fn) self.hooks = self.hooks or {} self.hoo
 function FRAME.CreateTexture() return newFrame() end
 function FRAME.CreateAnimationGroup() return newFrame() end
 function FRAME.CreateAnimation() return newFrame() end
-function FRAME.SetPoint(self, ...) self.pt = { ... } end
-function FRAME.ClearAllPoints(self) self.pt = nil end
+function FRAME.SetPoint(self, ...) guard(self) self.pt = { ... } end
+function FRAME.ClearAllPoints(self) guard(self) self.pt = nil end
 function FRAME.GetPoint(self) if self.pt then return self.pt[1], self.pt[2], self.pt[3], self.pt[4], self.pt[5] end end
 function FRAME.CreateFontString() return newFrame() end
 function FRAME.GetVerticalScroll() return 0 end
@@ -105,6 +107,7 @@ function mock.reset()
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known = 0, "Creature-0", nil, nil, nil
   mock.level, mock.xp, mock.xpMax, mock.xpSecret = nil, nil, nil, nil
   mock.secure, mock.attrCalls, mock.attrInCombat, mock.secureInCombat, mock.offline, mock.outOfRange = {}, 0, 0, 0, nil, nil
+  mock.moveInCombat = 0
   SlashCmdList = {}
   PretreCoachDB = nil
   mock.registered, mock.opened = nil, nil

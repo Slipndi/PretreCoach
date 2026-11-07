@@ -1,23 +1,23 @@
--- Fenetre « Craft » : jusqu'a 3 recettes qui font monter Alchimie/Secourisme avec les sacs, un bouton par recette.
+-- Icone « Craft » dans la carte du guide : un petit bouton a droite de la rangee Alchimie / Secourisme.
 -- Exception de conformite approuvee (voir CLAUDE.md, Regle 0) : ce fichier seul lance le SORT DU METIER (type1="spell"),
 -- ce qui ouvre la fenetre de metier. L'addon y preselectionne la recette (navigation d'UI) ; le joueur clique lui-meme
 -- sur « Creer ». Aucune fabrication automatique : CraftRecipe, C_TradeSkillUI.Craft et macrotext restent interdits.
--- Attributs poses hors combat seulement ; en combat le rendu est suspendu et reprend a PLAYER_REGEN_ENABLED.
+-- Creation, attributs, SetPoint, Show/Hide : hors combat seulement ; en combat on attend PLAYER_REGEN_ENABLED.
+-- Boutons parentes a UIParent (pas a la carte, que le joueur peut fermer en combat) et ancres sur la rangee de la carte :
+-- un cadre securise ne change jamais de visibilite par le fait d'un parent non securise.
 local ADDON, ns = ...
 local UI, L = ns.UI, ns.L
 
-local P = { rows = {} }
+local P = { btns = {} }
 UI.CraftPopup = P
-local frame
-local SIZE, PAD, ROW_H, MAX = 34, 6, 42, 3
-local W = 300
+local SIZE = 18
 -- Sorts de metier (Vanilla) et icones de repli : a verifier en jeu (verify). Herboristerie exclue : rien a fabriquer.
 local TRADE = {
   [171] = { spell = 2259, tex = "Interface\\Icons\\Trade_Alchemy" },
   [129] = { spell = 3273, tex = "Interface\\Icons\\Spell_Holy_SealOfSacrifice" },
 }
+local ORDER = { 171, 129 }
 local want -- { recipeID, name, t, pending } memorise par le clic du joueur
-local dismissed = false
 
 local function spellName(line)
   local id = TRADE[line].spell
@@ -43,103 +43,90 @@ local function buyText(e)
   return L.CRAFT_BUY:format(table.concat(t, ", ")) .. (cost and (" (≈ " .. ns.Prof.Money(cost) .. ")") or "")
 end
 
--- Rien qui fasse monter : la fenetre reste visible et dit quoi faire (1re action non faite du plan de chaque metier).
-function P.Empty()
-  local shown = not (ns.db and ns.db.show and ns.db.show.craft == false) and not dismissed
-  local lines = {}
-  for _, line in ipairs({ 171, 129 }) do
-    local s = shown and ns.Prof.Steps and ns.Prof.Steps(line)
-    if s then
-      local first
-      for _, t in ipairs(s.todo or {}) do if t.done ~= true and not first then first = t.text end end
-      lines[#lines + 1] = s.title .. (first and ("\n  " .. first) or "")
-    end
+-- Lignes de l'infobulle : skill-up possible, sinon 1re action non faite du plan du metier.
+local function tipLines(b)
+  local name = ns.Data.Professions and ns.Data.Professions[b.line] and ns.Data.Professions[b.line].name or "?"
+  local t = {}
+  local e = b.entry
+  if e then
+    t[1] = L.CRAFT_ROW:format(e.n, e.recipe)
+    if #e.buy > 0 then t[2] = buyText(e) end
+    t[#t + 1] = L.CRAFT_CLICK:format(name)
+  else
+    local s = ns.Prof.Steps and ns.Prof.Steps(b.line)
+    local first
+    for _, x in ipairs(s and s.todo or {}) do if x.done ~= true and not first then first = x.text end end
+    t[1] = (s and s.title) or name
+    if first then t[2] = first end
+    t[#t + 1] = L.CRAFT_CLICK_OPEN:format(name)
   end
-  for _, r in ipairs(P.rows) do r.frame:Hide() end
-  if #lines == 0 then frame.empty:SetText("") frame:Hide() return end
-  frame.empty:SetText(L.CRAFT_NONE .. "\n" .. table.concat(lines, "\n"))
-  frame:SetHeight(2 * PAD + math.max(ROW_H, (frame.empty:GetStringHeight() or 0) + 4))
-  frame:Show()
+  return t
 end
+P.TipLines = tipLines
 
-function P.Render()
-  if not frame or InCombatLockdown() then return end
-  local entries = {}
-  if not (ns.db and ns.db.show and ns.db.show.craft == false) and not dismissed then
-    for _, e in ipairs(ns.Prof.Craftable()) do
-      if e.skillUp and TRADE[e.line] and #entries < MAX then entries[#entries + 1] = e end
-    end
-  end
-  if #entries == 0 then return P.Empty() end
-  frame.empty:SetText("")
-  for i, r in ipairs(P.rows) do
-    local e = entries[i]
-    if e then
-      r.line, r.recipe = e.line, e.recipe
-      r.recipeID = recipeIDOf(e.line, e.recipe)
-      r.icon:SetTexture(TRADE[e.line].tex)
-      r.text:SetText(L.CRAFT_ROW:format(e.n, e.recipe))
-      r.buy:SetText(#e.buy > 0 and buyText(e) or "")
-      if r.applied ~= e.line then
-        r.btn:SetAttribute("type1", "spell")
-        r.btn:SetAttribute("spell1", spellName(e.line))
-        r.applied = e.line
+local function newButton(line)
+  local b = CreateFrame("Button", "PretreCoachCraft" .. line, UIParent, "SecureActionButtonTemplate")
+  b.line = line
+  b:SetSize(SIZE, SIZE)
+  b:SetFrameStrata("HIGH")
+  b:RegisterForClicks("AnyUp")
+  b.icon = b:CreateTexture(nil, "ARTWORK")
+  b.icon:SetAllPoints(b)
+  b.icon:SetTexture(TRADE[line].tex)
+  b:SetScript("OnEnter", function(self)
+    pcall(function()
+      GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+      for i, s in ipairs(tipLines(self)) do
+        if i == 1 then GameTooltip:SetText(s, 1, 1, 1, 1, true) else GameTooltip:AddLine(s, 0.8, 0.8, 0.85, true) end
       end
-    end
-    r.frame:SetShown(e ~= nil)
-  end
-  frame:SetHeight(2 * PAD + #entries * ROW_H)
-  frame:Show()
+      GameTooltip:Show()
+    end)
+  end)
+  b:SetScript("OnLeave", function() pcall(function() GameTooltip:Hide() end) end)
+  -- non securise : memorise la recette voulue ; le sort du metier part du clic, pas de l'addon
+  b:HookScript("PreClick", function()
+    want = { recipeID = b.recipeID, name = b.entry and b.entry.recipe, t = GetTime(), pending = 2 }
+  end)
+  return b
 end
 
-local function build()
-  frame = UI.Panel("PretreCoachCraftFrame", UIParent)
-  P.frame = frame
-  frame.empty = frame:CreateFontString(nil, "OVERLAY")
-  pcall(frame.empty.SetFontObject, frame.empty, UI.font.small)
-  frame.empty:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -PAD)
-  frame.empty:SetWidth(W - 2 * PAD - 16)
-  frame.empty:SetJustifyH("LEFT")
-  frame:SetSize(W, 2 * PAD + ROW_H)
-  frame:SetPoint("CENTER", UIParent, "CENTER", 0, -130)
-  UI.Movable(frame, "craft")
-  frame:Hide()
-  for i = 1, MAX do
-    local r = { frame = CreateFrame("Frame", nil, frame) }
-    r.frame:SetSize(W - 2 * PAD - 16, ROW_H)
-    r.frame:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -PAD - (i - 1) * ROW_H)
-    local b = CreateFrame("Button", "PretreCoachCraft" .. i, r.frame, "SecureActionButtonTemplate")
-    r.btn = b
-    b:SetSize(SIZE, SIZE)
-    b:SetPoint("TOPLEFT", r.frame, "TOPLEFT", 0, 0)
-    b:RegisterForClicks("AnyUp")
-    r.icon = b:CreateTexture(nil, "ARTWORK")
-    r.icon:SetAllPoints(b)
-    r.text = r.frame:CreateFontString(nil, "OVERLAY")
-    pcall(r.text.SetFontObject, r.text, UI.font.text)
-    r.text:SetPoint("TOPLEFT", b, "TOPRIGHT", 6, -2)
-    r.buy = r.frame:CreateFontString(nil, "OVERLAY")
-    pcall(r.buy.SetFontObject, r.buy, UI.font.small)
-    r.buy:SetPoint("TOPLEFT", r.text, "BOTTOMLEFT", 0, -2)
-    -- non securise : memorise la recette voulue ; le sort du metier part du clic, pas de l'addon
-    b:HookScript("PreClick", function()
-      want = { recipeID = r.recipeID, name = r.recipe, t = GetTime(), pending = 2 }
-    end)
-    P.rows[i] = r
+-- Aligne les boutons sur la carte. Hors combat seulement : en combat on attend PLAYER_REGEN_ENABLED.
+function P.Sync()
+  if InCombatLockdown() then return end
+  local card = UI.GuideWin and UI.GuideWin.card
+  local on = not (ns.db and ns.db.show and ns.db.show.craft == false)
+  local up = {}
+  if on and card and card:IsShown() then
+    for _, e in ipairs(ns.Prof.Craftable()) do
+      if e.skillUp and TRADE[e.line] and not up[e.line] then up[e.line] = e end
+    end
   end
-  local x = CreateFrame("Button", nil, frame)
-  x:SetSize(14, 14)
-  x:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -3, -3)
-  x.label = x:CreateFontString(nil, "OVERLAY")
-  pcall(x.label.SetFontObject, x.label, UI.font.small)
-  x.label:SetAllPoints(x)
-  x.label:SetText("x")
-  x:SetScript("OnClick", function()
-    if InCombatLockdown() then return end
-    dismissed = true
-    frame:Hide()
-  end)
-  P.close = x
+  for _, line in ipairs(ORDER) do
+    local anchor = on and card and card:IsShown() and card.profAnchor and card.profAnchor[line]
+    local b = P.btns[line]
+    if anchor then
+      b = b or newButton(line)
+      P.btns[line] = b
+      local e = up[line]
+      b.entry = e
+      b.recipeID = e and recipeIDOf(line, e.recipe) or nil
+      if not b.applied then
+        local sn = spellName(line)
+        if sn then
+          b:SetAttribute("type1", "spell")
+          b:SetAttribute("spell1", sn)
+          b.applied = true
+        end
+      end
+      b:ClearAllPoints()
+      b:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", 0, -2)
+      b.icon:SetDesaturated(e == nil)
+      b.icon:SetAlpha(e and 1 or 0.4)
+      b:Show()
+    elseif b then
+      b:Hide()
+    end
+  end
 end
 
 -- Selection de la recette dans la fenetre de metier : navigation d'UI, ne fabrique rien.
@@ -162,26 +149,11 @@ ns.On("TRADE_SKILL_LIST_UPDATE", preselect)
 
 function ns.ToggleCraft()
   ns.db.show.craft = ns.db.show.craft == false
-  dismissed = false
-  P.Render()
+  P.Sync()
   if ns.RefreshOptions then ns.RefreshOptions() end
 end
 
-ns.On("ADDON_LOADED", function(_, name)
-  if name ~= ADDON then return end
-  if InCombatLockdown() then return end -- cadres securises : crees hors combat seulement (repris a PLAYER_REGEN_ENABLED)
-  build()
-  P.Render()
-end)
-ns.On("BAG_UPDATE_DELAYED", function()
-  dismissed = false
-  P.Render()
-end)
-ns.On("PLAYER_REGEN_ENABLED", function()
-  if not frame then build() end
-  P.Render()
-end)
-ns.Listen("STATE", function(_, changed)
-  for _, k in ipairs(changed or {}) do if k == "profs" or k == "level" then return P.Render() end end
-end)
-ns.On("TRADE_SKILL_LIST_UPDATE", function() if C_Timer then C_Timer.After(0.5, P.Render) end end)
+ns.Listen("CARDROWS", P.Sync)
+ns.On("BAG_UPDATE_DELAYED", P.Sync)
+ns.On("PLAYER_REGEN_ENABLED", P.Sync)
+ns.On("TRADE_SKILL_LIST_UPDATE", function() if C_Timer then C_Timer.After(0.5, P.Sync) end end)

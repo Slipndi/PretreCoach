@@ -4276,7 +4276,7 @@ local function suite(label)
     assert(#n.Prof.Craftable() == 0, "hors combat : relu")
   end)
 
-  -- Fenetre Craft : bouton securise qui lance le sort du metier ; l'addon presélectionne la recette, jamais de fabrication
+  -- Icone Craft dans la carte du guide : bouton securise qui lance le sort du metier ; l'addon presélectionne la recette, jamais de fabrication
   local function craftBoot(items, withID)
     mock.reset()
     mock.selected, mock.crafted = nil, nil
@@ -4284,52 +4284,63 @@ local function suite(label)
     mock.fire("ADDON_LOADED", ADDON)
     local toasts = {}
     n.Toast = function(text) toasts[#toasts + 1] = text return true end
-    setState(n, { level = 40, profs = { [171] = { rank = 10, max = 75 } } })
+    setState(n, { level = 40, profs = { [171] = { rank = 10, max = 75 }, [182] = { rank = 10, max = 75 } } })
     n.Prof.Advice = withID and { [171] = { list = { { recipeID = 555, name = "Élixir de défense mineure", color = "orange" } } } } or {}
     n.db.prof = nil
     mock.items = items == nil and { [765] = 4, [2447] = 6 } or items
+    n.SetCompact(true)
     mock.fire("BAG_UPDATE_DELAYED")
     return n, toasts
   end
 
-  check("Craft : fenetre visible seulement avec un skill-up, attributs type1/spell1 hors combat", function()
+  check("Craft : icone sur la rangee Alchimie avec skill-up, grisee sinon, absente pour Herboristerie", function()
     if not GetItemCount then return end
     local n = craftBoot({}, true)
-    local P = n.UI.CraftPopup
-    assert(P.frame and P.frame.shown and P.frame.empty.text:find(n.L.CRAFT_NONE, 1, true) and not P.rows[1].frame.shown, "rien a fabriquer : visible avec la prochaine etape")
+    local P, card = n.UI.CraftPopup, n.UI.GuideWin.card
+    assert(card.profAnchor[171] and card.profAnchor[182], "ancres des rangees metier")
+    local b = P.btns[171]
+    assert(b and b.shown and b.icon.desat == true and b.icon.alpha == 0.4, "sans skill-up : visible mais grisee")
+    assert(b.template == "SecureActionButtonTemplate" and b.attrs.type1 == "spell" and b.attrs.spell1 == "Sort2259", "attributs du sort du metier")
+    assert(b.pt[2] == card.profAnchor[171] and b.pt[1] == "TOPRIGHT", "ancree a droite de la rangee")
+    assert(P.btns[182] == nil, "rien pour Herboristerie")
+    local tip = P.TipLines(b)
+    assert(tip[1]:find("Alchimie", 1, true) and tip[#tip] == "Clic : ouvre Alchimie", table.concat(tip, "|"))
     mock.items = { [765] = 4, [2447] = 6 }
     mock.fire("BAG_UPDATE_DELAYED")
-    assert(P.frame.shown, "un skill-up possible : affichee")
-    local r = P.rows[1]
-    assert(r.text.text == "4× Élixir de défense mineure (+compétence)", tostring(r.text.text))
-    assert(r.buy.text:find("achète 4 Fiole vide", 1, true), tostring(r.buy.text))
-    assert(r.btn.template == "SecureActionButtonTemplate" and r.btn.attrs.type1 == "spell" and r.btn.attrs.spell1 == "Sort2259", "attributs du sort du metier")
-    assert(not P.rows[2].frame.shown, "une seule rangee")
-    -- recette qui ne fait pas monter (trop grise) : pas de fenetre
-    n.State.profs[171] = { rank = 70, max = 75 }
-    n.Prof.Advice = { [171] = { list = { { recipeID = 555, name = "Élixir de défense mineure", color = "green" } } } }
-    mock.fire("BAG_UPDATE_DELAYED")
-    assert(P.frame.shown and P.frame.empty.text ~= "" and not P.rows[1].frame.shown, "plus rien ne fait monter : prochaine etape, pas de bouton")
-    assert(mock.secureInCombat == 0)
+    assert(b.shown and b.icon.desat == false and b.icon.alpha == 1, "skill-up : pleine couleur")
+    tip = P.TipLines(b)
+    assert(tip[1] == "4× Élixir de défense mineure (+compétence)", tostring(tip[1]))
+    assert(tip[2]:find("achète 4 Fiole vide", 1, true) and tip[3] == "Clic : ouvre Alchimie sur la recette", table.concat(tip, "|"))
+    assert(mock.secureInCombat == 0 and mock.moveInCombat == 0)
+    -- carte fermee : bouton cache
+    card:Hide()
+    assert(not b.shown, "carte cachee : bouton cache")
+    card:Show()
+    assert(b.shown, "carte reaffichee")
   end)
 
-  check("Craft : en combat attributs en attente, appliques a la fin du combat", function()
+  check("Craft : en combat rien posé ni déplacé, appliqué à la fin du combat", function()
     if not GetItemCount then return end
     local n = craftBoot({}, true)
-    local P = n.UI.CraftPopup
+    local P, card = n.UI.CraftPopup, n.UI.GuideWin.card
+    local b = P.btns[171]
+    card:Hide()
+    b.attrs, b.applied = {}, nil
     mock.setCombat(true)
     mock.items = { [765] = 4, [2447] = 6 }
     mock.fire("BAG_UPDATE_DELAYED")
-    assert(not P.rows[1].btn.attrs.spell1 and mock.attrInCombat == 0, "rien en combat")
+    card:Show()
+    assert(not b.attrs.spell1 and not b.shown and mock.attrInCombat == 0 and mock.moveInCombat == 0 and mock.secureInCombat == 0, "rien en combat")
     mock.setCombat(false)
     mock.fire("PLAYER_REGEN_ENABLED")
-    assert(P.frame.shown and P.rows[1].btn.attrs.spell1 == "Sort2259" and mock.attrInCombat == 0, "applique a la fin du combat")
+    assert(b.shown and b.attrs.spell1 == "Sort2259" and b.icon.desat == false and mock.attrInCombat == 0, "applique a la fin du combat")
+    assert(mock.moveInCombat == 0)
   end)
 
   check("Craft : le clic memorise la recette, presélection a TRADE_SKILL_SHOW, aucune fabrication", function()
     if not GetItemCount then return end
     local n, toasts = craftBoot(nil, true)
-    local b = n.UI.CraftPopup.rows[1].btn
+    local b = n.UI.CraftPopup.btns[171]
     mock.fire("TRADE_SKILL_SHOW")
     assert(mock.selected == nil, "sans clic : pas de presélection")
     b.hooks.PreClick(b)
@@ -4342,28 +4353,25 @@ local function suite(label)
     assert(mock.crafted == nil and #toasts == 0, "aucune fabrication")
     -- recipeID inconnu : pas de presélection, toast discret
     n, toasts = craftBoot(nil, false)
-    b = n.UI.CraftPopup.rows[1].btn
+    b = n.UI.CraftPopup.btns[171]
     b.hooks.PreClick(b)
     mock.fire("TRADE_SKILL_SHOW")
     assert(mock.selected == nil and mock.crafted == nil, "recette inconnue : rien presélectionné")
     assert(toasts[1] == "Cherche Élixir de défense mineure dans la liste", tostring(toasts[1]))
   end)
 
-  check("Craft : croix, option masquer et /coach craft", function()
+  check("Craft : option masquer et /coach craft", function()
     if not GetItemCount then return end
     local n = craftBoot(nil, true)
     local P = n.UI.CraftPopup
-    assert(n.db.show.craft == true and P.frame.shown)
-    P.close.scripts.OnClick(P.close)
-    assert(not P.frame.shown, "croix : fermee")
-    mock.fire("BAG_UPDATE_DELAYED")
-    assert(P.frame.shown, "reaffichee au changement des sacs")
+    local b = P.btns[171]
+    assert(n.db.show.craft == true and b.shown)
     SlashCmdList.PRETRECOACH("craft")
-    assert(n.db.show.craft == false and not P.frame.shown, "commande : masque")
+    assert(n.db.show.craft == false and not b.shown, "commande : masque")
     mock.fire("BAG_UPDATE_DELAYED")
-    assert(not P.frame.shown, "un rescan ne la reaffiche pas")
+    assert(not b.shown, "un rescan ne la reaffiche pas")
     SlashCmdList.PRETRECOACH("craft")
-    assert(n.db.show.craft == true and P.frame.shown, "commande : reaffiche")
+    assert(n.db.show.craft == true and b.shown, "commande : reaffiche")
     assert(not findSecret(n.db, "db"))
   end)
 end
