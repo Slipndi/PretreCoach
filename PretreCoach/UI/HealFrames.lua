@@ -7,7 +7,6 @@
 --  - La vie (possiblement secrete) va telle quelle au StatusBar ; aucun tri, aucune couleur ni comparaison sur elle.
 local ADDON, ns = ...
 local UI, L, S = ns.UI, ns.L, ns.S
-local C = UI.color
 
 local H = {}
 UI.HealFrames = H
@@ -16,8 +15,11 @@ local UNITS = { "player", "party1", "party2", "party3", "party4" }
 local SLOTS = { "1", "2", "shift-1" } -- bouton de souris : clic gauche, clic droit, maj + clic gauche
 local CHOICES = { "LESSERHEAL", "HEAL", "GREATERHEAL", "FLASHHEAL", "RENEW", "PWS", "PWF", "DISPEL", "CUREDISEASE",
   "ABOLISHDISEASE", "FEARWARD", "SHADOWPROT", "RESURRECTION" } -- cles de Data/Spells.lua proposees dans les options
-local W, HT, GAP, PAD, HEAD, MANA = 200, 20, 2, 4, 12, 3
-local WHITE = "Interface\\Buttons\\WHITE8X8"
+-- Tailles (px) : colonne du nom, barre de vie, barre de mana (prise dans la rangee, sous la vie), espace entre rangees.
+local NAME_W, BAR_W, BAR_H, MANA_H, GAP = 60, 220, 14, 2, 3
+local PAD, HEAD, NAME_GAP = 6, 14, 4 -- marge dans la bordure doree, hauteur de la legende, espace nom/barre
+local BAR = "Interface\\TargetingFrame\\UI-StatusBar"
+local ROW_W = NAME_W + NAME_GAP + BAR_W
 
 H.SLOTS = SLOTS
 H.buttons = {}
@@ -109,6 +111,18 @@ function H.Cycle(slot, dir)
   return spells[slot]
 end
 
+-- Couleur de classe (r, g, b) de l'unite ; blanc si la classe est illisible (secrete ou absente).
+local function classColor(u)
+  local r, g, b = 1, 1, 1
+  pcall(function()
+    local _, class = UnitClass(u)
+    if type(class) ~= "string" or (issecretvalue and issecretvalue(class)) then return end
+    local c = C_ClassColor and C_ClassColor.GetClassColor(class) or RAID_CLASS_COLORS[class]
+    if c then r, g, b = c.r, c.g, c.b end
+  end)
+  return r, g, b
+end
+
 -- Affichage seul : peut tourner en combat, ne touche jamais aux attributs ni a la visibilite du bouton securise.
 function H.Refresh(b)
   local u = b.unit
@@ -123,6 +137,7 @@ function H.Refresh(b)
     b.mana:SetValue(S.Raw(UnitPower, u, 0))
   end)
   pcall(b.name.SetText, b.name, UnitName(u))
+  b.name:SetTextColor(classColor(u))
   local gone = S.Get(UnitIsConnected, u) == false
   local dead = S.Get(UnitIsDeadOrGhost, u) == true
   if not (b.fbUntil and GetTime() < b.fbUntil) then b.state:SetText(gone and L.HEAL_OFFLINE or (dead and L.HEAL_DEAD or "")) end
@@ -144,9 +159,18 @@ end
 function H.Build()
   if built or not ns.db or InCombatLockdown() then return end
   built = true
-  frame = UI.Panel("PretreCoachHealFrame", UIParent)
+  -- meme approche que ManaBar : BackdropTemplate sous pcall (repli sans), bordure doree du jeu
+  local ok, f = pcall(CreateFrame, "Frame", "PretreCoachHealFrame", UIParent, "BackdropTemplate")
+  if not ok or not f then f = CreateFrame("Frame", "PretreCoachHealFrame", UIParent) end
+  frame = f
   H.frame = frame
-  frame:SetSize(W + 2 * PAD, HEAD + PAD + #UNITS * (HT + GAP))
+  pcall(function()
+    frame:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+      edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
+    frame:SetBackdropColor(0.05, 0.04, 0.08, 0.85)
+    frame:SetBackdropBorderColor(1, 0.82, 0)
+  end)
+  frame:SetSize(ROW_W + 2 * PAD, HEAD + PAD + #UNITS * (BAR_H + GAP) - GAP)
   frame:SetPoint("LEFT", UIParent, "LEFT", 20, 0)
   UI.Movable(frame, "heal")
   frame.legend = frame:CreateFontString(nil, "OVERLAY", UI.font.small)
@@ -155,29 +179,37 @@ function H.Build()
   frame.legend:SetJustifyH("LEFT")
   for i, unit in ipairs(UNITS) do
     local b = CreateFrame("Button", "PretreCoachHeal" .. i, frame, "SecureUnitButtonTemplate")
-    b:SetSize(W, HT)
-    b:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(HEAD + (i - 1) * (HT + GAP)))
+    b:SetSize(ROW_W, BAR_H) -- le bouton couvre toute la rangee (nom + barre)
+    b:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(HEAD + (i - 1) * (BAR_H + GAP)))
     b:RegisterForClicks("AnyUp", "AnyDown") -- Retail : le gabarit securise agit sur l'appui ou le relachement selon ActionButtonUseKeyDown
     b.unit = unit
+    b.name = b:CreateFontString(nil, "OVERLAY", UI.font.small) -- nom a gauche, hors de la barre
+    b.name:SetPoint("LEFT", b, "LEFT")
+    b.name:SetWidth(NAME_W)
+    b.name:SetJustifyH("LEFT")
+    pcall(b.name.SetWordWrap, b.name, false) -- tronque au lieu de passer a la ligne
     b.bar = CreateFrame("StatusBar", nil, b)
-    b.bar:SetPoint("TOPLEFT", b, "TOPLEFT")
-    b.bar:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT", 0, MANA + 1)
-    b.mana = CreateFrame("StatusBar", nil, b) -- fine barre de mana sous la vie, bleu fixe
-    b.mana:SetPoint("BOTTOMLEFT", b, "BOTTOMLEFT")
-    b.mana:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT")
-    b.mana:SetHeight(MANA)
-    pcall(b.mana.SetStatusBarTexture, b.mana, WHITE)
-    b.mana:SetStatusBarColor(0.25, 0.45, 0.95)
-    b.mana:SetMinMaxValues(0, 1)
-    b.mana:SetValue(1)
-    pcall(b.bar.SetStatusBarTexture, b.bar, WHITE)
-    b.bar:SetStatusBarColor(C.good[1], C.good[2], C.good[3]) -- vert fixe
+    b.bar:SetPoint("TOPRIGHT", b, "TOPRIGHT")
+    b.bar:SetSize(BAR_W, BAR_H - MANA_H)
+    pcall(b.bar.SetStatusBarTexture, b.bar, BAR)
+    b.bar:SetStatusBarColor(0.1, 0.8, 0.1) -- vert fixe
     b.bar:SetMinMaxValues(0, 1)
     b.bar:SetValue(1)
-    b.name = b.bar:CreateFontString(nil, "OVERLAY", UI.font.small)
-    b.name:SetPoint("LEFT", b, "LEFT", 4, 0)
-    b.state = b.bar:CreateFontString(nil, "OVERLAY", UI.font.small)
-    b.state:SetPoint("RIGHT", b, "RIGHT", -4, 0)
+    local bg = b.bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints(b.bar)
+    bg:SetTexture(BAR)
+    bg:SetVertexColor(0.2, 0.2, 0.2, 0.5)
+    b.mana = CreateFrame("StatusBar", nil, b) -- fine barre de mana collee sous la vie, dans la rangee
+    b.mana:SetPoint("BOTTOMRIGHT", b, "BOTTOMRIGHT")
+    b.mana:SetSize(BAR_W, MANA_H)
+    pcall(b.mana.SetStatusBarTexture, b.mana, BAR)
+    local mc = { 0, 0.44, 0.87 }
+    pcall(function() local p = PowerBarColor["MANA"] mc = { p.r, p.g, p.b } end)
+    b.mana:SetStatusBarColor(mc[1], mc[2], mc[3])
+    b.mana:SetMinMaxValues(0, 1)
+    b.mana:SetValue(1)
+    b.state = b.bar:CreateFontString(nil, "OVERLAY", UI.font.small) -- etat a droite, dans la barre
+    b.state:SetPoint("RIGHT", b.bar, "RIGHT", -4, 0)
     -- scripts non securises : infobulle des clics et memoire du dernier clic (retour visuel), aucun lancement
     b:SetScript("OnEnter", function(self)
       pcall(function()

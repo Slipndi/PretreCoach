@@ -44,6 +44,7 @@ function FRAME.SetAttribute(self, k, v) self.attrs = self.attrs or {} self.attrs
 function FRAME.GetAttribute(self, k) return (self.attrs or {})[k] end
 function FRAME.SetColorTexture(self, ...) self.color = { ... } end
 function FRAME.SetText(self, t) mock.lastText = t self.text = t end
+function FRAME.SetTextColor(self, r, g, b) self.textColor = { r, g, b } end
 -- Show/Hide/SetPoint/ClearAllPoints sur un cadre securise en combat : interdit en jeu, compte ici
 local function guard(self) if mock.inCombat and self.template and self.template:find("Secure") then mock.moveInCombat = mock.moveInCombat + 1 end end
 function FRAME.Show(self) guard(self) local was = self.shown self.shown = true if not was and self.scripts.OnShow then self.scripts.OnShow(self) end end
@@ -53,6 +54,7 @@ function FRAME.IsShown(self) return self.shown == true end
 function FRAME.SetScale(self, s) self.scale = s end
 function FRAME.SetHeight(self, h) self.height = h end
 function FRAME.SetWidth(self, w) self.width = w end
+function FRAME.SetSize(self, w, h) self.width, self.height = w, h end
 function FRAME.SetScript(self, name, fn) self.scripts[name] = fn end
 function FRAME.HookScript(self, name, fn) self.hooks = self.hooks or {} self.hooks[name] = fn end
 function FRAME.CreateTexture() return newFrame() end
@@ -151,7 +153,8 @@ INVSLOT_MAINHAND, INVSLOT_RANGED = 16, 18
 -- API de jeu appelees par la sonde
 function GetLocale() return "frFR" end
 function GetBuildInfo() return "1.15.0", "60001", "Jan 1 2026", 16001 end
-function UnitClass() return "Pretre", "PRIEST", 5 end
+function UnitClass() if mock.noClass then return nil end return "Pretre", "PRIEST", 5 end
+RAID_CLASS_COLORS = { PRIEST = { r = 0.9, g = 0.8, b = 0.7 } }
 function UnitRace() return "Mort-vivant", "Scourge" end
 function UnitLevel() return mock.level or 12 end
 -- mock.xp / mock.xpMax = XP du joueur (nil par defaut : illisible) ; mock.xpSecret = valeur secrete

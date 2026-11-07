@@ -2990,6 +2990,23 @@ local function suite(label)
     restore()
   end)
 
+  check("Cadres de soin : nom en couleur de classe (blanc sinon), bouton sur toute la rangee", function()
+    local n, restore = boot()
+    local H = n.UI.HealFrames
+    local b = H.buttons[1]
+    H.Refresh(b)
+    local c = b.name.textColor
+    assert(c and c[1] == 0.9 and c[2] == 0.8 and c[3] == 0.7, "couleur de classe")
+    mock.noClass = true
+    H.Refresh(b)
+    c = b.name.textColor
+    mock.noClass = nil
+    assert(c[1] == 1 and c[2] == 1 and c[3] == 1, "blanc si classe illisible")
+    assert(b.width == 60 + 4 + 220 and b.height == 14, "le bouton couvre nom + barre")
+    assert(b.bar.width == 220 and b.mana.height == 2 and b.name.width == 60, "tailles")
+    restore()
+  end)
+
   check("Cadres de soin : creation differee si le chargement a lieu en combat", function()
     local keep = mock.attrInCombat
     mock.setCombat(true)
