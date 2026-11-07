@@ -6,7 +6,7 @@ local WRITE_OK = { PretreCoachDB = true, SLASH_PRETRECOACH1 = true, PretreCoach_
 local READ_OK = {}
 for w in ([[
 _G assert date error getmetatable ipairs math next pairs pcall select setmetatable string table tinsert tonumber tostring type unpack
-CreateFrame UIParent ChatFontNormal SlashCmdList UISpecialFrames InCombatLockdown geterrorhandler issecretvalue print
+CreateFrame CreateColor UIParent ChatFontNormal SlashCmdList UISpecialFrames InCombatLockdown geterrorhandler issecretvalue print
 C_Timer C_Spell C_UnitAuras C_Map C_Item C_QuestLog C_TradeSkillUI C_SpellBook C_ActionBar C_Traits C_ClassTalents C_SpecializationInfo
 GetActionInfo GetBindingKey GetBindingText GetSpellTexture GetPlayerAuraBySpellID
 UnitCanAttack UnitHealth UnitHealthMax UnitXP UnitXPMax UnitPower UnitPowerMax GetPowerRegen UnitExists UnitGUID UnitIsDead UnitLevel UnitCreatureType

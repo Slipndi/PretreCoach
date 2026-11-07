@@ -3798,16 +3798,16 @@ local function suite(label)
     mock.mana = 40
     mock.fire("UNIT_MAXPOWER", "player")
     assert(M.frame.mana.value == 40, "UNIT_MAXPOWER relit le mana")
-    assert(M.frame.five.text.text == "régén." and M.frame.five.value == 5, "regen. a 0")
+    assert(M.frame.five.alpha == 0 and M.frame.five.text.text == "", "barre des 5 s effacee a 0")
     mock.time = 100
     mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 585)
-    assert(M.frame.five.value == 0 and M.frame.five.text.text == "5 s : 5,0" and M.frame.five.scripts.OnUpdate, "decompte demarre")
+    assert(M.frame.five.value == 0 and M.frame.five.text.text == "5,0 s" and M.frame.five.alpha == 1 and M.frame.five.scripts.OnUpdate, "decompte demarre")
     mock.time = 102
     M.frame.five.scripts.OnUpdate(M.frame.five, 0.1)
-    assert(M.frame.five.value == 2 and M.frame.five.text.text == "5 s : 3,0", "suit FiveSecRemaining")
+    assert(M.frame.five.value == 2 and M.frame.five.text.text == "3,0 s", "suit FiveSecRemaining")
     mock.time = 106
     M.frame.five.scripts.OnUpdate(M.frame.five, 0.1)
-    assert(M.frame.five.value == 5 and M.frame.five.text.text == "régén." and M.frame.five.scripts.OnUpdate == nil, "fin : regen., OnUpdate retire")
+    assert(M.frame.five.value == 5 and M.frame.five.text.text == "" and M.frame.five.alpha == 0 and M.frame.five.scripts.OnUpdate == nil, "fin : barre effacee, OnUpdate retire")
     n.db.show.mana = false
     M.Render()
     assert(not M.frame.shown, "option masquer")
