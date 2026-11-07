@@ -135,9 +135,15 @@ local commands = {
   end,
 }
 
+-- Point d'entrée unique des commandes (slash et menu de la minicarte) ; faux si la commande est inconnue.
+function ns.RunCommand(name)
+  local fn = commands[name]
+  if not fn then return false end
+  fn()
+  return true
+end
+
 SLASH_PRETRECOACH1 = "/coach"
 SlashCmdList.PRETRECOACH = function(msg)
-  local cmd = (msg or ""):lower():match("^%s*(%S*)")
-  local fn = commands[cmd]
-  if fn then fn() else ns.Print(L.HELP) end
+  if not ns.RunCommand((msg or ""):lower():match("^%s*(%S*)")) then ns.Print(L.HELP) end
 end

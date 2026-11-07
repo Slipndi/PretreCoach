@@ -4,18 +4,18 @@ local L = ns.L
 
 local RADIUS, ICON = 80, "Interface\\Icons\\Spell_Shadow_ShadowWordPain"
 
-local function onClick(button)
+local function onClick(button, anchor)
   if button == "RightButton" then
-    if ns.ToggleOptions then ns.ToggleOptions() end
-  elseif ns.ToggleGuide then
-    ns.ToggleGuide()
+    if ns.ToggleGuide then ns.ToggleGuide() else ns.Print(L.HELP) end
+  elseif ns.ToggleMinimapMenu then
+    ns.ToggleMinimapMenu(anchor)
   else
     ns.Print(L.HELP)
   end
 end
 
 -- Appelée par le client (champ ## AddonCompartmentFunc) : (addonName, buttonName, menuButtonFrame).
-function PretreCoach_OnCompartmentClick(_, button) onClick(button) end
+function PretreCoach_OnCompartmentClick(_, button, menuButton) onClick(button, menuButton) end
 
 local btn = CreateFrame("Button", "PretreCoachMinimapButton", Minimap)
 btn:SetSize(31, 31)
@@ -41,7 +41,7 @@ local function reposition(a)
   btn:SetPoint("CENTER", Minimap, "CENTER", math.cos(r) * RADIUS, math.sin(r) * RADIUS)
 end
 
-btn:SetScript("OnClick", function(_, button) onClick(button) end)
+btn:SetScript("OnClick", function(self, button) onClick(button, self) end)
 btn:SetScript("OnDragStart", function(self)
   self:SetScript("OnUpdate", function()
     local mx, my = Minimap:GetCenter()

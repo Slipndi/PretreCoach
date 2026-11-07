@@ -74,10 +74,11 @@ end)
 local function suite(label)
   prefix = label .. " : "
   mock.reset()
-  local ns
+  local ns, suiteSlash, suiteCompartment
   check("charge les fichiers du .toc", function()
     assert(#files > 0, "toc vide")
     ns = loadAddon()
+    suiteSlash, suiteCompartment = SlashCmdList.PRETRECOACH, PretreCoach_OnCompartmentClick -- les chargements suivants les ecrasent
   end)
 
   check("ADDON_LOADED cree PretreCoachDB", function()
@@ -148,10 +149,125 @@ local function suite(label)
     PretreCoach_OnCompartmentClick("x", "LeftButton")
     local n = 0
     ns.ToggleGuide = function() n = n + 1 end
-    b.scripts.OnClick(b, "LeftButton")
+    b.scripts.OnClick(b, "RightButton")
     ns.ToggleGuide = nil
     assert(n == 1 and #mock.printed >= 1)
     ns.ToggleGuide = real
+    select(2, ns.UI.MenuRows()):Hide()
+  end)
+  check("RunCommand : chaque commande comme le slash", function()
+    local N = ns
+    local realG, realC, realP = N.ToggleGuide, N.SetCompact, N.Probe
+    local hit = {}
+    N.ToggleGuide = function() hit.guide = true end
+    N.SetCompact = function() hit.compact = true end
+    N.Probe = function() hit.probe = true end
+    for _, c in ipairs({ "guide", "compact", "probe" }) do assert(N.RunCommand(c) and hit[c], c) end
+    local d = N.db.debug
+    N.RunCommand("debug"); assert(N.db.debug == not d and N.db.debug ~= nil)
+    N.RunCommand("debug"); assert(N.db.debug == (d or false))
+    -- le slash ne fait que passer par RunCommand (instance neuve : le slash du dernier chargement)
+    local seen, realRC = {}, N.RunCommand
+    N.RunCommand = function(c) seen[#seen + 1] = c return c ~= "nimporte" end
+    suiteSlash("  GUIDE x"); suiteSlash("")
+    assert(seen[1] == "guide" and seen[2] == "", "slash -> RunCommand")
+    local np = #mock.printed
+    suiteSlash("nimporte"); assert(#mock.printed == np + 1, "aide pour commande inconnue")
+    N.RunCommand = realRC
+    N.RunCommand("lock"); assert(N.db.locked == true)
+    N.RunCommand("unlock"); assert(N.db.locked == false)
+    assert(N.RunCommand("reset") and N.RunCommand("help") and N.RunCommand(""))
+    assert(N.RunCommand("nimporte") == false)
+    N.ToggleGuide, N.SetCompact, N.Probe = realG, realC, realP
+  end)
+  check("Menu minicarte : ouverture, fermeture, entrees, etats", function()
+    local N, b = ns, ns.minimapButton
+    local calls, real = {}, ns.RunCommand
+    ns.RunCommand = function(c) calls[#calls + 1] = c return real(c) end
+    b.scripts.OnClick(b, "LeftButton")
+    local _, m = ns.UI.MenuRows()
+    assert(m and m:IsShown(), "menu ouvert")
+    b.scripts.OnClick(b, "LeftButton")
+    assert(not m:IsShown(), "nouveau clic = ferme")
+    local function row(i) return m.rows and m.rows[i] end
+    ns.ToggleMinimapMenu(b)
+    local btns = N.UI.MenuRows()
+    assert(#btns == 8, "8 lignes cliquables")
+    local expect = { "guide", "compact", "", "lock", "reset", "probe", "debug", nil }
+    for i, e in ipairs(expect) do
+      calls = {}
+      if not m:IsShown() then ns.ToggleMinimapMenu(b) end
+      btns[i].btn.scripts.OnClick(btns[i].btn)
+      assert(calls[1] == e and #calls == (e and 1 or 0), "ligne " .. i .. " -> " .. tostring(calls[1]))
+      local keep = btns[i].check ~= nil
+      assert(m:IsShown() == keep, "ligne " .. i .. (keep and " reste ouverte" or " ferme"))
+    end
+    -- libelles et coches suivent l'etat
+    ns.db.locked = false; ns.db.guide.compact = false; ns.db.debug = false
+    m:Hide(); ns.ToggleMinimapMenu(b)
+    assert(btns[4].text.text == ns.L.MENU_LOCK and btns[2].check.shown == false and btns[7].check.shown == false)
+    ns.db.locked = true; ns.db.guide.compact = true; ns.db.debug = true
+    m:Hide(); ns.ToggleMinimapMenu(b)
+    assert(btns[4].text.text == ns.L.MENU_UNLOCK and btns[2].check.shown == true and btns[7].check.shown == true)
+    calls = {}; btns[4].btn.scripts.OnClick(btns[4].btn)
+    assert(calls[1] == "unlock" and ns.db.locked == false)
+    ns.db.guide.compact = false; ns.db.debug = false
+    ns.RunCommand = real
+    m:Hide()
+    if N.UI.GuideWin.win then N.UI.GuideWin.win:Hide() end
+    if N.UI.GuideWin.card then N.UI.GuideWin.card:Hide() end
+  end)
+  check("Menu minicarte : Echap, combat, inactivite, ecran", function()
+    local b = ns.minimapButton
+    local _, m = ns.UI.MenuRows()
+    local found
+    for _, n in ipairs(UISpecialFrames) do if n == "PretreCoachMinimapMenu" then found = true end end
+    assert(found, "Echap")
+    ns.ToggleMinimapMenu(b); select(2, ns.UI.MenuRows()):Hide()
+    assert(not m:IsShown())
+    ns.ToggleMinimapMenu(b); mock.fire("PLAYER_REGEN_DISABLED")
+    assert(not m:IsShown(), "ferme a l'entree en combat")
+    mock.setCombat(true); mock.time = mock.time + 10
+    ns.ToggleMinimapMenu(b)
+    assert(not m:IsShown(), "refuse en combat avec toast")
+    assert(mock.lastText == ns.L.MENU_COMBAT)
+    mock.setCombat(false)
+    -- inactivite : 2 s hors du menu
+    ns.ToggleMinimapMenu(b)
+    m.scripts.OnUpdate(m, 1.5); assert(m:IsShown())
+    m.IsMouseOver = function() return true end
+    m.scripts.OnUpdate(m, 1.5); m.scripts.OnUpdate(m, 1.5); assert(m:IsShown(), "souris dessus : reste")
+    m.IsMouseOver = nil
+    m.scripts.OnUpdate(m, 1.5); assert(m:IsShown())
+    m.scripts.OnUpdate(m, 1); assert(not m:IsShown(), "ferme apres 2 s")
+    -- replace dans l'ecran : bouton en bas a droite -> vers le haut et la gauche
+    UIParent.GetWidth = function() return 1920 end
+    UIParent.GetHeight = function() return 1080 end
+    b.GetCenter = function() return 1800, 100 end
+    ns.ToggleMinimapMenu(b)
+    local p, _, rp = m:GetPoint()
+    assert(p == "BOTTOMRIGHT" and rp == "TOPRIGHT", "bas droite : " .. tostring(p))
+    m:Hide()
+    b.GetCenter = function() return 100, 1000 end
+    ns.ToggleMinimapMenu(b)
+    p, _, rp = m:GetPoint()
+    assert(p == "TOPLEFT" and rp == "BOTTOMLEFT", "haut gauche : " .. tostring(p))
+    m:Hide()
+    b.GetCenter, UIParent.GetWidth, UIParent.GetHeight = nil, nil, nil
+  end)
+  check("Minimap : clic droit = guide, compartiment", function()
+    local b, n, real = ns.minimapButton, 0, ns.ToggleGuide
+    ns.ToggleGuide = function() n = n + 1 end
+    b.scripts.OnClick(b, "RightButton")
+    suiteCompartment("x", "RightButton")
+    assert(n == 2)
+    ns.ToggleGuide = real
+    local _, m = ns.UI.MenuRows()
+    suiteCompartment("x", "LeftButton")
+    assert(m:IsShown() and m:GetPoint() == "CENTER", "menu au centre sans bouton")
+    suiteCompartment("x", "LeftButton", b)
+    assert(not m:IsShown(), "second clic ferme")
+    b.scripts.OnEnter(b)
   end)
   check("UI.Icon : Pulse, grise, raccourci", function()
     local i = ns.UI.Icon(UIParent, 40)

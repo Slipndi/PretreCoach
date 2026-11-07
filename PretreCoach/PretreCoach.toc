@@ -33,6 +33,7 @@ Professions.lua
 UI\Style.lua
 UI\Toast.lua
 UI\Minimap.lua
+UI\MinimapMenu.lua
 UI\GuideWindow.lua
 UI\RotationPanel.lua
 UI\RulesBar.lua
