@@ -266,7 +266,9 @@ function DETAIL.spells()
   for i = 1, math.min(#p, 4) do names[i] = p[i].text end
   local list = table.concat(names, ", ") .. (#p > 4 and ", …" or "")
   local text = #p == 1 and L.GUIDE_SPELLS_1:format(list) or L.GUIDE_SPELLS:format(#p, list)
-  return plan.total and (text .. " : " .. coin(plan.total)) or text
+  if plan.total then text = text .. " : " .. coin(plan.total) end
+  local money = ns.Training.MoneyText(plan)
+  return money and (text .. "\n" .. money) or text
 end
 
 function DETAIL.talent(e)
@@ -410,6 +412,8 @@ function REFERENCE.spells(level)
     out[#out + 1] = { text = p.text, sub = p.cost and ns.Training.Coin(p.cost) or nil, highlight = true }
   end
   if plan.total and #plan.pending > 1 then out[#out + 1] = { text = L.TRAIN_TOTAL:format(ns.Training.Coin(plan.total)), highlight = false } end
+  local money = ns.Training.MoneyText(plan)
+  if money then out[#out + 1] = { text = money, highlight = false } end
   if #out == 0 then
     out[1] = { text = plan.nextLevel and L.TRAIN_NOTHING:format(plan.nextLevel) or L.TRAIN_NOTHING_END, highlight = false }
   elseif plan.nextLevel then

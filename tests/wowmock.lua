@@ -189,6 +189,7 @@ function CheckInteractDistance() return false end
 function GetUnitSpeed() return 0 end
 function IsPlayerMoving() return false end
 function GetTime() return mock.time end -- pilotable : mock.time
+function GetMoney() if mock.moneySecret then return mock.SECRET end return mock.money or 0 end -- pilotable : mock.money (cuivre)
 function GetInventoryItemID(_, slot) if slot == 18 then return mock.rangedID end end -- mock.rangedID = baguette equipee
 function GetInventoryItemLink() return nil end
 function IsPlayerSpell(id) if mock.known then return mock.known[id] or false end return true end -- mock.known = { [id] = true }

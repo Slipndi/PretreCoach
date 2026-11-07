@@ -15,7 +15,7 @@ IsPlayerSpell IsSpellKnown GetSpellInfo GetSpellCooldown GetLocale GetBuildInfo 
 GetNumTalentTabs GetProfessions GetProfessionInfo GetNumSkillLines GetSkillLineInfo
 GetNumTrainerServices GetTrainerServiceInfo GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString
 GetTime GetNumTalents GetTalentInfo GetNumTalentGroups GetNumSpecGroups GetNumUnspentTalents
-Settings Minimap GameTooltip GetCursorPosition GetItemInfo GetItemCount GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED UiMapPoint C_SuperTrack Enum C_Container C_ClassColor RAID_CLASS_COLORS
+Settings Minimap GameTooltip GetCursorPosition GetItemInfo GetItemCount GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED UiMapPoint C_SuperTrack Enum C_Container C_ClassColor RAID_CLASS_COLORS GetMoney
 ProfessionsFrame TradeSkillFrame SelectTradeSkill TradeSkillFrame_Update GetNumTradeSkills GetTradeSkillInfo
 ]]):gmatch("%S+") do READ_OK[w] = true end
 

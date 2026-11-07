@@ -3955,7 +3955,8 @@ local function suite(label)
     setState(n, { level = 10 })
     local pend = n.Calc.PendingSpells(10, n.State.Knows)
     local r = n.Guide.Reference("spells")
-    assert(#r == #pend + 1 and #r < #n.Data.Spells, "a apprendre + une ligne prochains : " .. #r)
+    assert(#r == #pend + 2 and #r < #n.Data.Spells, "a apprendre + argent + une ligne prochains : " .. #r)
+    assert(r[#pend + 1].text:find("coût inconnu", 1, true), "ligne argent : " .. r[#pend + 1].text)
     for i = 1, #pend do assert(r[i].highlight and not r[i].sub, "cout inconnu : pas de montant") end
     assert(r[#r].text:find("^Prochains sorts : niveau %d+ : ") and not rowTexts(r):find("Coût total", 1, true))
     n.db.trainer = { ["Sort591|Rang 2"] = { cost = 1200, category = "available" } }
@@ -3966,7 +3967,7 @@ local function suite(label)
     assert(not rowTexts(r):find("Coût total", 1, true), "total seulement si tous connus")
     local total = costAll(10)
     r = n.Guide.Reference("spells")
-    assert(r[#pend + 1].text == "Coût total : " .. n.Training.Coin(total) and r[#r].text:find("^Prochains sorts"), rowTexts(r))
+    assert(r[#pend + 1].text == "Coût total : " .. n.Training.Coin(total) and r[#pend + 2].text:find("Il te manque", 1, true) and r[#r].text:find("^Prochains sorts"), rowTexts(r))
     -- toast de montee de niveau : nombre et cout total
     local o2 = fresh()
     local n2 = o2.n
@@ -4010,7 +4011,8 @@ local function suite(label)
     n.db.trainer = {}
     local g = xpFor(n, "spells")
     local pend = n.Calc.PendingSpells(10, n.State.Knows)
-    assert(g.text:find("^Apprends " .. #pend .. " sorts chez ton maître %(") and not g.text:find(" : ", 1, true), g.text)
+    assert(g.text:find("^Apprends " .. #pend .. " sorts chez ton maître %(") and not g.text:match("^[^\n]*"):find(" : ", 1, true), g.text)
+    assert(g.text:find(n.L.TRAIN_MONEY_UNKNOWN:sub(1, 6), 1, true), "argent sans cout connu : " .. g.text)
     local total = 0
     for i, p in ipairs(pend) do
       for _, sp in ipairs(n.Data.Spells) do
@@ -4022,7 +4024,15 @@ local function suite(label)
     end
     g = xpFor(n, "spells")
     local tail = " : " .. n.Training.Coin(total)
-    assert(g.text:sub(-#tail) == tail, g.text)
+    assert(g.text:match("^[^\n]*"):sub(-#tail) == tail, g.text)
+    mock.money = total + 5
+    assert(xpFor(n, "spells").text:find("Tu as assez", 1, true), "assez d'argent")
+    mock.money = total - 50
+    g = xpFor(n, "spells")
+    assert(g.text:find("Il te manque " .. n.Training.Coin(50), 1, true), "il manque : " .. g.text)
+    mock.moneySecret = true
+    assert(not xpFor(n, "spells").text:find("\n", 1, true), "argent illisible : pas de ligne")
+    mock.moneySecret, mock.money = nil, nil
     knows(nil)
   end)
 

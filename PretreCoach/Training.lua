@@ -52,6 +52,21 @@ end
 
 Training.Cost = knownCost
 
+-- Argent du joueur face au cout des sorts a apprendre (plan = Training.Plan) : vert si assez, rouge s'il manque ;
+-- cout incomplet : minimum connu ; argent illisible : nil.
+function Training.MoneyText(plan)
+  local money = S.Get(GetMoney)
+  if type(money) ~= "number" or not plan or not plan.pending or #plan.pending == 0 then return nil end
+  local need = plan.total or plan.known or 0
+  if need == 0 then return L.TRAIN_MONEY_UNKNOWN:format(coin(money)) end
+  local short = need - money
+  local s
+  if short > 0 then s = "|cffff4444" .. L.TRAIN_MONEY_SHORT:format(coin(short), coin(money)) .. "|r"
+  else s = "|cff33ff33" .. L.TRAIN_MONEY_OK:format(coin(money)) .. "|r" end
+  if not plan.total and (plan.unknown or 0) > 0 then s = s .. L.TRAIN_MONEY_PARTIAL:format(plan.unknown) end
+  return s
+end
+
 local function rankText(name, i) return i > 1 and L.GUIDE_RANK:format(name, i) or name end
 
 -- Ce qui est à apprendre maintenant : { pending = { { text, cost } }, total (nil si un coût est inconnu), nextLevel,
@@ -61,14 +76,16 @@ function Training.Plan(level)
   local p = Calc.PendingSpells(level, State.Knows)
   if p then
     out.pending = {}
-    local total = 0
+    local total, known, unknown = 0, 0, 0
     for _, e in ipairs(p) do
       local name = spellName(byKey[e.key], e.rankIndex)
       local cost = knownCost(name, e.rankIndex)
       out.pending[#out.pending + 1] = { text = rankText(name, e.rankIndex), cost = cost }
       total = total and cost and total + cost or nil
+      if cost then known = known + cost else unknown = unknown + 1 end
     end
     out.total = #out.pending > 0 and total or nil
+    out.known, out.unknown = known, unknown
   end
   if type(level) == "number" then
     local best
