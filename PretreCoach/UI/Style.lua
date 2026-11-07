@@ -10,7 +10,7 @@ UI.color = {
 }
 UI.font = { title = "GameFontNormalLarge", text = "GameFontHighlight", small = "GameFontHighlightSmall" }
 
-local panels, movables, pending = {}, {}, {}
+local panels, movables, pending, defaults = {}, {}, {}, {}
 
 -- Les cadres de l'addon ne sont pas sécurisés, mais en combat on reporte quand même SetPoint/SetSize.
 local function later(fn)
@@ -101,7 +101,25 @@ function UI.Movable(frame, key, resizable)
     end)
   end
   movables[frame] = key
+  local point, _, relPoint, x, y = frame:GetPoint()
+  if point then defaults[frame] = { point = point, relPoint = relPoint, x = x, y = y, w = frame:GetWidth(), h = frame:GetHeight() } end
   restore(frame, key)
+  if ns.db then later(function() frame:SetScale(ns.db.scale or 1) end) end
+end
+
+-- Efface les positions sauvegardées et recentre chaque cadre à sa place d'origine (relevée à l'enregistrement).
+function UI.ResetLayout()
+  if ns.db then ns.db.frames = {} end
+  for f in pairs(movables) do
+    local d = defaults[f]
+    if d then
+      later(function()
+        f:ClearAllPoints()
+        f:SetPoint(d.point, UIParent, d.relPoint, d.x, d.y)
+        if d.w and d.h and d.w > 0 then f:SetSize(d.w, d.h) end
+      end)
+    end
+  end
 end
 
 function UI.Restore(frame, key) restore(frame, key or movables[frame]) end

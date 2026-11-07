@@ -15,7 +15,7 @@ IsPlayerSpell IsSpellKnown GetSpellInfo GetSpellCooldown GetLocale GetBuildInfo 
 GetNumTalentTabs GetProfessions GetProfessionInfo GetNumSkillLines GetSkillLineInfo
 GetNumTrainerServices GetTrainerServiceInfo GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString
 GetTime GetNumTalents GetTalentInfo GetNumTalentGroups GetNumSpecGroups GetUnspentTalentPoints
-Minimap GameTooltip GetCursorPosition GetItemInfo GetItemCount GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED
+Settings Minimap GameTooltip GetCursorPosition GetItemInfo GetItemCount GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED
 ]]):gmatch("%S+") do READ_OK[w] = true end
 
 local bad = 0

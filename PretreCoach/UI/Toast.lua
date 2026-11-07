@@ -74,6 +74,7 @@ function ns.Toast(text, opts)
   t.token = (t.token or 0) + 1
   local mine = t.token
   t.text:SetText(text)
+  t:SetScale((ns.db and ns.db.scale) or 1)
   t:SetAlpha(1)
   t:Show()
   place(t, t.slot, SLIDE)

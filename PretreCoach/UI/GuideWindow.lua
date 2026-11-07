@@ -242,6 +242,9 @@ local function setTab(key)
   if win and win:IsShown() then refreshWin() end
 end
 
+-- Mémorise si le guide (fenêtre ou carte) était ouvert, pour la prochaine connexion.
+local function setOpen(v) if ns.db and ns.db.guide then ns.db.guide.open = v end end
+
 local function buildWin()
   win = UI.Panel(WIN_NAME, UIParent)
   G.win = win
@@ -311,7 +314,8 @@ local function buildWin()
   content.line = content:CreateTexture(nil, "BORDER")
   content.line:SetColorTexture(C.accent[1], C.accent[2], C.accent[3], 0.7)
 
-  win:SetScript("OnShow", refreshWin)
+  win:SetScript("OnShow", function() setOpen(true) refreshWin() end)
+  win:SetScript("OnHide", function() setOpen(false) end)
   win:SetScript("OnSizeChanged", function() request() end)
 end
 
@@ -341,7 +345,8 @@ local function buildCard()
   expand:SetScript("OnClick", function() ns.SetCompact(false) end)
   expand:SetScript("OnEnter", function(self) tooltip(self, L.GW_EXPAND) end)
   expand:SetScript("OnLeave", function() pcall(function() GameTooltip:Hide() end) end)
-  card:SetScript("OnShow", refreshCard)
+  card:SetScript("OnShow", function() setOpen(true) refreshCard() end)
+  card:SetScript("OnHide", function() setOpen(false) end)
 end
 
 ------------------------------------------------------------------------
@@ -376,6 +381,17 @@ function ns.SetCompact(on)
   showView()
 end
 
+-- Affiche ou masque le guide (case des options) sans toucher à ns.db.show.
+function ns.SetGuideShown(on)
+  if on then
+    if not ((win and win:IsShown()) or (card and card:IsShown())) then showView() end
+  else
+    if win then win:Hide() end
+    if card then card:Hide() end
+  end
+end
+
+-- open == nil : première connexion, on ouvre une fois.
 ns.On("ADDON_LOADED", function(_, name)
-  if name == ADDON and ns.db and ns.db.show and ns.db.show.guide ~= false then showView() end
+  if name == ADDON and ns.db and ns.db.show and ns.db.show.guide ~= false and gdb().open ~= false then showView() end
 end)

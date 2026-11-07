@@ -2332,6 +2332,181 @@ local function suite(label)
     assert(#pcToasts(o, "^pc:prof:") == before, "profs illisibles : rien de plus")
   end)
 
+  ------------------------------------------------------------------------
+  -- L9 : options, commandes, finitions
+  ------------------------------------------------------------------------
+  local function boot(db)
+    local keep = PretreCoachDB
+    local n = loadAddon()
+    PretreCoachDB = db or {}
+    mock.fire("ADDON_LOADED", ADDON)
+    return n, function() PretreCoachDB = keep end
+  end
+  local function click(ctl) ctl.scripts.OnClick(ctl) end
+  local function slide(ctl, v) ctl.scripts.OnValueChanged(ctl, v) end
+  local cmd = function(s) SlashCmdList.PRETRECOACH(s) end
+  -- sans API Settings, les controles n'existent qu'une fois la fenetre maison ouverte
+  local function controls(n) if not n.UI.Options.panel then n.ToggleOptions() end return n.UI.Options.controls end
+
+  check("Options : Settings present enregistre la categorie, ToggleOptions l'ouvre", function()
+    if not Settings then return end
+    mock.registered, mock.opened = nil, nil
+    local n, restore = boot()
+    assert(mock.registered and mock.registered.name == "Prêtre Coach" and mock.registered.panel == n.UI.Options.panel)
+    n.ToggleOptions()
+    assert(mock.opened == 42 and not n.UI.Options.win, "OpenToCategory, pas de fenetre")
+    restore()
+  end)
+
+  check("Options : Settings absent, fenetre maison (Echap, bascule)", function()
+    local saved = Settings
+    Settings = nil
+    local n, restore = boot()
+    Settings = saved
+    assert(not n.UI.Options.panel)
+    n.ToggleOptions()
+    local w = n.UI.Options.win
+    assert(w and w:IsShown(), "fenetre ouverte")
+    local found
+    for _, name in ipairs(UISpecialFrames) do if name == "PretreCoachOptionsFrame" then found = true end end
+    assert(found, "Echap")
+    n.ToggleOptions()
+    assert(not w:IsShown())
+    restore()
+  end)
+
+  check("Options : chaque case affiche/masque et ecrit dans ns.db", function()
+    local n, restore = boot()
+    local c, db = controls(n), n.db
+    local rotation = n.UI.RotationPanel.frame
+    n.Rotation.current = { keys = { 1 }, text = "x" }
+    n.UI.RotationPanel.Render()
+    assert(rotation:IsShown())
+    click(c.rotation)
+    assert(db.show.rotation == false and not rotation:IsShown(), "cycle masque")
+    click(c.rotation)
+    assert(db.show.rotation == true and rotation:IsShown(), "cycle revient")
+    local rules = n.UI.RulesBar.frame
+    assert(rules:IsShown())
+    click(c.rules)
+    assert(db.show.rules == false and not rules:IsShown(), "regles masquees")
+    click(c.rules)
+    assert(rules:IsShown())
+    click(c.guide)
+    local G = n.UI.GuideWin
+    assert(db.show.guide == false and not (G.win and G.win:IsShown()) and not (G.card and G.card:IsShown()), "guide masque")
+    click(c.guide)
+    assert(db.show.guide == true and G.win:IsShown(), "guide revient")
+    click(c.toasts)
+    assert(db.show.toasts == false and not n.Toast("muet"), "toasts coupes")
+    click(c.minimap)
+    assert(db.show.minimap == false and not n.minimapButton:IsShown(), "minicarte masquee")
+    click(c.minimap)
+    assert(n.minimapButton:IsShown())
+    click(c.locked); assert(db.locked == true); click(c.locked); assert(db.locked == false)
+    click(c.every); assert(db.training.every == 2); click(c.every); assert(db.training.every == 1)
+    click(c.debug); assert(db.debug == true); click(c.debug); assert(db.debug == false)
+    click(c.compact)
+    assert(db.guide.compact == true and G.card:IsShown() and not G.win:IsShown(), "compact applique, guide ouvert")
+    click(c.compact)
+    assert(db.guide.compact == false and G.win:IsShown())
+    restore()
+  end)
+
+  check("Options : curseurs taille et opacite appliques", function()
+    local n, restore = boot()
+    local c, rules = controls(n), n.UI.RulesBar.frame
+    slide(c.scale, 0.8)
+    assert(n.db.scale == 0.8 and rules.scale == 0.8, "echelle")
+    slide(c.scale, 9)
+    assert(n.db.scale == 1.6, "borne haute")
+    slide(c.opacity, 0.5)
+    assert(n.db.opacity == 0.5 and math.abs(rules.bg.color[4] - 0.85 * 0.5) < 1e-9, "opacite")
+    restore()
+  end)
+
+  check("Echelle et opacite appliquees a tous les cadres au chargement", function()
+    local n, restore = boot({ scale = 1.3, opacity = 0.4 })
+    assert(n.UI.RulesBar.frame.scale == 1.3 and n.UI.RotationPanel.frame.scale == 1.3, "echelle")
+    assert(n.UI.GuideWin.win.scale == 1.3, "fenetre du guide (creee apres)")
+    assert(math.abs(n.UI.RulesBar.frame.bg.color[4] - 0.85 * 0.4) < 1e-9, "opacite")
+    restore()
+  end)
+
+  check("/coach seul ouvre les options, help liste tout", function()
+    local n, restore = boot()
+    local k, real = 0, n.ToggleOptions
+    n.ToggleOptions = function() k = k + 1 end
+    cmd("")
+    assert(k == 1, "ToggleOptions")
+    n.ToggleOptions = real
+    mock.printed = {}
+    cmd("help")
+    local h = mock.printed[1]
+    for _, w in ipairs({ "guide", "compact", "lock", "unlock", "reset", "probe", "debug" }) do assert(h:find(w, 1, true), w) end
+    restore()
+  end)
+
+  check("/coach lock, unlock, reset (positions remises, objectifs intacts)", function()
+    local n, restore = boot()
+    local rules = n.UI.RulesBar.frame
+    cmd("lock"); assert(n.db.locked == true)
+    cmd("unlock"); assert(n.db.locked == false)
+    rules:ClearAllPoints(); rules:SetPoint("BOTTOM", UIParent, "BOTTOM", 5, 6)
+    rules.scripts.OnDragStop(rules)
+    n.db.scale, n.db.opacity = 1.4, 0.5
+    n.db.guide.manual.x, n.db.guide.done.y = true, true
+    n.db.training.count = 7
+    cmd("reset")
+    local p, _, _, x, y = rules:GetPoint()
+    assert(p == "TOP" and x == 0 and y == -20, "recentre a la place d'origine")
+    assert(next(n.db.frames) == nil and n.db.scale == 1 and n.db.opacity == 0.9, "defauts")
+    assert(rules.scale == 1, "echelle appliquee")
+    assert(n.db.guide.manual.x and n.db.guide.done.y and n.db.training.count == 7, "objectifs et stats intacts")
+    assert(mock.printed[#mock.printed]:find("remises"), "confirmation")
+    restore()
+  end)
+
+  check("/coach reset en combat : reporte avec un message", function()
+    local n, restore = boot()
+    n.db.opacity = 0.5
+    mock.setCombat(true)
+    mock.printed = {}
+    cmd("reset")
+    assert(n.db.opacity == 0.5 and #mock.printed == 1 and mock.printed[1]:find("combat"), "rien en combat")
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED")
+    assert(n.db.opacity == 0.9 and mock.printed[#mock.printed]:find("remises"), "fait apres le combat")
+    restore()
+  end)
+
+  check("Guide : ouvert seulement s'il l'etait a la deconnexion", function()
+    local n, restore = boot() -- premiere connexion : open == nil
+    assert(n.UI.GuideWin.win:IsShown() and n.db.guide.open == true, "premiere connexion : ouvert")
+    n.UI.GuideWin.win:Hide()
+    assert(n.db.guide.open == false)
+    local saved = n.db
+    restore()
+    local n2, restore2 = boot(saved)
+    assert(not (n2.UI.GuideWin.win and n2.UI.GuideWin.win:IsShown()) and not (n2.UI.GuideWin.card and n2.UI.GuideWin.card:IsShown()), "reste ferme")
+    n2.ToggleGuide()
+    local n3, restore3 = boot(saved)
+    assert(n3.UI.GuideWin.win:IsShown(), "rouvert car ouvert a la derniere session")
+    restore3(); restore2()
+    local n4, restore4 = boot({ guide = { compact = true, open = true } })
+    assert(n4.UI.GuideWin.card:IsShown(), "la carte suit compact")
+    restore4()
+  end)
+
+  check("Minimap : show.minimap = false masque le bouton au chargement", function()
+    local n, restore = boot({ show = { minimap = false } })
+    assert(not n.minimapButton:IsShown())
+    restore()
+    local n2, restore2 = boot()
+    assert(n2.minimapButton:IsShown())
+    restore2()
+  end)
+
   check("Un listener STATE qui plante ne bloque pas les autres", function()
     N.Listen("STATE", function() error("boom") end) -- en dernier : il reste inscrit
     local got = 0

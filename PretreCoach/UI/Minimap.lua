@@ -66,8 +66,12 @@ btn:SetScript("OnEnter", function(self)
 end)
 btn:SetScript("OnLeave", function() pcall(function() GameTooltip:Hide() end) end)
 
+function ns.RefreshMinimap()
+  btn:SetShown(not (ns.db and ns.db.show and ns.db.show.minimap == false))
+end
+
 reposition(angle())
 ns.On("ADDON_LOADED", function(_, name)
-  if name == ADDON then reposition(angle()) end
+  if name == ADDON then reposition(angle()) ns.RefreshMinimap() end
 end)
 ns.minimapButton = btn

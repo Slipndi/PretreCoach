@@ -70,7 +70,7 @@ end
 
 -- Valeurs par défaut des réglages : complétées sans jamais écraser ce que le joueur a déjà.
 ns.DEFAULTS = {
-  show = { guide = true, rotation = true, rules = true, toasts = true },
+  show = { guide = true, rotation = true, rules = true, toasts = true, minimap = true },
   guide = { manual = {}, done = {}, tab = "now", compact = false },
   training = { every = 1 }, trainer = {},
   locked = false, opacity = 0.9, scale = 1, frames = {}, minimap = { angle = 220 },
@@ -94,7 +94,38 @@ ns.On("ADDON_LOADED", function(_, name)
   ns.FillDefaults(ns.db, ns.DEFAULTS)
 end)
 
+-- Verrou des cadres : ns.db.locked est relu à chaque glissement par UI.Movable.
+function ns.SetLocked(on)
+  ns.db.locked = on and true or false
+  ns.Print(on and L.LOCK_ON or L.LOCK_OFF)
+  if ns.RefreshOptions then ns.RefreshOptions() end
+end
+
+-- Remet positions, échelle et opacité par défaut ; objectifs, statistiques et données du maître restent intacts.
+local resetPending = false
+local function doReset()
+  resetPending = false
+  ns.UI.ResetLayout()
+  ns.UI.SetScale(ns.DEFAULTS.scale)
+  ns.UI.SetOpacity(ns.DEFAULTS.opacity)
+  ns.Print(L.RESET_DONE)
+  if ns.RefreshOptions then ns.RefreshOptions() end
+end
+ns.On("PLAYER_REGEN_ENABLED", function() if resetPending then doReset() end end)
+
 local commands = {
+  [""] = function() if ns.ToggleOptions then ns.ToggleOptions() else ns.Print(L.HELP) end end,
+  help = function() ns.Print(L.HELP) end,
+  lock = function() ns.SetLocked(true) end,
+  unlock = function() ns.SetLocked(false) end,
+  reset = function()
+    if InCombatLockdown() then
+      resetPending = true
+      ns.Print(L.RESET_DEFERRED)
+    else
+      doReset()
+    end
+  end,
   probe = function() ns.Probe() end,
   guide = function() if ns.ToggleGuide then ns.ToggleGuide() end end,
   compact = function() if ns.SetCompact then ns.SetCompact() end end,

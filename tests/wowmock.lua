@@ -39,9 +39,10 @@ function FRAME.SetValue(self, v) self.value = v end
 function FRAME.SetColorTexture(self, ...) self.color = { ... } end
 function FRAME.SetText(self, t) mock.lastText = t self.text = t end
 function FRAME.Show(self) local was = self.shown self.shown = true if not was and self.scripts.OnShow then self.scripts.OnShow(self) end end
-function FRAME.Hide(self) self.shown = false end
+function FRAME.Hide(self) local was = self.shown self.shown = false if was and self.scripts.OnHide then self.scripts.OnHide(self) end end
 function FRAME.SetShown(self, b) if b then FRAME.Show(self) else FRAME.Hide(self) end end
 function FRAME.IsShown(self) return self.shown == true end
+function FRAME.SetScale(self, s) self.scale = s end
 function FRAME.SetScript(self, name, fn) self.scripts[name] = fn end
 function FRAME.CreateTexture() return newFrame() end
 function FRAME.CreateAnimationGroup() return newFrame() end
@@ -75,6 +76,7 @@ function mock.reset()
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known, mock.talentList = 0, "Creature-0", nil, nil, nil, nil, nil
   SlashCmdList = {}
   PretreCoachDB = nil
+  mock.registered, mock.opened = nil, nil
 end
 
 -- Minuteurs : file qu'on vide a la main.
@@ -168,7 +170,12 @@ C_Item = { GetItemInfoInstant = function(id)
 end }
 C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { professionName = "Metier" .. id } end }
 C_ActionBar = { FindSpellActionButtons = function() return nil end }
-Settings = { RegisterCanvasLayoutCategory = function() end, RegisterAddOnCategory = function() end }
+-- mock.registered = categorie enregistree ; mock.opened = id passe a OpenToCategory
+Settings = {
+  RegisterCanvasLayoutCategory = function(panel, name) return { panel = panel, name = name, GetID = function() return 42 end } end,
+  RegisterAddOnCategory = function(c) mock.registered = c end,
+  OpenToCategory = function(id) mock.opened = id end,
+}
 -- mock.cooldowns = { [spellID] = { start, duree } } ; sans entree : pas de recharge
 local function cdOf(id) local c = (mock.cooldowns or {})[id] return c and c[1] or 0, c and c[2] or 0 end
 function GetSpellCooldown(id) if secretNow() then return mock.SECRET end local s, d = cdOf(id) return s, d, 1 end
