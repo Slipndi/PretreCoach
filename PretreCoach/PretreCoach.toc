@@ -45,5 +45,6 @@ UI\GuideWindow.lua
 UI\RotationPanel.lua
 UI\RulesBar.lua
 UI\ProgressBar.lua
+UI\HealFrames.lua
 UI\Options.lua
 Probe.lua

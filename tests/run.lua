@@ -199,8 +199,8 @@ local function suite(label)
     local function row(i) return m.rows and m.rows[i] end
     ns.ToggleMinimapMenu(b)
     local btns = N.UI.MenuRows()
-    assert(#btns == 10, "10 lignes cliquables")
-    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", nil }
+    assert(#btns == 11, "11 lignes cliquables")
+    local expect = { "guide", "compact", "", "lock", "reset", "probe", "here", "debug", "progress", "heal", nil }
     for i, e in ipairs(expect) do
       calls = {}
       if not m:IsShown() then ns.ToggleMinimapMenu(b) end
@@ -2922,6 +2922,58 @@ local function suite(label)
     assert(db.guide.compact == true and G.card:IsShown() and not G.win:IsShown(), "compact applique, guide ouvert")
     click(c.compact)
     assert(db.guide.compact == false and G.win:IsShown())
+    restore()
+  end)
+
+  check("Cadres de soin : creation hors combat, attributs, options, unite absente", function()
+    local before = #mock.secure
+    local n, restore = boot()
+    local H = n.UI.HealFrames
+    assert(#H.buttons == 5 and #mock.secure - before == 5 and mock.secureInCombat == 0, "5 boutons securises crees hors combat")
+    local lesser, renew, pws = H.SpellName("LESSERHEAL"), H.SpellName("RENEW"), H.SpellName("PWS")
+    for _, b in ipairs(H.buttons) do
+      assert(b.template == "SecureUnitButtonTemplate" and (b.watched or not RegisterUnitWatch), "gabarit securise et RegisterUnitWatch")
+      assert(b.attrs.unit == b.unit and b.attrs.type1 == "spell" and b.attrs.spell1 == lesser, "clic gauche")
+      assert(b.attrs.type2 == "spell" and b.attrs.spell2 == renew, "clic droit")
+      assert(b.attrs["shift-type1"] == "spell" and b.attrs["shift-spell1"] == pws, "maj + clic gauche")
+      assert(b.attrs.macrotext == nil and b.mana, "pas de macro, barre de mana")
+    end
+    assert(H.buttons[1].unit == "player" and H.buttons[5].unit == "party4")
+    -- groupe present : affiche ; option masquer ; unite absente
+    H.Render()
+    assert(H.frame:IsShown(), "affiche en groupe")
+    n.db.show.heal = false; H.Render()
+    assert(not H.frame:IsShown(), "option masquer")
+    n.db.show.heal = true; mock.hasTarget = false; H.Render()
+    assert(not H.frame:IsShown(), "pas de groupe : masque, sans erreur")
+    mock.hasTarget = true; H.Render()
+    -- combat : la vie secrete va telle quelle aux StatusBar, aucun SetAttribute, changement differe
+    local calls = mock.attrCalls
+    mock.setCombat(true)
+    H.Render()
+    local b = H.buttons[2]
+    assert(b.bar.value ~= nil and b.mana.value ~= nil, "vie et mana donnees au StatusBar")
+    if not mock.noSecrets then
+      assert(mock.isSecret(b.bar.value) and mock.isSecret(b.bar.max), "vie secrete donnee au StatusBar")
+      assert(mock.isSecret(b.mana.value) and mock.isSecret(b.mana.max), "mana secrete donnee au StatusBar")
+    end
+    H.Cycle("1", 1)
+    assert(mock.attrCalls == calls and mock.attrInCombat == 0, "aucun SetAttribute en combat")
+    assert(b.attrs.spell1 == lesser, "attribut inchange en combat")
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED")
+    assert(b.attrs.spell1 ~= lesser and b.attrs.spell1 == H.SpellName(n.db.heal.spells["1"]) and mock.attrInCombat == 0, "pose a la sortie du combat")
+    restore()
+  end)
+
+  check("Cadres de soin : creation differee si le chargement a lieu en combat", function()
+    local keep = mock.attrInCombat
+    mock.setCombat(true)
+    local n, restore = boot()
+    assert(#n.UI.HealFrames.buttons == 0 and mock.secureInCombat == 0, "rien cree en combat")
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED")
+    assert(#n.UI.HealFrames.buttons == 5 and mock.attrInCombat == keep and mock.secureInCombat == 0, "cree apres le combat")
     restore()
   end)
 

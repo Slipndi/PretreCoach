@@ -2,7 +2,7 @@
 -- client (GetSpellInfo, GetSpellCooldown, IsUsableSpell, GetItemInfo, GetSkillLineInfo, GetTalentInfo, ...) ne sont PAS définies.
 -- Fausse API WoW minimale : seulement ce que PretreCoach appelle. Charger avec dofile, rend le module `mock`.
 local mock = { errors = {}, printed = {}, events = {}, timers = {}, inCombat = false, hasTarget = true, noSecrets = false,
-  unknown = {}, time = 0, guid = "Creature-0" } -- unknown.spell / .item / .map : { [id] = true } = l'API ne repond pas pour cet ID
+  unknown = {}, time = 0, guid = "Creature-0", secure = {}, attrCalls = 0, attrInCombat = 0, secureInCombat = 0 } -- unknown.spell / .item / .map : { [id] = true } = l'API ne repond pas pour cet ID
 
 -- Valeur secrete simulee : toute operation autre que issecretvalue leve une erreur.
 local function deny(op) return function() error("attempt to " .. op .. " a secret value", 2) end end
@@ -23,7 +23,7 @@ local function sec(v) return function() if secretNow() then return mock.SECRET e
 local FRAME = {}
 local frameMT = { __index = function(_, k) return FRAME[k] or (tostring(k):find("^%u") and function() end) or nil end }
 local function newFrame()
-  local f = setmetatable({ scripts = {}, registered = {}, unit = {} }, frameMT)
+  local f = setmetatable({ scripts = {}, registered = {}, unit = {}, attrs = {} }, frameMT)
   return f
 end
 function FRAME.RegisterEvent(self, e)
@@ -55,7 +55,26 @@ function FRAME.GetPoint(self) if self.pt then return self.pt[1], self.pt[2], sel
 function FRAME.CreateFontString() return newFrame() end
 function FRAME.GetVerticalScroll() return 0 end
 function FRAME.GetVerticalScrollRange() return 0 end
-function CreateFrame(_, name) local f = newFrame() if name then _G[name] = f end return f end
+-- gabarit securise : compte les creations en combat (interdit en jeu) ; SetAttribute compte les appels, dont ceux en combat
+function CreateFrame(kind, name, _, template)
+  local f = newFrame()
+  f.kind, f.template = kind, template
+  if template and template:find("Secure") then
+    mock.secure[#mock.secure + 1] = f
+    if mock.inCombat then mock.secureInCombat = mock.secureInCombat + 1 end
+  end
+  if name then _G[name] = f end
+  return f
+end
+function FRAME.SetAttribute(self, k, v)
+  mock.attrCalls = mock.attrCalls + 1
+  if mock.inCombat then mock.attrInCombat = mock.attrInCombat + 1 end
+  self.attrs[k] = v
+end
+function FRAME.GetAttribute(self, k) return self.attrs[k] end
+function FRAME.SetMinMaxValues(self, a, b) self.min, self.max = a, b end
+function FRAME.SetAlpha(self, a) self.alpha = a end
+function RegisterUnitWatch(f) f.watched = true end
 UIParent, Minimap, GameTooltip = newFrame(), newFrame(), newFrame()
 function GetCursorPosition() return 0, 0 end
 ChatFontNormal = {}
@@ -78,6 +97,7 @@ function mock.reset()
   mock.vitalsReadable, mock.nodes, mock.unspent, mock.usable = nil, nil, nil, nil
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known = 0, "Creature-0", nil, nil, nil
   mock.level, mock.xp, mock.xpMax, mock.xpSecret = nil, nil, nil, nil
+  mock.secure, mock.attrCalls, mock.attrInCombat, mock.secureInCombat, mock.offline, mock.outOfRange = {}, 0, 0, 0, nil, nil
   SlashCmdList = {}
   PretreCoachDB = nil
   mock.registered, mock.opened = nil, nil
@@ -143,7 +163,11 @@ function UnitExists() return mock.hasTarget end
 UnitCreatureType = sec("Humanoïde")
 -- mock.dead = la cible est morte ; mock.canAttack = false : cible non attaquable (allie, soi)
 function UnitIsDead() if secretNow() then return mock.SECRET end return mock.dead == true end
-function UnitCanAttack() if secretNow() then return mock.SECRET end return mock.canAttack ~= false end
+-- cadres de soin : mock.offline = deconnecte, mock.outOfRange = hors de portee (mock.dead s'applique aussi a UnitIsDeadOrGhost)
+function UnitIsDeadOrGhost() if secretNow() then return mock.SECRET end return mock.dead == true end
+function UnitIsConnected() if secretNow() then return mock.SECRET end return mock.offline ~= true end
+function UnitInRange() if secretNow() then return mock.SECRET end return mock.outOfRange ~= true, true end
+function UnitCanAttack()if secretNow() then return mock.SECRET end return mock.canAttack ~= false end
 -- mock.guid pilote le GUID de la cible ; mock.noGuid = illisible (nil)
 function UnitGUID() if mock.noGuid then return nil end return secretNow() and mock.SECRET or mock.guid end
 function CheckInteractDistance() return false end
@@ -327,7 +351,7 @@ C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 UiMapPoint C_SuperTrack Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
-EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator UnitXP UnitXPMax
+EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator UnitXP UnitXPMax RegisterUnitWatch UnitInRange
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end

@@ -6,7 +6,8 @@ local FORBIDDEN = {
   "C_Container.UseContainerItem", "RunMacro", "RunMacroText", "TargetUnit", "AssistUnit", "FocusUnit",
   "ClearTarget", "TargetNearestEnemy", "StartAttack", "StopAttack", "SpellStopCasting", "JumpOrAscendStart",
   "MoveForwardStart", "TurnLeftStart", "ToggleAutoRun", "InteractUnit", "FollowUnit",
-  "SecureActionButtonTemplate", "SecureHandler", "SetAttribute", "SetBinding", "SetBindingClick",
+  "SecureActionButtonTemplate", "SecureUnitButtonTemplate", "SecureGroupHeaderTemplate", "RegisterUnitWatch", "macrotext",
+  "SecureHandler", "SetAttribute", "SetBinding", "SetBindingClick",
   "SetBindingSpell", "SetOverrideBinding", "SetOverrideBindingClick", "SaveBindings", "EditMacro",
   "CreateMacro", "DeleteMacro", "PickupSpell", "PickupAction", "PlaceAction", "SendChatMessage",
   "SendAddonMessage", "C_ChatInfo", "COMBAT_LOG_EVENT_UNFILTERED", "CombatLogGetCurrentEventInfo",
@@ -20,7 +21,11 @@ local PREFIX_OK = { SecureHandler = true } -- SecureHandlerBaseTemplate etc. : p
 
 -- Liste blanche precise : fichier -> motif -> vrai. Aujourd'hui vide : Probe.lua ne contient aucun motif interdit.
 -- Ajouter ici ["PretreCoach/Probe.lua"] = { ["SendAddonMessage"] = true } seulement si la sonde doit citer un nom.
-local ALLOW = {}
+-- Exception encadree (2026-11-07) : cadres de groupe cliquables, motifs securises dans CE fichier seulement.
+-- macrotext, CastSpell*, SetBinding*, etc. restent interdits meme la.
+local HEAL = "PretreCoach/UI/HealFrames.lua"
+local ALLOW = { [HEAL] = { SecureUnitButtonTemplate = true, SecureActionButtonTemplate = true,
+  SecureGroupHeaderTemplate = true, SetAttribute = true, RegisterUnitWatch = true } }
 
 -- Retire les commentaires Lua en gardant les chaines et les numeros de ligne.
 local function strip(src)
@@ -74,6 +79,12 @@ for _, api in ipairs({ "CraftRecipe", "C_TradeSkillUI.Craft", "OpenTradeSkill", 
   assert(#h >= 1 and h[1]:find("fake.lua:2: ", 1, true), "auto-test : motif non detecte : " .. api)
 end
 assert(#find_hits("fake.lua", "PostAuctionX(1)\nMyCraftRecipe(1)\n") == 0, "auto-test : bornes de mot")
+-- Exception : motifs securises permis dans HealFrames.lua seulement ; macrotext et CastSpell* refuses partout.
+local secure = 'f = CreateFrame("Button", "x", UIParent, "SecureUnitButtonTemplate")\nf:SetAttribute("type1", "spell")\nRegisterUnitWatch(f)\n'
+assert(#find_hits(HEAL, secure) == 0, "auto-test : motifs securises refuses dans HealFrames.lua")
+assert(#find_hits("PretreCoach/UI/Autre.lua", secure) == 3, "auto-test : motif securise accepte hors HealFrames.lua")
+assert(#find_hits(HEAL, 'f:SetAttribute("macrotext", "/cast X")\n') == 1, "auto-test : macrotext accepte dans HealFrames.lua")
+assert(#find_hits(HEAL, 'CastSpellByName("X")\nSetBindingClick("1", "x")\n') == 2, "auto-test : CastSpell/SetBinding acceptes dans HealFrames.lua")
 print("auto-test : detection OK")
 
 local sep = package.config:sub(1, 1)

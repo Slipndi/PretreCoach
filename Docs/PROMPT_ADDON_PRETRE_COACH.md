@@ -22,13 +22,15 @@ Le compte du joueur ne doit jamais pouvoir être banni à cause de l'addon. Cett
 
 **Interdit dans l'addon** (vérifié par `tests/compliance.lua`) :
 - lancer ou cibler à la place du joueur (`CastSpell*`, `UseAction`, `TargetUnit`, etc.) ;
-- fonctions protégées et cadres sécurisés (`SecureActionButtonTemplate`, `SetAttribute`) ;
+- fonctions protégées et cadres sécurisés (`SecureActionButtonTemplate`, `SetAttribute`), sauf l'exception encadrée ci-dessous ;
 - toucher aux raccourcis, macros ou barres (`SetBinding*`, `EditMacro`, `CreateMacro`, `PickupSpell`, `PlaceAction`) ;
 - envoyer des messages de chat ou d'addon (`SendChatMessage`, `C_ChatInfo.SendAddonMessage`) ;
 - `COMBAT_LOG_EVENT_UNFILTERED` et tout contournement des valeurs secrètes ;
 - code obscurci (`loadstring`, `RunScript`, `setfenv`) ;
 - publicité ou demande de dons ;
 - toute sortie destinée à une machine : carrés de couleur ou pixels codant le conseil pour être lus par un programme externe.
+
+**Exception encadrée (2026-11-07)** : le joueur a choisi explicitement des cadres de groupe Blizzard sécurisés (modèle de Clique, HealBot et Grid, autorisé par Blizzard) pour soigner d'un clic. Un seul fichier les porte, `PretreCoach/UI/HealFrames.lua` (liste blanche limitée à ce fichier dans `tests/compliance.lua`) : `SecureUnitButtonTemplate`, `SetAttribute`, `RegisterUnitWatch`. Les attributs (`type1/2` = `spell`, `spell1/2` = nom du sort choisi par le joueur, `unit`) ne sont posés qu'hors combat (`InCombatLockdown()`, sinon différé à `PLAYER_REGEN_ENABLED`) ; les cadres sont créés hors combat. Le sort de chaque bouton de souris est un réglage fixe du joueur. Restent interdits, même dans ce fichier : `macrotext`, `CastSpell*`, `SetBinding*`, `SendChatMessage`, tout lancement sans clic, toute rotation automatique, tout sort choisi par l'addon selon l'état du jeu.
 
 **Interdit au joueur** : brancher un logiciel externe sur l'addon (AutoHotkey, macro souris ou clavier qui appuie sur la touche conseillée, lecteur de pixels, lecteur de mémoire, « unlockers »). C'est ce qui fait bannir.
 

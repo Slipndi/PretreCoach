@@ -32,3 +32,6 @@ function S.Get(fn, ...)
   if state == "lisible" then return v, state end
   return nil, state
 end
+
+-- Rend les valeurs brutes, secretes comprises : seulement pour les donner telles quelles a un widget natif (StatusBar:SetValue).
+function S.Raw(fn, ...) return fn(...) end

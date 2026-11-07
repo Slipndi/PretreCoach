@@ -68,6 +68,24 @@ local function slider(parent, y, lo, hi, labelKey, get, set)
   return s
 end
 
+-- Sort d'un bouton de souris des cadres de soin : clic gauche = suivant, clic droit = precedent.
+local function cycle(parent, y, slot)
+  local b = CreateFrame("Button", nil, parent)
+  b:SetSize(320, 20)
+  b:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, -y)
+  b:RegisterForClicks("AnyUp")
+  local fs = b:CreateFontString(nil, "OVERLAY", UI.font.text)
+  fs:SetPoint("LEFT", b, "LEFT")
+  b.refresh = function()
+    fs:SetText(L.HEAL_SLOT[slot] .. " : " .. (UI.HealFrames.SpellName(ns.db.heal and ns.db.heal.spells[slot] or ns.DEFAULTS.heal.spells[slot]) or "?"))
+  end
+  b:SetScript("OnClick", function(_, btn)
+    UI.HealFrames.Cycle(slot, btn == "RightButton" and -1 or 1)
+    b.refresh()
+  end)
+  return b
+end
+
 local function showSet(key, apply)
   return function() return ns.db.show[key] ~= false end, function(v)
     ns.db.show[key] = v
@@ -86,6 +104,7 @@ local function build(parent, y)
   check("rules", L.OPT_RULES, showSet("rules", function() if UI.RulesBar then UI.RulesBar.Render() end end))
   check("toasts", L.OPT_TOASTS, showSet("toasts"))
   check("progress", L.OPT_PROGRESS, showSet("progress", function() if UI.ProgressBar then UI.ProgressBar.Render() end end))
+  check("heal", L.OPT_HEAL, showSet("heal", function() if UI.HealFrames then UI.HealFrames.Render() end end))
   check("minimap", L.OPT_MINIMAP, showSet("minimap", function() if ns.RefreshMinimap then ns.RefreshMinimap() end end))
   check("locked", L.OPT_LOCKED, function() return ns.db.locked end, function(v) ns.db.locked = v end)
   check("compact", L.OPT_COMPACT, function() return ns.db.guide.compact end, function(v)
@@ -97,7 +116,10 @@ local function build(parent, y)
   check("debug", L.OPT_DEBUG, function() return ns.db.debug end, function(v) ns.db.debug = v end)
   c.scale = slider(parent, y + 6, 0.6, 1.6, "OPT_SCALE", function() return ns.db.scale end, UI.SetScale)
   c.opacity = slider(parent, y + 56, 0.3, 1, "OPT_OPACITY", function() return ns.db.opacity end, UI.SetOpacity)
-  return y + 100
+  for i, slot in ipairs({ "1", "2", "shift-1" }) do
+    c["heal" .. slot] = cycle(parent, y + 76 + i * 24, slot)
+  end
+  return y + 176
 end
 
 function ns.RefreshOptions()
