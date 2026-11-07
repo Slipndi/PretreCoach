@@ -9,6 +9,12 @@
 ## SavedVariablesPerCharacter: PretreCoachDB
 
 Locales\frFR.lua
+Data\Zones.lua
+Data\Dungeons.lua
+Data\Milestones.lua
+Data\Gear.lua
+Data\Professions.lua
+Data\Talents.lua
 Secrets.lua
 Core.lua
 Probe.lua
