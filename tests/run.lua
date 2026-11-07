@@ -4296,7 +4296,7 @@ local function suite(label)
     if not GetItemCount then return end
     local n = craftBoot({}, true)
     local P = n.UI.CraftPopup
-    assert(P.frame and not P.frame.shown, "rien a fabriquer : masquee")
+    assert(P.frame and P.frame.shown and P.frame.empty.text:find(n.L.CRAFT_NONE, 1, true) and not P.rows[1].frame.shown, "rien a fabriquer : visible avec la prochaine etape")
     mock.items = { [765] = 4, [2447] = 6 }
     mock.fire("BAG_UPDATE_DELAYED")
     assert(P.frame.shown, "un skill-up possible : affichee")
@@ -4309,7 +4309,7 @@ local function suite(label)
     n.State.profs[171] = { rank = 70, max = 75 }
     n.Prof.Advice = { [171] = { list = { { recipeID = 555, name = "Élixir de défense mineure", color = "green" } } } }
     mock.fire("BAG_UPDATE_DELAYED")
-    assert(not P.frame.shown, "plus rien ne fait monter : masquee")
+    assert(P.frame.shown and P.frame.empty.text ~= "" and not P.rows[1].frame.shown, "plus rien ne fait monter : prochaine etape, pas de bouton")
     assert(mock.secureInCombat == 0)
   end)
 
@@ -4320,7 +4320,7 @@ local function suite(label)
     mock.setCombat(true)
     mock.items = { [765] = 4, [2447] = 6 }
     mock.fire("BAG_UPDATE_DELAYED")
-    assert(not P.frame.shown and not P.rows[1].btn.attrs.spell1 and mock.attrInCombat == 0, "rien en combat")
+    assert(not P.rows[1].btn.attrs.spell1 and mock.attrInCombat == 0, "rien en combat")
     mock.setCombat(false)
     mock.fire("PLAYER_REGEN_ENABLED")
     assert(P.frame.shown and P.rows[1].btn.attrs.spell1 == "Sort2259" and mock.attrInCombat == 0, "applique a la fin du combat")

@@ -294,6 +294,7 @@ ns.L = {
   CRAFT_ROW = "%d× %s (+compétence)",
   CRAFT_BUY = "achète %s",
   CRAFT_FIND = "Cherche %s dans la liste",
+  CRAFT_NONE = "Rien à fabriquer qui fasse monter avec tes sacs. Prochaine étape :",
   OPT_CONS ="Afficher la barre des consommables",
   MENU_CONS = "Barre des consommables",
   CONS_food = "Nourriture",

@@ -43,6 +43,25 @@ local function buyText(e)
   return L.CRAFT_BUY:format(table.concat(t, ", ")) .. (cost and (" (≈ " .. ns.Prof.Money(cost) .. ")") or "")
 end
 
+-- Rien qui fasse monter : la fenetre reste visible et dit quoi faire (1re action non faite du plan de chaque metier).
+function P.Empty()
+  local shown = not (ns.db and ns.db.show and ns.db.show.craft == false) and not dismissed
+  local lines = {}
+  for _, line in ipairs({ 171, 129 }) do
+    local s = shown and ns.Prof.Steps and ns.Prof.Steps(line)
+    if s then
+      local first
+      for _, t in ipairs(s.todo or {}) do if t.done ~= true and not first then first = t.text end end
+      lines[#lines + 1] = s.title .. (first and ("\n  " .. first) or "")
+    end
+  end
+  for _, r in ipairs(P.rows) do r.frame:Hide() end
+  if #lines == 0 then frame.empty:SetText("") frame:Hide() return end
+  frame.empty:SetText(L.CRAFT_NONE .. "\n" .. table.concat(lines, "\n"))
+  frame:SetHeight(2 * PAD + math.max(ROW_H, (frame.empty:GetStringHeight() or 0) + 4))
+  frame:Show()
+end
+
 function P.Render()
   if not frame or InCombatLockdown() then return end
   local entries = {}
@@ -51,7 +70,8 @@ function P.Render()
       if e.skillUp and TRADE[e.line] and #entries < MAX then entries[#entries + 1] = e end
     end
   end
-  if #entries == 0 then frame:Hide() return end
+  if #entries == 0 then return P.Empty() end
+  frame.empty:SetText("")
   for i, r in ipairs(P.rows) do
     local e = entries[i]
     if e then
@@ -75,6 +95,11 @@ end
 local function build()
   frame = UI.Panel("PretreCoachCraftFrame", UIParent)
   P.frame = frame
+  frame.empty = frame:CreateFontString(nil, "OVERLAY")
+  pcall(frame.empty.SetFontObject, frame.empty, UI.font.small)
+  frame.empty:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -PAD)
+  frame.empty:SetWidth(W - 2 * PAD - 16)
+  frame.empty:SetJustifyH("LEFT")
   frame:SetSize(W, 2 * PAD + ROW_H)
   frame:SetPoint("CENTER", UIParent, "CENTER", 0, -130)
   UI.Movable(frame, "craft")
@@ -156,3 +181,7 @@ ns.On("PLAYER_REGEN_ENABLED", function()
   if not frame then build() end
   P.Render()
 end)
+ns.Listen("STATE", function(_, changed)
+  for _, k in ipairs(changed or {}) do if k == "profs" or k == "level" then return P.Render() end end
+end)
+ns.On("TRADE_SKILL_LIST_UPDATE", function() if C_Timer then C_Timer.After(0.5, P.Render) end end)
