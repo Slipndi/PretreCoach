@@ -1169,7 +1169,7 @@ local function suite(label)
     setState(n, { level = 20, profs = { [182] = { rank = 10, max = 75 } } })
     assert(#G.Reference("inconnu") == 0)
     local r = G.Reference("talents")
-    assert(#r == #D2.TalentPlan and r[1].text and r[1].sub)
+    assert(#r > 0 and #r < #D2.TalentPlan and r[1].text and r[1].highlight, "talents : seulement le niveau courant")
     r = G.Reference("zones")
     assert(#r == 20 and r[1].sub == "niveaux 1-10", "zones triees par niveau")
     local hl = 0
@@ -1190,11 +1190,11 @@ local function suite(label)
     local anyApi = IsPlayerSpell or IsSpellKnown or (C_SpellBook and C_SpellBook.IsSpellInSpellBook)
     knows({})
     r = G.Reference("spells")
-    assert(#r >= #D2.Spells)
+    assert(#r < #D2.Spells, "pas de liste de tous les sorts")
     if anyApi then
       assert(r[1].highlight and r[1].text:find("(rang ", 1, true), "sort a apprendre en premier avec son rang : " .. r[1].text)
     else
-      assert(not r[1].highlight)
+      assert(#r == 1 and not r[1].highlight)
     end
     knows(nil)
   end)
@@ -2560,7 +2560,7 @@ local function suite(label)
     end
     local p = n.Calc.PendingSpells(10, n.State.Knows)
     assert(#t == 1 and t[1].key == "pc:train:10" and #p > 0, "un toast")
-    assert(t[1].text:find("^Nouveaux sorts chez ton maître : "), t[1].text)
+    assert(t[1].text:find("^Nouveaux sorts chez ton maître %(" .. #p .. "%) : "), t[1].text)
     assert(t[1].text:find("Sort591 (rang 2)", 1, true) and t[1].text:find("Sort594 (rang 2)", 1, true), t[1].text)
     assert((#p > 4) == (t[1].text:find("…", 1, true) ~= nil), "au plus 4 noms puis …")
     assert(n.Training.PendingCount() == #p and n.Training.CountText():find("à apprendre", 1, true))
@@ -2648,7 +2648,7 @@ local function suite(label)
     setState(n, { level = 12, unspentTalents = 1 })
     n.Fire("STATE", { "level", "unspentTalents" })
     local t = pcToasts(o, "^pc:talent:")
-    assert(#t == 1 and t[1].text == "Ton point de talent : Connexion spirituelle (5 points)", t[1] and t[1].text)
+    assert(#t == 1 and t[1].text == "Point de talent : Ombre, rangée 1 : Connexion spirituelle (objectif 5/5)\nPoints non dépensés : 1", t[1] and t[1].text)
     setState(n, { level = 13, unspentTalents = 0 })
     n.Fire("STATE", { "level" })
     assert(#pcToasts(o, "^pc:talent:") == 1, "aucun point : pas de toast")
@@ -2669,7 +2669,7 @@ local function suite(label)
     setState(n, { level = 40, unspentTalents = 0 })
     n.Fire("STATE", { "level" })
     local t = pcToasts(o, "^pc:respec")
-    assert(#t == 1 and t[1].text:find("Respec Ombre", 1, true), "rappel du respec")
+    assert(#t == 1 and t[1].text:find("31 points en Ombre", 1, true), "rappel du respec")
   end)
 
   check("Talents : plan non suivi, un seul toast par session, ligne dans le guide", function()
@@ -2683,9 +2683,11 @@ local function suite(label)
     local t = pcToasts(o, "^pc:talentgap")
     assert(#t == 1 and t[1].text == "Plan de talents non suivi : Connexion spirituelle", "un seul toast : " .. #t)
     local r = n.Guide.Reference("talents")
-    assert(#r == #n.Data.TalentPlan + 1 and r[1].text == t[1].text and not r[1].highlight, "ligne discrete")
+    local hasGap
+    for _, row in ipairs(r) do if row.text == t[1].text and not row.highlight then hasGap = true end end
+    assert(hasGap, "ligne discrete")
     n.State.talents = nil
-    assert(n.Talents.GapLine() == nil and #n.Guide.Reference("talents") == #n.Data.TalentPlan, "talents inconnus : rien")
+    assert(n.Talents.GapLine() == nil, "talents inconnus : pas de ligne de plan")
     local o2 = fresh()
     setState(o2.n, { level = 12, unspentTalents = 0, talents = nil })
     o2.n.Fire("STATE", { "level" })
@@ -3799,6 +3801,121 @@ local function suite(label)
     assert(n.db.show.mana == true and M.frame.shown, "/coach mana reaffiche")
     SlashCmdList.PRETRECOACH("mana")
     assert(not M.frame.shown, "/coach mana masque")
+  end)
+
+  local function rowTexts(rows) local t = {} for _, r in ipairs(rows) do t[#t + 1] = r.text end return table.concat(t, "\n") end
+
+  check("Talents : toast precis (arbre, rangee, progression, points non depenses)", function()
+    local o = fresh()
+    local n = o.n
+    setState(n, { level = 11, unspentTalents = 0, talents = tl{ [15270] = 2 } })
+    n.Fire("STATE", { "level" })
+    setState(n, { level = 12, unspentTalents = 2, talents = tl{ [15270] = 2 } })
+    n.Fire("STATE", { "level", "unspentTalents" })
+    local t = pcToasts(o, "^pc:talent:")
+    assert(#t == 1 and t[1].text == "Point de talent : Ombre, rangée 1 : Connexion spirituelle (2/5 → 3/5)\nPoints non dépensés : 2", t[1] and t[1].text)
+  end)
+
+  check("Talents : illisibles, ni progression ni points inventes", function()
+    local o = fresh()
+    local n = o.n
+    setState(n, { level = 11 })
+    n.Fire("STATE", { "level" })
+    setState(n, { level = 12 })
+    n.Fire("STATE", { "level" })
+    local t = pcToasts(o, "^pc:talent:")
+    assert(#t == 1 and t[1].text == "Point de talent : Ombre, rangée 1 : Connexion spirituelle (objectif 5/5)", t[1] and t[1].text)
+    assert(not t[1].text:find("→", 1, true) and not t[1].text:find("dépensés", 1, true))
+  end)
+
+  check("Talents : respec 40, etape claire puis Forme d'Ombre", function()
+    local o = fresh()
+    local n = o.n
+    setState(n, { level = 39, unspentTalents = 0, talents = tl{} })
+    n.Fire("STATE", { "level" })
+    setState(n, { level = 40, unspentTalents = 0, talents = tl{ [15473] = 0 } })
+    n.Fire("STATE", { "level" })
+    local t = pcToasts(o, "^pc:respec")
+    assert(#t == 1 and t[1].text == "Va voir le maître : réinitialise tes talents, puis 31 points en Ombre", t[1] and t[1].text)
+    local r = n.Guide.Reference("talents")
+    assert(r[1].text == t[1].text and r[1].highlight, "respec en tete de l'onglet")
+    assert(r[2].text:find("Ombre, rangée 7 : Forme d'Ombre (0/1 → 1/1)", 1, true), r[2].text)
+    n.State.talents = tl{ [15473] = 1 }
+    assert(not rowTexts(n.Guide.Reference("talents")):find("réinitialise", 1, true), "Forme d'Ombre prise : plus de respec")
+  end)
+
+  check("Talents : onglet, a prendre d'abord, fini masque, futur masque sauf Ensuite", function()
+    local n = fresh().n
+    setState(n, { level = 19, unspentTalents = 1, talents = tl{ [18551] = 5, [14520] = 1, [14531] = 2, [14521] = 3 } })
+    local r = n.Guide.Reference("talents")
+    local all = rowTexts(r)
+    assert(r[1].text == "Points non dépensés : 1" and not r[1].highlight, r[1].text)
+    assert(r[2].highlight and r[2].text == "Discipline, rangée 3 : Agilité mentale (1/3 → 2/3)", r[2].text)
+    for _, gone in ipairs{ "Force mentale", "Martyre", "Méditation", "Connexion spirituelle", "Spécialisation Baguette", "Mot de l'ombre" } do
+      assert(not all:find(gone, 1, true), gone .. " masque : " .. all)
+    end
+    assert(r[#r].text == "Ensuite : Forme d'Ombre (Ombre) au niveau 40", r[#r].text)
+    n.State.talents = tl{ [18551] = 1 }
+    r = n.Guide.Reference("talents")
+    assert(r[2].highlight and r[2].text:find("Force mentale (1/5 → 2/5)", 1, true) and r[3].text:find("Agilité mentale", 1, true) and not r[3].highlight)
+  end)
+
+  check("Sorts : seulement ce qui est a apprendre, cout, prochains sorts, message vide", function()
+    if not hasKnows then return end
+    local o = fresh()
+    local n = o.n
+    local function costAll(level)
+      n.db.trainer = {}
+      local total = 0
+      for _, p in ipairs(n.Calc.PendingSpells(level, n.State.Knows)) do
+        for _, sp in ipairs(n.Data.Spells) do
+          if sp.key == p.key then
+            local c = 100 * p.rankIndex + 50
+            total = total + c
+            n.db.trainer["Sort" .. sp.ranks[p.rankIndex].id .. "|" .. (p.rankIndex > 1 and "Rang " .. p.rankIndex or "")] = { cost = c, category = "available" }
+          end
+        end
+      end
+      return total
+    end
+    knows(knownUpTo(n, 5))
+    setState(n, { level = 10 })
+    local pend = n.Calc.PendingSpells(10, n.State.Knows)
+    local r = n.Guide.Reference("spells")
+    assert(#r == #pend + 1 and #r < #n.Data.Spells, "a apprendre + une ligne prochains : " .. #r)
+    for i = 1, #pend do assert(r[i].highlight and not r[i].sub, "cout inconnu : pas de montant") end
+    assert(r[#r].text:find("^Prochains sorts : niveau %d+ : ") and not rowTexts(r):find("Coût total", 1, true))
+    n.db.trainer = { ["Sort591|Rang 2"] = { cost = 1200, category = "available" } }
+    r = n.Guide.Reference("spells")
+    local with
+    for _, row in ipairs(r) do if row.text == "Sort591 (rang 2)" then with = row end end
+    assert(with and with.sub == n.Training.Coin(1200), "cout connu sur la ligne")
+    assert(not rowTexts(r):find("Coût total", 1, true), "total seulement si tous connus")
+    local total = costAll(10)
+    r = n.Guide.Reference("spells")
+    assert(r[#pend + 1].text == "Coût total : " .. n.Training.Coin(total) and r[#r].text:find("^Prochains sorts"), rowTexts(r))
+    -- toast de montee de niveau : nombre et cout total
+    local o2 = fresh()
+    local n2 = o2.n
+    knows(knownUpTo(n2, 5))
+    setState(n2, { level = 9 })
+    n2.Fire("STATE", { "level" })
+    n = n2
+    local total2 = costAll(10)
+    n2.State.level = 10
+    n2.Fire("STATE", { "level" })
+    local t = pcToasts(o2, "^pc:train:")
+    assert(#t == 1 and t[1].text:find("(" .. #pend .. ")", 1, true) and t[1].text:find("Coût total : " .. n2.Training.Coin(total2), 1, true), t[1] and t[1].text)
+    -- rien a apprendre
+    knows(knownUpTo(n2, 10))
+    setState(n2, { level = 10 })
+    r = n2.Guide.Reference("spells")
+    assert(#r == 1 and r[1].text:find("^Rien à apprendre, prochain passage chez le maître au niveau %d+$"), r[1].text)
+    knows(knownUpTo(n2, 60))
+    setState(n2, { level = 60 })
+    r = n2.Guide.Reference("spells")
+    assert(#r == 1 and r[1].text == "Rien à apprendre", r[1].text)
+    knows(nil)
   end)
 end
 

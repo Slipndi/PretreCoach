@@ -290,32 +290,34 @@ local function inRange(level, from, to) return type(level) == "number" and level
 local REFERENCE = {}
 
 function REFERENCE.talents(level)
-  local out = {}
-  local note = ns.Talents and ns.Talents.GapLine()
-  if note then out[1] = { text = note, highlight = false } end
-  for _, e in ipairs(D.TalentPlan) do
-    local text = e.rank and L.GUIDE_POINTS:format(e.name, e.rank) or e.name
-    out[#out + 1] = { text = text, sub = levels(e.from, e.to), highlight = inRange(level, e.from, e.to) }
-  end
+  local out, T = {}, ns.Talents
+  local unspent = State.unspentTalents
+  if type(unspent) == "number" and unspent > 0 then out[#out + 1] = { text = L.TALENT_UNSPENT:format(unspent), highlight = false } end
+  local respec = T.Respec(level)
+  local todo = T.Todo(level)
+  -- Respec : étape à part tant que le talent final du palier n'est pas pris (ou si les talents sont illisibles).
+  if respec and #todo > 0 then out[#out + 1] = { text = L.TALENT_RESPEC, highlight = true } end
+  for i, it in ipairs(todo) do out[#out + 1] = { text = T.Describe(it), highlight = i == 1 } end
+  local note = T.GapLine()
+  if note then out[#out + 1] = { text = note, highlight = false } end
+  local nxt = T.Upcoming(level)
+  if nxt then out[#out + 1] = { text = L.TALENT_NEXT:format(nxt.name, L["TALENT_TAB_" .. nxt.tab], nxt.from), highlight = false } end
+  if #out == 0 then out[1] = { text = L.TALENT_NONE, highlight = false } end
   return out
 end
 
--- Sorts à apprendre d'abord (avec le rang), puis les autres sorts avec leur premier niveau.
+-- Seulement ce qui est à apprendre maintenant (avec le coût connu), puis le prochain niveau qui apporte un sort.
 function REFERENCE.spells(level)
-  local out, pending = {}, {}
-  for _, p in ipairs(Calc.PendingSpells(level, State.Knows) or {}) do pending[p.key] = true end
-  for _, sp in ipairs(D.Spells) do
-    if pending[sp.key] then
-      local top
-      for i, r in ipairs(sp.ranks) do if type(level) == "number" and r.level and r.level <= level then top = i end end
-      out[#out + 1] = { text = L.GUIDE_RANK:format(sp.name, top), sub = levels(sp.ranks[top].level, sp.ranks[top].level), highlight = true }
-    end
+  local out, plan = {}, ns.Training.Plan(level)
+  if not plan.pending then return { { text = L.GUIDE_UNKNOWN, highlight = false } } end
+  for _, p in ipairs(plan.pending) do
+    out[#out + 1] = { text = p.text, sub = p.cost and ns.Training.Coin(p.cost) or nil, highlight = true }
   end
-  for _, sp in ipairs(D.Spells) do
-    if not pending[sp.key] then
-      local first = sp.ranks[1] and sp.ranks[1].level
-      out[#out + 1] = { text = sp.name, sub = first and levels(first, first) or "", highlight = false }
-    end
+  if plan.total and #plan.pending > 1 then out[#out + 1] = { text = L.TRAIN_TOTAL:format(ns.Training.Coin(plan.total)), highlight = false } end
+  if #out == 0 then
+    out[1] = { text = plan.nextLevel and L.TRAIN_NOTHING:format(plan.nextLevel) or L.TRAIN_NOTHING_END, highlight = false }
+  elseif plan.nextLevel then
+    out[#out + 1] = { text = L.TRAIN_NEXT:format(plan.nextLevel, table.concat(plan.nextNames, ", ")), highlight = false }
   end
   return out
 end

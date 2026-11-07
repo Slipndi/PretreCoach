@@ -38,6 +38,67 @@ local function spellName(sp, i)
   return type(name) == "string" and name or sp.name
 end
 
+-- Prix en or/argent/cuivre : GetCoinTextureString si présent, sinon « 1 po 20 pa ».
+local function coin(c)
+  local s = S.Get(GetCoinTextureString, c)
+  if type(s) == "string" then return s end
+  local parts = {}
+  if c >= 10000 then parts[#parts + 1] = math.floor(c / 10000) .. " po" end
+  if c % 10000 >= 100 then parts[#parts + 1] = math.floor(c % 10000 / 100) .. " pa" end
+  if c % 100 > 0 or #parts == 0 then parts[#parts + 1] = (c % 100) .. " pc" end
+  return table.concat(parts, " ")
+end
+Training.Coin = coin
+
+-- Coût mémorisé du rang (chez le maître) ; le rang est comparé par son numéro (« Rang 2 » ou « Rank 2 », rang 1 = vide).
+local function knownCost(name, rankIndex)
+  for k, v in pairs((ns.db and ns.db.trainer) or {}) do
+    local n, rank = k:match("^(.*)|(.*)$")
+    if n == name and (tonumber(rank:match("%d+")) or 1) == rankIndex and type(v.cost) == "number" then return v.cost end
+  end
+end
+
+local function rankText(name, i) return i > 1 and L.GUIDE_RANK:format(name, i) or name end
+
+-- Ce qui est à apprendre maintenant : { pending = { { text, cost } }, total (nil si un coût est inconnu), nextLevel,
+-- nextNames }. pending = nil si Knows est illisible. Les sorts noTrainer et talents restent exclus (Calc.PendingSpells).
+function Training.Plan(level)
+  local out = {}
+  local p = Calc.PendingSpells(level, State.Knows)
+  if p then
+    out.pending = {}
+    local total = 0
+    for _, e in ipairs(p) do
+      local name = spellName(byKey[e.key], e.rankIndex)
+      local cost = knownCost(name, e.rankIndex)
+      out.pending[#out.pending + 1] = { text = rankText(name, e.rankIndex), cost = cost }
+      total = total and cost and total + cost or nil
+    end
+    out.total = #out.pending > 0 and total or nil
+  end
+  if type(level) == "number" then
+    local best
+    for _, sp in ipairs(D.Spells) do
+      if not sp.talent and not sp.noTrainer then
+        for _, r in ipairs(sp.ranks) do
+          if r.level and r.level > level and (not best or r.level < best) then best = r.level end
+        end
+      end
+    end
+    if best then
+      out.nextLevel, out.nextNames = best, {}
+      for _, sp in ipairs(D.Spells) do
+        if not sp.talent and not sp.noTrainer then
+          for i, r in ipairs(sp.ranks) do
+            if r.level == best then out.nextNames[#out.nextNames + 1] = rankText(spellName(sp, i), i) end
+          end
+        end
+      end
+    end
+  end
+  return out
+end
+
 -- Montée de niveau : détectée sur le STATE qui porte le nouveau niveau (le cache de Knows est alors à jour).
 local lastLevel
 ns.Listen("STATE", function()
@@ -57,23 +118,15 @@ ns.Listen("STATE", function()
     names[i] = pending[i].rankIndex > 1 and L.GUIDE_RANK:format(name, pending[i].rankIndex) or name
   end
   local text = table.concat(names, ", ") .. (#pending > MAX_NAMES and ", …" or "")
-  ns.Toast(L.TRAIN_NEW:format(text), { key = "pc:train:" .. level })
+  text = L.TRAIN_NEW:format(#pending, text)
+  local total = Training.Plan(level).total
+  if total then text = L.TRAIN_NEW_COST:format(text, coin(total)) end
+  ns.Toast(text, { key = "pc:train:" .. level })
 end)
 
 ------------------------------------------------------------------------
 -- chez le maître
 ------------------------------------------------------------------------
--- Prix en or/argent/cuivre : GetCoinTextureString si présent, sinon « 1 po 20 pa ».
-local function coin(c)
-  local s = S.Get(GetCoinTextureString, c)
-  if type(s) == "string" then return s end
-  local parts = {}
-  if c >= 10000 then parts[#parts + 1] = math.floor(c / 10000) .. " po" end
-  if c % 10000 >= 100 then parts[#parts + 1] = math.floor(c % 10000 / 100) .. " pa" end
-  if c % 100 > 0 or #parts == 0 then parts[#parts + 1] = (c % 100) .. " pc" end
-  return table.concat(parts, " ")
-end
-
 local panel
 
 local function hidePanel() if panel then panel:Hide() end end
