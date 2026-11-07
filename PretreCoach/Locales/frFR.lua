@@ -1,0 +1,12 @@
+-- Tous les textes affichés au joueur. Le client est en français : seule locale fournie.
+local _, ns = ...
+
+ns.L = {
+  PREFIX = "|cffb084ffPrêtre Coach|r",
+  HELP = "Commandes : /coach probe, /coach debug",
+  DEBUG_ON = "Mode debug activé.",
+  DEBUG_OFF = "Mode debug désactivé.",
+  PROBE_TITLE = "Prêtre Coach : sonde d'API (Ctrl+C pour copier)",
+  PROBE_COMBAT_SAVED = "Relevé en combat enregistré. Retape /coach probe hors combat pour voir le résultat complet.",
+  PROBE_NEED_COMBAT = "Pas encore de relevé en combat : cible un monstre, lance Mot de l'ombre : Douleur, puis retape /coach probe après le combat.",
+}

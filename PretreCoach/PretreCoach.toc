@@ -1,0 +1,14 @@
+## Interface: 16001
+## Title: |cffb084ffPrêtre|r |cffffffffCoach|r
+## Notes: Guide de leveling interactif pour prêtre mort-vivant sur WoW Forever.
+## Notes-frFR: Guide de leveling interactif pour prêtre mort-vivant sur WoW Forever.
+## Author: Ludovic
+## Version: 0.1.0
+## Category: WoW Forever
+## IconTexture: Interface\Icons\Spell_Shadow_ShadowWordPain
+## SavedVariablesPerCharacter: PretreCoachDB
+
+Locales\frFR.lua
+Secrets.lua
+Core.lua
+Probe.lua
