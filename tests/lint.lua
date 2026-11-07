@@ -2,7 +2,7 @@
 -- Usage : luajit tests/lint.lua   (arg[-1] = chemin de luajit, reutilise pour les sous-processus)
 local root = arg[0]:gsub("\\", "/"):match("^(.*)/tests/[^/]*$") or "."
 local bin = arg[-1]
-local WRITE_OK = { PretreCoachDB = true, SLASH_PRETRECOACH1 = true }
+local WRITE_OK = { PretreCoachDB = true, SLASH_PRETRECOACH1 = true, PretreCoach_OnCompartmentClick = true }
 local READ_OK = {}
 for w in ([[
 _G assert date error getmetatable ipairs math next pairs pcall select setmetatable string table tinsert tonumber tostring type unpack
@@ -13,7 +13,7 @@ UnitClass UnitRace CheckInteractDistance GetUnitSpeed IsPlayerMoving GetInventor
 IsPlayerSpell IsSpellKnown GetSpellInfo GetSpellCooldown GetLocale GetBuildInfo GetRealZoneText
 GetNumTalentTabs GetProfessions GetProfessionInfo GetNumSkillLines GetSkillLineInfo
 GetTime GetNumTalents GetTalentInfo GetNumTalentGroups GetNumSpecGroups GetUnspentTalentPoints
-GetItemInfo GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED
+Minimap GameTooltip GetCursorPosition GetItemInfo GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED
 ]]):gmatch("%S+") do READ_OK[w] = true end
 
 local bad = 0

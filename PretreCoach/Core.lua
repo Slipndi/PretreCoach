@@ -68,10 +68,28 @@ function ns.Fire(msg, ...)
   for _, fn in ipairs(listeners[msg] or {}) do run(fn, msg, ...) end
 end
 
+-- Valeurs par défaut des réglages : complétées sans jamais écraser ce que le joueur a déjà.
+ns.DEFAULTS = {
+  show = { guide = true, rotation = true, rules = true, toasts = true },
+  locked = false, opacity = 0.9, scale = 1, frames = {}, minimap = { angle = 220 },
+}
+
+function ns.FillDefaults(dst, src)
+  for k, v in pairs(src) do
+    if type(v) == "table" then
+      if type(dst[k]) ~= "table" then dst[k] = {} end
+      ns.FillDefaults(dst[k], v)
+    elseif dst[k] == nil then
+      dst[k] = v
+    end
+  end
+end
+
 ns.On("ADDON_LOADED", function(_, name)
   if name ~= ADDON then return end
   PretreCoachDB = PretreCoachDB or {}
   ns.db = PretreCoachDB
+  ns.FillDefaults(ns.db, ns.DEFAULTS)
 end)
 
 local commands = {

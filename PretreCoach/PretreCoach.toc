@@ -7,6 +7,7 @@
 ## Category: WoW Forever
 ## IconTexture: Interface\Icons\Spell_Shadow_ShadowWordPain
 ## SavedVariablesPerCharacter: PretreCoachDB
+## AddonCompartmentFunc: PretreCoach_OnCompartmentClick
 
 Locales\frFR.lua
 Data\Zones.lua
@@ -21,4 +22,7 @@ Core.lua
 Calc.lua
 State.lua
 Timers.lua
+UI\Style.lua
+UI\Toast.lua
+UI\Minimap.lua
 Probe.lua

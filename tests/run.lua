@@ -84,6 +84,76 @@ local function suite(label)
     mock.fire("ADDON_LOADED", ADDON)
     assert(type(PretreCoachDB) == "table" and ns.db == PretreCoachDB, "PretreCoachDB absent")
   end)
+  check("UI : valeurs par defaut sans ecraser l'existant", function()
+    assert(ns.db.show.toasts == true and ns.db.opacity == 0.9 and ns.db.minimap.angle == 220 and ns.db.locked == false)
+    local keep = ns.db
+    PretreCoachDB = { show = { toasts = false }, opacity = 0.5, locked = true, minimap = { angle = 10 } }
+    loadAddon()
+    mock.fire("ADDON_LOADED", ADDON)
+    local d = PretreCoachDB
+    assert(d.show.toasts == false and d.show.guide == true and d.opacity == 0.5 and d.locked == true
+      and d.minimap.angle == 10 and type(d.frames) == "table", "defauts mal appliques")
+    PretreCoachDB = keep
+    ns.db = keep
+  end)
+  check("Toast : affiche, puis bloque avant le delai", function()
+    mock.time = 1000
+    assert(ns.Toast("Baguette equipee"), "premier toast attendu")
+    assert(not ns.Toast("Baguette equipee"), "doublon avant le delai")
+    assert(ns.Toast("Autre texte"))
+    assert(ns.Toast("Meme cle", { key = "k" }) and not ns.Toast("Autre texte pour k", { key = "k" }))
+    mock.time = 1301
+    assert(ns.Toast("Baguette equipee"), "apres 300 s le texte revient")
+    mock.flushTimers(); mock.flushTimers()
+    assert(ns.UI.ToastCount() == 0, "les toasts disparaissent")
+  end)
+  check("Toast : pile limitee a 3", function()
+    mock.time = 5000
+    local after = ns.After -- sans C_Timer, After s'execute tout de suite : on force la file du mock
+    ns.After = function(d, fn) mock.timers[#mock.timers + 1] = { delay = d, fn = fn } end
+    for i = 1, 5 do assert(ns.Toast("pile " .. i)) end
+    assert(ns.UI.ToastCount() == 3, "attendu 3, recu " .. ns.UI.ToastCount())
+    mock.flushTimers(); mock.flushTimers()
+    ns.After = after
+  end)
+  check("Toast : desactives", function()
+    ns.db.show.toasts = false
+    assert(not ns.Toast("muet") and ns.UI.ToastCount() == 0)
+    ns.db.show.toasts = true
+  end)
+  check("Movable : sauvegarde et restaure", function()
+    local f = CreateFrame("Frame")
+    ns.UI.Movable(f, "test", true)
+    f:SetPoint("TOP", UIParent, "TOP", 12, -34)
+    f.scripts.OnDragStop(f)
+    local s = ns.db.frames.test
+    assert(s and s.point == "TOP" and s.x == 12 and s.y == -34, "position non sauvegardee")
+    f:ClearAllPoints(); f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    ns.UI.Restore(f)
+    local p, _, _, x, y = f:GetPoint()
+    assert(p == "TOP" and x == 12 and y == -34, "position non restauree")
+    mock.setCombat(true)
+    f:ClearAllPoints(); f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    ns.UI.Restore(f)
+    assert(f:GetPoint() == "CENTER", "SetPoint doit attendre la fin du combat")
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED")
+    assert(f:GetPoint() == "TOP", "restauration reportee apres le combat")
+  end)
+  check("Minimap : clic sans ToggleGuide, avec ToggleGuide", function()
+    local b = ns.minimapButton
+    b.scripts.OnClick(b, "LeftButton"); b.scripts.OnClick(b, "RightButton"); b.scripts.OnEnter(b)
+    PretreCoach_OnCompartmentClick("x", "LeftButton")
+    local n = 0
+    ns.ToggleGuide = function() n = n + 1 end
+    b.scripts.OnClick(b, "LeftButton")
+    ns.ToggleGuide = nil
+    assert(n == 1 and #mock.printed >= 1)
+  end)
+  check("UI.Icon : Pulse, grise, raccourci", function()
+    local i = ns.UI.Icon(UIParent, 40)
+    i:SetIcon("x"); i:SetHotkey("1"); i:SetGrayed(true); i:Pulse(); mock.flushTimers()
+  end)
   check("probe hors combat", function() SlashCmdList.PRETRECOACH("probe") end)
   check("debug et aide", function()
     SlashCmdList.PRETRECOACH("debug"); SlashCmdList.PRETRECOACH("debug"); SlashCmdList.PRETRECOACH("")

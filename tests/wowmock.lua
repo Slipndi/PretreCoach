@@ -17,8 +17,9 @@ local function secretNow() return mock.inCombat and not mock.noSecrets end
 local function sec(v) return function() if secretNow() then return mock.SECRET end return v end end
 
 -- Cadre : toute methode inconnue est une fonction vide.
+-- Les champs Lua en minuscules rendent nil, comme en jeu.
 local FRAME = {}
-local frameMT = { __index = function(_, k) return FRAME[k] or function() end end }
+local frameMT = { __index = function(_, k) return FRAME[k] or (tostring(k):find("^%u") and function() end) or nil end }
 local function newFrame()
   local f = setmetatable({ scripts = {}, registered = {}, unit = {} }, frameMT)
   return f
@@ -37,11 +38,17 @@ end
 function FRAME.SetText(_, t) mock.lastText = t end
 function FRAME.SetScript(self, name, fn) self.scripts[name] = fn end
 function FRAME.CreateTexture() return newFrame() end
+function FRAME.CreateAnimationGroup() return newFrame() end
+function FRAME.CreateAnimation() return newFrame() end
+function FRAME.SetPoint(self, ...) self.pt = { ... } end
+function FRAME.ClearAllPoints(self) self.pt = nil end
+function FRAME.GetPoint(self) if self.pt then return self.pt[1], self.pt[2], self.pt[3], self.pt[4], self.pt[5] end end
 function FRAME.CreateFontString() return newFrame() end
 function FRAME.GetVerticalScroll() return 0 end
 function FRAME.GetVerticalScrollRange() return 0 end
 function CreateFrame(_, name) local f = newFrame() if name then _G[name] = f end return f end
-UIParent = newFrame()
+UIParent, Minimap, GameTooltip = newFrame(), newFrame(), newFrame()
+function GetCursorPosition() return 0, 0 end
 ChatFontNormal = {}
 
 -- Envoie un evenement a tous les cadres inscrits ; un cadre inscrit par unite ne recoit que cette unite.
