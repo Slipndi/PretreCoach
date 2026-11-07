@@ -200,6 +200,8 @@ local REFERENCE = {}
 
 function REFERENCE.talents(level)
   local out = {}
+  local note = ns.Talents and ns.Talents.GapLine()
+  if note then out[1] = { text = note, highlight = false } end
   for _, e in ipairs(D.TalentPlan) do
     local text = e.rank and L.GUIDE_POINTS:format(e.name, e.rank) or e.name
     out[#out + 1] = { text = text, sub = levels(e.from, e.to), highlight = inRange(level, e.from, e.to) }

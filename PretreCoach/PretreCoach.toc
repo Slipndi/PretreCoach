@@ -27,6 +27,9 @@ Timers.lua
 Guide.lua
 Rotation.lua
 GoldenRules.lua
+Training.lua
+Talents.lua
+Professions.lua
 UI\Style.lua
 UI\Toast.lua
 UI\Minimap.lua

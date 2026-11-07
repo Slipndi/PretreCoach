@@ -158,6 +158,7 @@ local function refreshHeader()
   if status == "verte" and h.nextZone then text = text .. "  ·  " .. L.GW_GOTO:format(h.nextZone) end
   win.badge:SetText(text)
   setColor(win.badge, BADGE[status] or BADGE.neutre)
+  win.count:SetText(ns.Training.CountText())
 end
 
 local function paintTabs()
@@ -211,7 +212,9 @@ local function refreshCard()
   local e = Guide.Next()
   local text = e and ((e.unknown and "? " or "") .. e.text) or L.GW_NEXT_NONE
   card.text:SetText(text)
-  card:SetHeight(30 + (card.text:GetStringHeight() or 14))
+  local count = ns.Training.CountText()
+  card.count:SetText(count)
+  card:SetHeight(30 + (card.text:GetStringHeight() or 14) + (count ~= "" and 12 or 0))
 end
 
 local function request()
@@ -277,6 +280,10 @@ local function buildWin()
   win.zone:SetPoint("TOPLEFT", win, "TOPLEFT", 10, -44)
   win.badge = fontString(win, UI.font.small)
   win.badge:SetPoint("TOPLEFT", win, "TOPLEFT", 10, -60)
+  win.count = fontString(win, UI.font.small)
+  win.count:SetPoint("TOPRIGHT", win, "TOPRIGHT", -10, -46)
+  win.count:SetJustifyH("RIGHT")
+  setColor(win.count, C.accent)
 
   win.tabs = {}
   for i, key in ipairs(TABS) do
@@ -323,6 +330,9 @@ local function buildCard()
   card.text = fontString(card, UI.font.text)
   card.text:SetPoint("TOPLEFT", card, "TOPLEFT", 10, -22)
   card.text:SetWidth(240)
+  card.count = fontString(card, UI.font.small)
+  card.count:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 10, 6)
+  setColor(card.count, C.accent)
   local close = textButton(card, "×", 18, 16)
   close:SetPoint("TOPRIGHT", card, "TOPRIGHT", -4, -4)
   close:SetScript("OnClick", function() card:Hide() end)

@@ -670,7 +670,7 @@ local function suite(label)
     out.rtoasts = {}
     n.Toast = function(text, opts)
       local key = opts and opts.key
-      local list = (key and key:find("^r%d")) and out.rtoasts or out.toasts
+      local list = (key and (key:find("^r%d") or key:find("^pc:"))) and out.rtoasts or out.toasts
       list[#list + 1] = { text = text, key = key, cooldown = opts and opts.cooldown }
       return true
     end
@@ -2137,6 +2137,199 @@ local function suite(label)
       B.Render()
       assert(B.frame.shown)
     end, rcleanup)
+  end)
+
+  ------------------------------------------------------------------------
+  -- L8 : maitre (Training), talents (Talents), metiers (Professions)
+  ------------------------------------------------------------------------
+  local function pcToasts(o, pat)
+    local out = {}
+    for _, t in ipairs(o.rtoasts) do if t.key and t.key:find(pat) then out[#out + 1] = t end end
+    return out
+  end
+  local function knownUpTo(n, lvl)
+    local ids = {}
+    for _, sp in ipairs(n.Data.Spells) do for _, r in ipairs(sp.ranks) do if r.level and r.level <= lvl then ids[r.id] = true end end end
+    return ids
+  end
+  local hasKnows = IsPlayerSpell or IsSpellKnown or (C_SpellBook and C_SpellBook.IsSpellInSpellBook)
+
+  check("Training : level up 9->10, toast avec noms et rangs, compteur", function()
+    local o = fresh()
+    local n = o.n
+    knows(knownUpTo(n, 5))
+    setState(n, { level = 9 })
+    n.Fire("STATE", { "level" })
+    assert(#o.rtoasts == 0, "premier STATE : silence")
+    n.State.level = 10
+    n.Fire("STATE", { "level" })
+    local t = pcToasts(o, "^pc:train:")
+    if not hasKnows then
+      assert(#t == 0 and n.Training.PendingCount() == nil and n.Training.CountText() == "", "API absente : rien")
+      return
+    end
+    local p = n.Calc.PendingSpells(10, n.State.Knows)
+    assert(#t == 1 and t[1].key == "pc:train:10" and #p > 0, "un toast")
+    assert(t[1].text:find("^Nouveaux sorts chez ton maître : "), t[1].text)
+    assert(t[1].text:find("Sort591 (rang 2)", 1, true) and t[1].text:find("Sort594 (rang 2)", 1, true), t[1].text)
+    assert((#p > 4) == (t[1].text:find("…", 1, true) ~= nil), "au plus 4 noms puis …")
+    assert(n.Training.PendingCount() == #p and n.Training.CountText():find("à apprendre", 1, true))
+    n.State.level = 10
+    n.Fire("STATE", { "spells" })
+    assert(#pcToasts(o, "^pc:train:") == 1, "pas de doublon sans nouveau niveau")
+    knows(nil)
+  end)
+
+  check("Training : every = 2, pas de toast au niveau impair, compteur juste, affichage", function()
+    if not hasKnows then return end
+    local o = fresh()
+    local n = o.n
+    n.db.training = { every = 2 }
+    knows(knownUpTo(n, 5))
+    setState(n, { level = 8 })
+    n.Fire("STATE", { "level" })
+    n.State.level = 9
+    n.Fire("STATE", { "level" })
+    assert(#pcToasts(o, "^pc:train:") == 0, "niveau impair : pas de toast")
+    local c = n.Training.PendingCount()
+    assert(c and c > 0 and n.Training.CountText():find("^%d+ sorts? à apprendre$"), "compteur juste")
+    n.ToggleGuide()
+    local G = n.UI.GuideWin
+    assert(G.win.count.text == n.Training.CountText(), "compteur dans l'en-tête")
+    n.SetCompact(true)
+    assert(G.card.count.text == n.Training.CountText(), "compteur sur la carte compacte")
+    n.SetCompact(false)
+    n.ToggleGuide()
+    n.State.level = 10
+    n.Fire("STATE", { "level" })
+    assert(#pcToasts(o, "^pc:train:") == 1, "niveau pair : toast")
+    knows(nil)
+  end)
+
+  check("Training : TRAINER_SHOW memorise les services et liste ceux a apprendre", function()
+    if not GetNumTrainerServices then return end
+    local keep = { GetTrainerServiceInfo, GetTrainerServiceLevelReq, GetTrainerServiceCost, GetCoinTextureString }
+    isolated(function()
+      local o = fresh()
+      local n = o.n
+      GetTrainerServiceInfo = function(i) return "Sort" .. i, i == 2 and "Rang 2" or "", i == 2 and "available" or (i == 1 and "used" or "unavailable") end
+      GetTrainerServiceLevelReq = function(i) return 10 + i end
+      GetTrainerServiceCost = function(i) return i * 6000 end
+      mock.fire("TRAINER_SHOW")
+      local s = n.db.trainer["Sort2|Rang 2"]
+      assert(s and s.level == 12 and s.cost == 12000 and s.category == "available", "service memorise")
+      assert(n.db.trainer["Sort1|"].category == "used" and n.db.trainer["Sort3|"].category == "unavailable")
+      local P = n.Training.Panel()
+      assert(P and P:IsShown() and P.body.text == "Sort2 (Rang 2) : " .. (GetCoinTextureString and "COIN:12000" or "1 po 20 pa"), "panneau : 1 service")
+      assert(P.pt[1] == "CENTER", "sans ClassTrainerFrame : au centre")
+      GetCoinTextureString = nil
+      local f = CreateFrame("Frame", "ClassTrainerFrame")
+      mock.fire("TRAINER_UPDATE")
+      assert(P.body.text == "Sort2 (Rang 2) : 1 po 20 pa", P.body.text)
+      assert(P.pt[2] == f, "ancre a cote du cadre du maitre")
+      mock.fire("TRAINER_CLOSED")
+      assert(not P:IsShown(), "ferme avec le maitre")
+    end, function()
+      GetTrainerServiceInfo, GetTrainerServiceLevelReq, GetTrainerServiceCost, GetCoinTextureString = keep[1], keep[2], keep[3], keep[4]
+      ClassTrainerFrame = nil
+    end)
+  end)
+
+  check("Training : API du maitre absente ou qui plante, rien ne s'affiche", function()
+    local keep = { GetNumTrainerServices, GetTrainerServiceInfo, GetTrainerServiceLevelReq, GetTrainerServiceCost }
+    isolated(function()
+      local n = fresh().n
+      GetNumTrainerServices, GetTrainerServiceInfo, GetTrainerServiceLevelReq, GetTrainerServiceCost = nil, nil, nil, nil
+      mock.fire("TRAINER_SHOW")
+      assert(not n.Training.Panel() and next(n.db.trainer or {}) == nil)
+      GetNumTrainerServices = function() error("boom") end
+      mock.fire("TRAINER_SHOW")
+      assert(not n.Training.Panel() and next(n.db.trainer or {}) == nil)
+    end, function()
+      GetNumTrainerServices, GetTrainerServiceInfo, GetTrainerServiceLevelReq, GetTrainerServiceCost = keep[1], keep[2], keep[3], keep[4]
+    end)
+  end)
+
+  check("Talents : point de talent au 12, avec et sans UnspentTalentPoints", function()
+    local o = fresh()
+    local n = o.n
+    setState(n, { level = 11, unspentTalents = 0 })
+    n.Fire("STATE", { "level" })
+    setState(n, { level = 12, unspentTalents = 1 })
+    n.Fire("STATE", { "level", "unspentTalents" })
+    local t = pcToasts(o, "^pc:talent:")
+    assert(#t == 1 and t[1].text == "Ton point de talent : Connexion spirituelle (5 points)", t[1] and t[1].text)
+    setState(n, { level = 13, unspentTalents = 0 })
+    n.Fire("STATE", { "level" })
+    assert(#pcToasts(o, "^pc:talent:") == 1, "aucun point : pas de toast")
+    setState(n, { level = 14 }) -- API absente : toast au passage de niveau, sans condition
+    n.Fire("STATE", { "level" })
+    assert(#pcToasts(o, "^pc:talent:") == 2)
+    setState(n, { level = 9, unspentTalents = 1 })
+    n.Fire("STATE", { "level" })
+    assert(#pcToasts(o, "^pc:talent:") == 2, "avant le niveau 10 : rien")
+  end)
+
+  check("Talents : respec Ombre au 40", function()
+    local o = fresh()
+    local n = o.n
+    setState(n, { level = 39, unspentTalents = 0 })
+    n.Fire("STATE", { "level" })
+    assert(#pcToasts(o, "^pc:respec") == 0)
+    setState(n, { level = 40, unspentTalents = 0 })
+    n.Fire("STATE", { "level" })
+    local t = pcToasts(o, "^pc:respec")
+    assert(#t == 1 and t[1].text:find("Respec Ombre", 1, true), "rappel du respec")
+  end)
+
+  check("Talents : plan non suivi, un seul toast par session, ligne dans le guide", function()
+    local o = fresh()
+    local n = o.n
+    setState(n, { level = 12, unspentTalents = 0, talents = { [3] = { [1] = { [3] = 0 } } } })
+    n.Fire("STATE", { "talents" })
+    n.Fire("STATE", { "talents" })
+    setState(n, { level = 13, unspentTalents = 0, talents = { [3] = { [1] = { [3] = 1 } } } })
+    n.Fire("STATE", { "level", "talents" })
+    local t = pcToasts(o, "^pc:talentgap")
+    assert(#t == 1 and t[1].text == "Plan de talents non suivi : Connexion spirituelle", "un seul toast : " .. #t)
+    local r = n.Guide.Reference("talents")
+    assert(#r == #n.Data.TalentPlan + 1 and r[1].text == t[1].text and not r[1].highlight, "ligne discrete")
+    n.State.talents = nil
+    assert(n.Talents.GapLine() == nil and #n.Guide.Reference("talents") == #n.Data.TalentPlan, "talents inconnus : rien")
+    local o2 = fresh()
+    setState(o2.n, { level = 12, unspentTalents = 0, talents = nil })
+    o2.n.Fire("STATE", { "level" })
+    assert(#pcToasts(o2, "^pc:talentgap") == 0, "TalentGap nil : rien")
+  end)
+
+  check("Professions : rang a prendre, nouveau bandage, metier manquant, une fois", function()
+    local o = fresh()
+    local n = o.n
+    local function profs(herb, aid) return { [182] = { rank = herb, max = 75 }, [171] = { rank = 1, max = 75 }, [129] = { rank = aid, max = 75 } } end
+    setState(n, { level = 10, profs = profs(50, 1) })
+    n.Fire("STATE", { "profs" })
+    local t = pcToasts(o, "^pc:prof:rank:")
+    assert(#t == 1 and t[1].text == "Herboristerie 50 : va prendre le rang Compagnon à Brill", t[1] and t[1].text)
+    n.Fire("STATE", { "level" })
+    assert(#pcToasts(o, "^pc:prof:rank:") == 1, "anti-repetition")
+    assert(#pcToasts(o, "^pc:prof:bandage") == 0 and n.db.training.bandage == 1, "premier bandage memorise sans toast")
+    setState(n, { level = 10, profs = profs(10, 40) })
+    n.Fire("STATE", { "profs" })
+    n.Fire("STATE", { "profs" })
+    t = pcToasts(o, "^pc:prof:bandage")
+    assert(#t == 1 and t[1].text == "Nouveau bandage disponible : Bandage en lin épais" and n.db.training.bandage == 40)
+    setState(n, { level = 4, profs = { [182] = { rank = 1, max = 75 } } })
+    n.Fire("STATE", { "level" })
+    assert(#pcToasts(o, "^pc:prof:missing") == 0, "avant le niveau 5 : rien")
+    n.State.level = 12
+    n.Fire("STATE", { "level" })
+    n.Fire("STATE", { "profs" })
+    t = pcToasts(o, "^pc:prof:missing")
+    assert(#t == 1 and t[1].text == "Métier à apprendre : Secourisme, Alchimie", "un rappel par session")
+    local before = #pcToasts(o, "^pc:prof:")
+    setState(n, { level = 12, profs = nil })
+    n.Fire("STATE", { "profs" })
+    assert(#pcToasts(o, "^pc:prof:") == before, "profs illisibles : rien de plus")
   end)
 
   check("Un listener STATE qui plante ne bloque pas les autres", function()

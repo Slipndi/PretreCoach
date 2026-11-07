@@ -72,6 +72,7 @@ end
 ns.DEFAULTS = {
   show = { guide = true, rotation = true, rules = true, toasts = true },
   guide = { manual = {}, done = {}, tab = "now", compact = false },
+  training = { every = 1 }, trainer = {},
   locked = false, opacity = 0.9, scale = 1, frames = {}, minimap = { angle = 220 },
 }
 

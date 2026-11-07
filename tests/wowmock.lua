@@ -156,6 +156,7 @@ function GetNumTrainerServices() return 3 end
 function GetTrainerServiceInfo(i) return "Sort" .. i, "", "available" end
 function GetTrainerServiceLevelReq() return 10 end
 function GetTrainerServiceCost() return 100 end
+function GetCoinTextureString(c) return "COIN:" .. c end
 C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
 C_QuestLog = { IsQuestFlaggedCompleted = function() return false end, GetTitleForQuestID = function() return "Titre" end }
 -- mock.items = { [itemID] = nombre porte }
@@ -199,7 +200,7 @@ local UNCERTAIN = [[
 GetTalentTabInfo GetTalentInfo GetNumTalentTabs GetNumTalents GetNumTalentGroups GetActiveTalentGroup GetUnspentTalentPoints
 C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo GetSkillLineInfo GetNumSkillLines
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
-GetTrainerServiceLevelReq GetTrainerServiceCost GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
+GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end
