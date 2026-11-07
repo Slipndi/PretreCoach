@@ -65,6 +65,7 @@ function mock.reset()
   mock.events, mock.timers, mock.errors, mock.printed = {}, {}, {}, {}
   mock.inCombat, mock.hasTarget, mock.rejectEvents, mock.noRegisterUnitEvent, mock.lastText = false, true, nil, false, nil
   mock.unknown = {}
+  mock.dead, mock.canAttack = nil, nil
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known, mock.talentList = 0, "Creature-0", nil, nil, nil, nil, nil
   SlashCmdList = {}
   PretreCoachDB = nil
@@ -104,7 +105,10 @@ function UnitPower() return secretNow() and mock.SECRET or 50 end
 UnitPowerMax = UnitPower
 GetPowerRegen = sec(1)
 function UnitExists() return mock.hasTarget end
-UnitIsDead, UnitCreatureType = sec(false), sec("Humanoide")
+UnitCreatureType = sec("Humanoide")
+-- mock.dead = la cible est morte ; mock.canAttack = false : cible non attaquable (allie, soi)
+function UnitIsDead() if secretNow() then return mock.SECRET end return mock.dead == true end
+function UnitCanAttack() if secretNow() then return mock.SECRET end return mock.canAttack ~= false end
 -- mock.guid pilote le GUID de la cible ; mock.noGuid = illisible (nil)
 function UnitGUID() if mock.noGuid then return nil end return secretNow() and mock.SECRET or mock.guid end
 function CheckInteractDistance() return false end

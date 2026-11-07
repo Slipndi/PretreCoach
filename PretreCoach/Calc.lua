@@ -31,7 +31,8 @@ end
 
 -- wand = State.wand : table { itemID, reqLevel, name }, false (emplacement vide ou pas une baguette),
 -- nil (illisible). Statuts : "aucune", "depassee" (niveau requis <= niveau - 10), "ok", "inconnue".
--- Pour "aucune"/"depassee", rend aussi la prochaine baguette conseillée de ns.Data.Wands.
+-- Pour "aucune"/"depassee", rend aussi la prochaine baguette conseillée de ns.Data.Wands (ordre indifférent :
+-- la meilleure de niveau <= niveau du joueur et > niveau requis actuel). "depassee" sans meilleure baguette connue : "ok".
 function Calc.WandStatus(level, wand)
   if type(level) ~= "number" or wand == nil then return "inconnue" end
   local req = wand and wand.reqLevel
@@ -46,8 +47,9 @@ function Calc.WandStatus(level, wand)
   if status == "aucune" or status == "depassee" then
     local best
     for _, w in ipairs(ns.Data.Wands) do
-      if w.level <= level and w.level > (req or 0) then best = w end
+      if w.level <= level and w.level > (req or 0) and (not best or w.level > best.level) then best = w end
     end
+    if status == "depassee" and not best then return "ok" end
     return status, best
   end
   return status
@@ -55,9 +57,12 @@ end
 
 -- knowsFn(key) rend le plus haut rang connu (State.Knows) ; nil = inconnu, le sort n'est alors pas proposé.
 -- Rend { key, rankIndex, level } : seul le plus haut rang disponible et non connu de chaque sort, hors talents.
+-- Rend nil si l'information est inconnue pour tous les sorts concernés (API absente), {} s'il n'y a rien à apprendre.
 function Calc.PendingSpells(level, knowsFn)
   local out = {}
-  if type(level) ~= "number" or not knowsFn then return out end
+  if type(level) ~= "number" then return out end
+  if not knowsFn then return nil end
+  local asked, answered = 0, 0
   for _, sp in ipairs(ns.Data.Spells) do
     if not sp.talent then
       local top
@@ -65,9 +70,12 @@ function Calc.PendingSpells(level, knowsFn)
         if r.level and r.level <= level then top = i end
       end
       local known = top and knowsFn(sp.key)
+      if top then asked = asked + 1 end
+      if known then answered = answered + 1 end
       if known and known < top then out[#out + 1] = { key = sp.key, rankIndex = top, level = sp.ranks[top].level } end
     end
   end
+  if asked > 0 and answered == 0 then return nil end
   return out
 end
 

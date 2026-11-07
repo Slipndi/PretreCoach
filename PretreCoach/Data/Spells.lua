@@ -5,14 +5,14 @@ ns.Data = ns.Data or {}
 -- TellMeWhen (ClassSpellCache-Vanilla/Camelot.lua, Forever) ; IDs de base Forever
 -- depuis WoWForeverRot/Data.lua. Niveaux de rang et durées : connaissances Classic 1.12,
 -- pas de source locale. Aucun prix chez le maître connu : cost = nil partout.
--- verify = true : donnée non confirmée pour Forever.
+-- verify = true : donnée non confirmée pour Forever. harmful = true : sort offensif (cible attaquable, voir Timers).
 ns.Data.Spells = {
   -- Sorts de base
-  { key = "SMITE", name = "Châtiment", talent = false, racial = false,
+  { key = "SMITE", harmful = true, name = "Châtiment", talent = false, racial = false,
     cooldown = nil, duration = nil, manaCost = true,
     ranks = { { id = 585, level = 1 }, { id = 591, level = 6 }, { id = 598, level = 14 }, { id = 984, level = 22 },
               { id = 1004, level = 30 }, { id = 6060, level = 38 }, { id = 10933, level = 46 }, { id = 10934, level = 54 } } },
-  { key = "SWP", name = "Mot de l'ombre : Douleur", talent = false, racial = false,
+  { key = "SWP", harmful = true, name = "Mot de l'ombre : Douleur", talent = false, racial = false,
     cooldown = nil, duration = 18, manaCost = true,
     ranks = { { id = 589, level = 4 }, { id = 594, level = 10 }, { id = 970, level = 18 }, { id = 992, level = 26 },
               { id = 2767, level = 34 }, { id = 10892, level = 42 }, { id = 10893, level = 50 }, { id = 10894, level = 58 } } },
@@ -21,16 +21,16 @@ ns.Data.Spells = {
     ranks = { { id = 17, level = 6 }, { id = 592, level = 12 }, { id = 600, level = 18 }, { id = 3747, level = 24 },
               { id = 6065, level = 30 }, { id = 6066, level = 36 }, { id = 10898, level = 42 }, { id = 10899, level = 48 },
               { id = 10900, level = 54 }, { id = 10901, level = 60 } } },
-  { key = "MINDBLAST", name = "Attaque mentale", talent = false, racial = false,
+  { key = "MINDBLAST", harmful = true, name = "Attaque mentale", talent = false, racial = false,
     cooldown = 8, duration = nil, manaCost = true,
     ranks = { { id = 8092, level = 10 }, { id = 8102, level = 16 }, { id = 8103, level = 22 }, { id = 8104, level = 28 },
               { id = 8105, level = 34 }, { id = 8106, level = 40 }, { id = 10945, level = 46 }, { id = 10946, level = 52 },
               { id = 10947, level = 58 } } },
-  { key = "HOLYFIRE", name = "Flammes sacrées", talent = false, racial = false,
+  { key = "HOLYFIRE", harmful = true, name = "Flammes sacrées", talent = false, racial = false,
     cooldown = nil, duration = 10, manaCost = true,
     ranks = { { id = 14914, level = 20 }, { id = 15262, level = 24 }, { id = 15263, level = 30 }, { id = 15264, level = 36 },
               { id = 15265, level = 42 }, { id = 15266, level = 48 }, { id = 15267, level = 54 }, { id = 15261, level = 60 } } },
-  { key = "MINDFLAY", name = "Fouet mental", talent = true, racial = false,
+  { key = "MINDFLAY", harmful = true, name = "Fouet mental", talent = true, racial = false,
     cooldown = nil, duration = 3, manaCost = true,
     ranks = { { id = 15407, level = 20 }, { id = 17311, level = 28 }, { id = 17312, level = 36 }, { id = 17313, level = 44 },
               { id = 17314, level = 52 }, { id = 18807, level = 60 } } },
@@ -38,13 +38,13 @@ ns.Data.Spells = {
     cooldown = nil, duration = nil, manaCost = true,
     ranks = { { id = 15473, level = 40 } } },
   -- Ajouts Forever
-  { key = "SWD", name = "Mot de l'ombre : Mort", talent = false, racial = false,
+  { key = "SWD", harmful = true, name = "Mot de l'ombre : Mort", talent = false, racial = false,
     cooldown = 12, duration = nil, manaCost = true, verify = true, -- à vérifier : ID 32379 (TBC) tiré de WoWForeverRot, absent de la liste prêtre TellMeWhen ; recharge et rangs non confirmés
     ranks = { { id = 32379, level = 32, verify = true } } },
   { key = "FEARWARD", name = "Protection contre la peur", talent = false, racial = false,
     cooldown = 30, duration = 600, manaCost = true,
     ranks = { { id = 6346, level = 20, verify = true } } }, -- à vérifier : niveau 20 pour tous les prêtres (spec Forever), ID Classic présent dans TellMeWhen
-  { key = "DPLAGUE", name = "Peste dévorante", talent = false, racial = false,
+  { key = "DPLAGUE", harmful = true, name = "Peste dévorante", talent = false, racial = false,
     cooldown = 180, duration = 24, manaCost = true,
     ranks = { { id = 2944, level = 20, verify = true }, { id = 19276, level = 28, verify = true }, { id = 19277, level = 36, verify = true },
               { id = 19278, level = 44, verify = true }, { id = 19279, level = 52, verify = true }, { id = 19280, level = 60, verify = true } } }, -- à vérifier : niveaux de rangs Classic (racial), ouverture à tous au 20 selon spec Forever
@@ -58,16 +58,16 @@ ns.Data.Spells = {
     ranks = { { id = 2652, level = 10, verify = true }, { id = 19261, level = 20, verify = true }, { id = 19262, level = 30, verify = true },
               { id = 19264, level = 40, verify = true }, { id = 19265, level = 50, verify = true }, { id = 19266, level = 60, verify = true } } }, -- à vérifier : niveaux Forever (10 selon spec), IDs Classic
   { key = "DARKSAC", name = "Sacrifice sombre", talent = false, racial = true,
-    cooldown = nil, duration = nil, manaCost = true, verify = true, -- à vérifier : recharge, durée et autres rangs inconnus
+    cooldown = nil, duration = nil, manaCost = false, verify = true, -- manaCost = false : consomme de la vie, pas de mana (ne relance pas la règle des 5 s) ; à vérifier : recharge, durée et autres rangs inconnus
     ranks = { { id = 1277324, level = 20 } } }, -- ID de base Forever (WoWForeverRot) ; niveau 20 selon spec
   { key = "CANNIBAL", name = "Cannibalisme", talent = false, racial = true,
     cooldown = 120, duration = 10, manaCost = false, verify = true, -- à vérifier : recharge et durée Classic
     ranks = { { id = 20577, level = 1 } } },
-  { key = "SHOOT", name = "Tir", talent = false, racial = false,
+  { key = "SHOOT", harmful = true, name = "Tir", talent = false, racial = false,
     cooldown = nil, duration = nil, manaCost = false,
     ranks = { { id = 5019, level = 1 } } },
   -- Autres sorts
-  { key = "PSCREAM", name = "Cri psychique", talent = false, racial = false,
+  { key = "PSCREAM", harmful = true, name = "Cri psychique", talent = false, racial = false,
     cooldown = 30, duration = 8, manaCost = true,
     ranks = { { id = 8122, level = 14 }, { id = 8124, level = 26 }, { id = 10888, level = 44 }, { id = 10890, level = 56 } } },
   { key = "FADE", name = "Disparition", talent = false, racial = false,
@@ -120,7 +120,7 @@ ns.Data.Spells = {
   { key = "SHADOWPROT", name = "Protection contre l'ombre", talent = false, racial = false,
     cooldown = nil, duration = 600, manaCost = true,
     ranks = { { id = 976, level = 30 }, { id = 10957, level = 42 }, { id = 10958, level = 56 } } },
-  { key = "MANABURN", name = "Brûlure de mana", talent = false, racial = false,
+  { key = "MANABURN", harmful = true, name = "Brûlure de mana", talent = false, racial = false,
     cooldown = nil, duration = nil, manaCost = true,
     ranks = { { id = 8129, level = 24, verify = true }, { id = 8131, level = 32, verify = true }, { id = 10874, level = 40, verify = true },
               { id = 10875, level = 48, verify = true }, { id = 10876, level = 56, verify = true } } }, -- à vérifier : niveaux des rangs
@@ -140,7 +140,7 @@ ns.Data.Spells = {
   { key = "INNERFOCUS", name = "Focalisation intérieure", talent = true, racial = false,
     cooldown = 180, duration = nil, manaCost = false,
     ranks = { { id = 14751, level = 20 } } },
-  { key = "PENANCE", name = "Pénitence", talent = false, racial = false,
+  { key = "PENANCE", harmful = true, name = "Pénitence", talent = false, racial = false,
     cooldown = nil, duration = nil, manaCost = true, verify = true, -- à vérifier : ID 47540 (Wrath) listé dans WoWForeverRot, existence sur Forever, niveau et recharge inconnus
     ranks = { { id = 47540, level = nil, verify = true } } },
 }

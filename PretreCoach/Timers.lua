@@ -1,5 +1,10 @@
 -- Minuteurs maison, alimentés par les seuls sorts du joueur (UNIT_SPELLCAST_SUCCEEDED) et GetTime().
--- Mode dégradé : un spellID secret ou illisible met Timers.degraded = true (définitif) et rien n'est minuté.
+-- Mode dégradé : un spellID secret ou illisible met Timers.degraded = true (TIMERS est alors émis) ; il repasse à
+-- false au prochain spellID lisible. Tant qu'il est vrai, FiveSecRemaining, CooldownRemaining, HasSWP et SWPCount
+-- rendent nil (= inconnu) : les appelants doivent le gérer. Remise à zéro de swpEnd/lastOn/cdEnd sur PLAYER_DEAD
+-- et PLAYER_ENTERING_WORLD.
+-- Seuls les sorts `harmful` (Data/Spells.lua) posent lastOn/swpEnd sur la cible, et seulement si UnitCanAttack.
+-- LastCastOn(guid) rend key, t, lastNonShootKey (dernier sort hors Tir sur cette cible).
 local _, ns = ...
 local S = ns.S
 
@@ -15,7 +20,7 @@ end
 
 local fiveEnd, cdEnd = 0, {}
 local swpEnd, swpCurrent = {}, nil -- Douleur : fin par GUID ; repli « cible actuelle » si le GUID est illisible
-local lastOn = {}                   -- guid -> { key, t }
+local lastOn = {}                   -- guid -> { key, t, nonShoot }
 
 local function prune(now)
   for g, e in pairs(swpEnd) do if e <= now then swpEnd[g] = nil end end
@@ -29,60 +34,92 @@ ns.OnUnit("UNIT_SPELLCAST_SUCCEEDED", "player", function(_, _, _, spellID)
     if not T.degraded then
       T.degraded = true
       ns.Debug("spellID illisible : minuteurs désactivés (mode dégradé)")
+      ns.Fire("TIMERS")
     end
     return
   end
+  local recovered = T.degraded
+  T.degraded = false
   local sp = bySpell[spellID]
-  if not sp then return end
+  if not sp then
+    if recovered then ns.Fire("TIMERS") end
+    return
+  end
   local now = GetTime()
+  prune(now)
   if sp.manaCost then fiveEnd = now + 5 end
   if sp.cooldown then cdEnd[sp.key] = now + sp.cooldown end
-  local guid = S.Get(UnitGUID, "target")
-  if guid then lastOn[guid] = { key = sp.key, t = now } end
-  if sp.key == "SWP" and sp.duration then
-    if guid then swpEnd[guid] = now + sp.duration else swpCurrent = now + sp.duration end
+  local repeatedShoot = false
+  if sp.harmful and S.Get(UnitCanAttack, "player", "target") == true then
+    local guid = S.Get(UnitGUID, "target")
+    if guid then
+      local prev = lastOn[guid]
+      repeatedShoot = sp.key == "SHOOT" and prev ~= nil and prev.key == "SHOOT"
+      lastOn[guid] = { key = sp.key, t = now, nonShoot = sp.key ~= "SHOOT" and sp.key or (prev and prev.nonShoot) }
+    end
+    if sp.key == "SWP" and sp.duration then
+      local d = math.min(sp.duration, 18)
+      if guid then swpEnd[guid] = now + d else swpCurrent = now + d end
+    end
   end
-  prune(now)
-  ns.Fire("TIMERS")
+  if not repeatedShoot or recovered then ns.Fire("TIMERS") end
 end)
 
 ns.On("PLAYER_TARGET_CHANGED", function()
   swpCurrent = nil
+  -- cible morte : plus de Douleur à suivre (au mieux, l'état « mort » peut être illisible)
+  local guid = S.Get(UnitGUID, "target")
+  if guid and S.Get(UnitIsDead, "target") == true then swpEnd[guid] = nil end
   ns.Fire("TIMERS")
 end)
 
--- Secondes restantes avant la fin de la règle des 5 s (0 si finie).
+local function reset()
+  swpEnd, lastOn, cdEnd, swpCurrent = {}, {}, {}, nil
+  ns.Fire("TIMERS")
+end
+ns.On("PLAYER_DEAD", reset)
+ns.On("PLAYER_ENTERING_WORLD", reset)
+
+-- Secondes restantes avant la fin de la règle des 5 s (0 si finie) ; nil en mode dégradé.
 function T.FiveSecRemaining()
+  if T.degraded then return nil end
   local r = fiveEnd - GetTime()
   return r > 0 and r or 0
 end
 
--- Secondes de recharge restantes du sort `key` (0 si prêt ou non suivi).
+-- Secondes de recharge restantes du sort `key` (0 si prêt ou non suivi) ; nil en mode dégradé.
 function T.CooldownRemaining(key)
+  if T.degraded then return nil end
   prune(GetTime())
   local e = cdEnd[key]
   return e and e - GetTime() or 0
 end
 
--- Douleur active sur la cible actuelle ?
+-- Douleur active sur la cible actuelle ? nil en mode dégradé ; faux (et oubliée) si la cible est morte.
 function T.HasSWP()
+  if T.degraded then return nil end
   prune(GetTime())
   local guid = S.Get(UnitGUID, "target")
-  if guid then return swpEnd[guid] ~= nil end
+  if guid then
+    if S.Get(UnitIsDead, "target") == true then swpEnd[guid] = nil return false end
+    return swpEnd[guid] ~= nil
+  end
   return swpCurrent ~= nil
 end
 
--- Nombre de cibles portant une Douleur active.
+-- Nombre de cibles portant une Douleur active ; nil en mode dégradé.
 function T.SWPCount()
+  if T.degraded then return nil end
   prune(GetTime())
   local n = swpCurrent and 1 or 0
   for _ in pairs(swpEnd) do n = n + 1 end
   return n
 end
 
--- Dernier sort du joueur lancé sur ce GUID : key, GetTime() du lancement (nil si inconnu ou trop ancien).
+-- Dernier sort du joueur lancé sur ce GUID : key (Tir compris), GetTime() du lancement, key du dernier sort hors Tir
+-- (nil si inconnu ou trop ancien).
 function T.LastCastOn(guid)
   prune(GetTime())
   local l = guid and lastOn[guid]
-  if l then return l.key, l.t end
+  if l then return l.key, l.t, l.nonShoot end
 end

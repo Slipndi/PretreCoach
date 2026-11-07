@@ -293,6 +293,14 @@ local function suite(label)
     assert(C.WandStatus(20, { itemID = 1, reqLevel = 10 }) == "depassee" and C.WandStatus(19, { itemID = 1, reqLevel = 10 }) == "ok")
     st, nxt = C.WandStatus(20, { itemID = 1, reqLevel = 10 })
     assert(nxt.level == 18, "prochaine baguette : niveau 18")
+    -- limites : reqLevel 0, niveaux 10 et 60 ; depassee sans meilleure baguette connue = ok
+    st, nxt = C.WandStatus(10, { itemID = 1, reqLevel = 0 })
+    assert(st == "depassee" and nxt.level == 5, "reqLevel 0, niveau 10")
+    st, nxt = C.WandStatus(60, { itemID = 1, reqLevel = 0 })
+    assert(st == "depassee" and nxt.level == 18, "niveau 60 : la meilleure, quel que soit l'ordre")
+    st, nxt = C.WandStatus(60, { itemID = 1, reqLevel = 50 })
+    assert(st == "ok" and nxt == nil, "rien de mieux a conseiller")
+    assert(C.WandStatus(10, { itemID = 1, reqLevel = 1 }) == "ok", "req 1 niveau 10 : pas encore depassee")
     assert(C.WandStatus(20, { itemID = 1 }) == "inconnue" and C.WandStatus(10, nil) == "inconnue" and C.WandStatus(nil, false) == "inconnue")
   end)
 
@@ -306,8 +314,9 @@ local function suite(label)
     assert(not has(p60, "MINDFLAY") and not has(p60, "HOLYNOVA") and not has(p60, "PENANCE"), "talents / rang sans niveau exclus")
     local seen = {}
     for _, p in ipairs(p60) do assert(not seen[p.key], "doublon " .. p.key) seen[p.key] = true end
-    assert(#C.PendingSpells(nil, none) == 0 and #C.PendingSpells(10, function() return nil end) == 0, "level nil / inconnu")
-    assert(#C.PendingSpells(10, nil) == 0)
+    assert(#C.PendingSpells(nil, none) == 0 and C.PendingSpells(10, function() return nil end) == nil, "level nil / inconnu")
+    assert(C.PendingSpells(10, nil) == nil, "API absente = inconnu")
+    assert(#C.PendingSpells(10, none) > 0 and #C.PendingSpells(1, function() return 1 end) == 0, "{} : rien a apprendre")
   end)
 
   check("Calc.TalentGap", function()
@@ -341,6 +350,7 @@ local function suite(label)
   check("State : rafraichi sur PLAYER_LOGIN", function()
     mock.talentList = { [3] = { { 1, 3, 5 } } }
     mock.fire("PLAYER_LOGIN")
+    mock.flushTimers()
     assert(St.level == 12, "niveau")
     assert(C_Map and (St.mapID == 1 and St.zone == 1420) or (St.mapID == nil and St.zone == nil), "zone (chaine parentMapID)")
     assert(#msgs == 1 and msgs[1]:find("level", 1, true), "message STATE attendu")
@@ -358,16 +368,67 @@ local function suite(label)
   check("State : baguette, cache et GET_ITEM_INFO_RECEIVED", function()
     if not GetInventoryItemID then return end
     mock.rangedID, mock.uncached = 11287, true
-    mock.fire("PLAYER_EQUIPMENT_CHANGED")
+    mock.fire("PLAYER_EQUIPMENT_CHANGED"); mock.flushTimers()
     assert(St.wand.itemID == 11287 and St.wand.reqLevel == nil, "baguette hors cache")
     mock.uncached = false
-    mock.fire("GET_ITEM_INFO_RECEIVED", 999)
+    mock.fire("GET_ITEM_INFO_RECEIVED", 999, true); mock.flushTimers()
     assert(St.wand.reqLevel == nil, "autre objet : pas de relecture")
-    mock.fire("GET_ITEM_INFO_RECEIVED", 11287)
+    mock.fire("GET_ITEM_INFO_RECEIVED", 11287, true); mock.flushTimers()
     assert(St.wand.reqLevel == 5 and St.wand.name == "Baguette 11287")
     mock.rangedID = 12345 -- un arc, pas une baguette
-    mock.fire("PLAYER_EQUIPMENT_CHANGED")
+    mock.fire("PLAYER_EQUIPMENT_CHANGED"); mock.flushTimers()
     assert(St.wand == false)
+  end)
+
+  check("State : GET_ITEM_INFO_RECEIVED en echec, autre objet, plafond de 3 essais", function()
+    if not GetInventoryItemID then return end
+    local calls, orig = 0, C_Item.GetItemInfoInstant
+    C_Item.GetItemInfoInstant = function(id) calls = calls + 1 return orig(id) end
+    mock.rangedID, mock.uncached = 11287, true
+    mock.fire("PLAYER_EQUIPMENT_CHANGED"); mock.flushTimers()
+    local base = calls
+    mock.fire("GET_ITEM_INFO_RECEIVED", 11287, false); mock.flushTimers()
+    mock.fire("GET_ITEM_INFO_RECEIVED", 999, true); mock.flushTimers()
+    assert(calls == base, "echec ou autre objet : pas de relecture")
+    for _ = 1, 6 do mock.fire("GET_ITEM_INFO_RECEIVED", 11287, true); mock.flushTimers() end
+    local n = calls - base
+    C_Item.GetItemInfoInstant = orig
+    mock.uncached, mock.rangedID = false, nil
+    mock.fire("PLAYER_EQUIPMENT_CHANGED"); mock.flushTimers()
+    assert(n == 3, "plafond de 3 essais, recu " .. n)
+  end)
+
+  check("State : rafale de 6 evenements = un seul rafraichissement", function()
+    if not C_Timer then return end -- sans minuteur, ns.After s'execute tout de suite
+    local n, orig = 0, C_Map.GetBestMapForUnit
+    C_Map.GetBestMapForUnit = function(...) n = n + 1 return orig(...) end
+    for _, e in ipairs({ "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "SKILL_LINES_CHANGED",
+      "PLAYER_TALENT_UPDATE", "PLAYER_EQUIPMENT_CHANGED" }) do mock.fire(e) end
+    assert(n == 0, "rien avant le delai")
+    mock.flushTimers()
+    C_Map.GetBestMapForUnit = orig
+    assert(n == 1, "un seul rafraichissement attendu, recu " .. n)
+  end)
+
+  check("State : QUEST_TURNED_IN ne relit rien, annonce quests", function()
+    local n = #msgs
+    mock.fire("QUEST_TURNED_IN", 1)
+    assert(#msgs == n + 1 and msgs[#msgs] == "quests")
+  end)
+
+  check("State : talents illisibles = nil (pas de table partielle), ancienne valeur gardee", function()
+    if not GetTalentInfo then return end
+    local gt, sentinel = GetTalentInfo, { [1] = {} }
+    GetTalentInfo = function() error("boom") end
+    St.talents = nil
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+    assert(St.talents == nil and C.TalentGap(12, St.talents, D.TalentPlan) == nil, "talents inconnus")
+    St.talents = sentinel
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+    assert(St.talents == sentinel, "lecture ratee : valeur precedente gardee")
+    GetTalentInfo = gt
+    mock.fire("PLAYER_TALENT_UPDATE"); mock.flushTimers()
+    assert(St.talents ~= sentinel and St.talents[3][1][3] == 5)
   end)
 
   check("State : PLAYER_LEVEL_UP en combat, rafraichi a la sortie", function()
@@ -377,6 +438,7 @@ local function suite(label)
     assert(St.level == 12 and #msgs == n, "rien de lourd en combat")
     mock.setCombat(false)
     mock.fire("PLAYER_REGEN_ENABLED")
+    mock.flushTimers()
     assert(St.level == 13 and #msgs == n + 1, "niveau de l'evenement apres le combat")
     mock.fire("PLAYER_REGEN_ENABLED") -- pas sale : rien
     assert(#msgs == n + 1)
@@ -387,7 +449,7 @@ local function suite(label)
     local gp, gs = GetProfessions, GetSkillLineInfo
     GetProfessions = nil
     GetSkillLineInfo = function() return "Herboristerie", false, 0, 120, 0, 0, 300 end
-    mock.fire("SKILL_LINES_CHANGED")
+    mock.fire("SKILL_LINES_CHANGED"); mock.flushTimers()
     GetProfessions, GetSkillLineInfo = gp, gs
     assert(St.profs[182].rank == 120 and St.profs[182].max == 300)
   end)
@@ -397,14 +459,42 @@ local function suite(label)
     assert(St.Knows("NOPE") == nil)
     if not IsPlayerSpell and not IsSpellKnown and not C_SpellBook then
       assert(St.Knows("SWP") == nil, "API absente = inconnu")
+      assert(C.PendingSpells(60, St.Knows) == nil, "tout inconnu : nil")
       return
     end
     assert(St.Knows("SWP") == 8)
     mock.known = { [594] = true }
+    assert(St.Knows("SWP") == 8, "cache : pas de relecture avant SPELLS_CHANGED")
+    mock.fire("SPELLS_CHANGED")
     assert(St.Knows("SWP") == 2)
     mock.known = {}
+    mock.fire("LEARNED_SPELL_IN_TAB")
     assert(St.Knows("SWP") == 0)
+    mock.known = { [594] = true }
+    mock.fire("PLAYER_LEVEL_UP", 13); mock.flushTimers()
+    assert(St.Knows("SWP") == 2, "PLAYER_LEVEL_UP invalide le cache")
     mock.known = nil
+    mock.fire("SPELLS_CHANGED")
+  end)
+
+  check("State : Knows ignore un rang sans nom (SWD), IsPlayerSpell qui plante", function()
+    if not IsPlayerSpell and not IsSpellKnown and not C_SpellBook then return end
+    local function has(list, key) for _, p in ipairs(list) do if p.key == key then return true end end end
+    mock.known = {}
+    mock.unknown = { spell = { [32379] = true } }
+    mock.fire("SPELLS_CHANGED")
+    assert(St.Knows("SWD") == nil, "ID sans nom = inconnu")
+    assert(not has(C.PendingSpells(60, St.Knows), "SWD"), "jamais a apprendre sans pouvoir l'etre")
+    mock.unknown = {}
+    mock.fire("SPELLS_CHANGED")
+    assert(St.Knows("SWD") == 0 and has(C.PendingSpells(60, St.Knows), "SWD"), "ID nomme : a apprendre")
+    mock.known = nil
+    local ips, isk = IsPlayerSpell, IsSpellKnown
+    IsPlayerSpell = function() error("boom") end
+    mock.fire("SPELLS_CHANGED")
+    assert(St.Knows("SWP") == nil, "API qui plante = inconnu, sans erreur")
+    IsPlayerSpell, IsSpellKnown = ips, isk
+    mock.fire("SPELLS_CHANGED")
   end)
 
   check("Timers : regle des 5 s, recharge, Douleur par cible", function()
@@ -449,6 +539,72 @@ local function suite(label)
     mock.noGuid = false
   end)
 
+  check("Timers : mode degrade puis cast lisible", function()
+    local T = N.Timers
+    mock.time = 500
+    local before = timerMsgs
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", mock.noSecrets and "illisible" or mock.SECRET)
+    assert(T.degraded and timerMsgs == before + 1, "TIMERS a la bascule")
+    assert(T.FiveSecRemaining() == nil and T.CooldownRemaining("SMITE") == nil and T.HasSWP() == nil
+      and T.SWPCount() == nil, "inconnu pendant le mode degrade")
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 585)
+    assert(T.degraded == false and T.FiveSecRemaining() == 5 and T.SWPCount() == 0, "retour a la normale")
+  end)
+
+  check("Timers : Tir garde lastNonShoot et ne relance TIMERS qu'au premier", function()
+    local T = N.Timers
+    mock.time, mock.guid = 600, "S"
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 585)
+    local n = timerMsgs
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 5019)
+    assert(timerMsgs == n + 1, "premier Tir : TIMERS")
+    local k, t, nk = T.LastCastOn("S")
+    assert(k == "SHOOT" and t == 600 and nk == "SMITE", "lastNonShoot conserve")
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 5019)
+    assert(timerMsgs == n + 1, "Tir repete : pas de TIMERS")
+    k, t, nk = T.LastCastOn("S")
+    assert(k == "SHOOT" and nk == "SMITE")
+  end)
+
+  check("Timers : sort sur soi ou cible non attaquable ne touche pas la cible", function()
+    local T = N.Timers
+    mock.time, mock.guid = 620, "S"
+    local k0, t0, nk0 = T.LastCastOn("S")
+    mock.time, mock.canAttack = 621, false
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 17) -- Bouclier
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 589) -- Douleur sur un allie
+    mock.canAttack = nil
+    local k, t, nk = T.LastCastOn("S")
+    assert(k == k0 and t == t0 and nk == nk0, "lastOn inchange")
+    assert(not T.HasSWP() and T.SWPCount() == 0, "pas de Douleur posee")
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 17)
+    assert(T.LastCastOn("S") == k0, "un Bouclier ne pose rien meme sur cible attaquable")
+  end)
+
+  check("Timers : cible morte, changement de cible, mort du joueur", function()
+    local T = N.Timers
+    mock.time, mock.guid = 700, "D"
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 589)
+    assert(T.HasSWP() == true)
+    mock.dead = true
+    assert(T.HasSWP() == false and T.SWPCount() == 0, "cible morte : Douleur effacee")
+    mock.dead = nil
+    assert(T.HasSWP() == false, "effacee pour de bon")
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 589)
+    mock.dead = true
+    mock.fire("PLAYER_TARGET_CHANGED")
+    mock.dead = nil
+    assert(T.HasSWP() == false, "changement vers un GUID mort")
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 589)
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 8092)
+    assert(T.SWPCount() == 1 and T.CooldownRemaining("MINDBLAST") == 8 and T.LastCastOn("D") == "MINDBLAST")
+    mock.fire("PLAYER_DEAD")
+    assert(T.SWPCount() == 0 and T.CooldownRemaining("MINDBLAST") == 0 and T.LastCastOn("D") == nil, "remise a zero")
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 589)
+    mock.fire("PLAYER_ENTERING_WORLD")
+    assert(T.SWPCount() == 0, "remise a zero a l'entree dans le monde")
+  end)
+
   check("Timers : spellID secret ou illisible = mode degrade", function()
     local T = N.Timers
     assert(T.degraded == false)
@@ -466,6 +622,15 @@ local function suite(label)
     mock.setCombat(false)
     mock.fire("PLAYER_REGEN_ENABLED")
     assert(not findSecret(PretreCoachDB, "PretreCoachDB") and not findSecret(St, "State"))
+  end)
+
+  check("Un listener STATE qui plante ne bloque pas les autres", function()
+    N.Listen("STATE", function() error("boom") end) -- en dernier : il reste inscrit
+    local got = 0
+    N.Listen("STATE", function() got = got + 1 end)
+    N.Fire("STATE", { "x" })
+    assert(got == 1 and #mock.errors == 1, "le suivant doit s'executer, l'erreur partir au gestionnaire")
+    mock.errors = {}
   end)
 end
 
