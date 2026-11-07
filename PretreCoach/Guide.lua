@@ -121,7 +121,7 @@ local function guideDB() return ns.db and ns.db.guide end
 local function evalOne(o)
   local check = CHECKS[o.check]
   local r = check and check(o)
-  local e = { id = o.id, text = o.text, priority = o.priority, go = o.go, done = r == true, unknown = false, manual = false }
+  local e = { id = o.id, text = o.text, priority = o.priority, go = o.go, prof = o.prof, done = r == true, unknown = false, manual = false }
   if r == nil then
     local g = guideDB()
     e.manual = true
@@ -224,6 +224,60 @@ function Guide.Header()
     tier = Calc.Tier(level),
     zoneName = name, zoneStatus = status, nextZone = nextZone,
   }
+end
+
+-- Premier objectif à faire (non fait, non inconnu d'abord, puis inconnu) parmi ceux qui passent `keep`.
+local function firstTodo(list, keep)
+  for _, e in ipairs(list) do if keep(e) and not e.done and not e.unknown then return e end end
+  for _, e in ipairs(list) do if keep(e) and e.unknown then return e end end
+end
+
+local function xpFallback()
+  local h = Guide.Header()
+  local zone = h.zoneStatus == "verte" and h.nextZone or h.zoneName
+  local text = zone and L.GUIDE_XP_ZONE:format(zone) or L.GUIDE_XP_KEEP
+  local secs = ns.Pace and ns.Pace.NextLevel()
+  if type(secs) == "number" then
+    local t = secs < 5400 and ("%d min"):format(math.max(1, math.floor(secs / 60 + 0.5))) or ("%d h"):format(math.floor(secs / 3600 + 0.5))
+    text = text .. " (" .. L.GUIDE_XP_NEXT:format(t) .. ")"
+  end
+  return text
+end
+
+local PROF_ORDER = { 182, 171, 129 } -- Herboristerie, Alchimie, Secourisme, puis les autres métiers connus
+
+-- Objectifs affichés : XP d'abord, puis un par métier actif. Entrée : { kind, line, label, e, text }.
+function Guide.Goals()
+  local list = Guide.Evaluate()
+  local out = {}
+  local xp = firstTodo(list, function(e) return not e.prof end)
+  out[1] = { kind = "xp", label = L.GUIDE_XP, e = xp, text = xp and xp.text or xpFallback() }
+  local profs = State.profs
+  if type(profs) ~= "table" then return out end
+  local lines, seen = {}, {}
+  for _, id in ipairs(PROF_ORDER) do lines[#lines + 1] = id seen[id] = true end
+  local rest = {}
+  for id in pairs(D.Professions) do if not seen[id] then rest[#rest + 1] = id end end
+  table.sort(rest)
+  for _, id in ipairs(rest) do lines[#lines + 1] = id end
+  local todo = Calc.ProfessionTodo(State.level, profs, D.Professions)
+  for _, line in ipairs(lines) do
+    if profs[line] and D.Professions[line] then
+      local g = { kind = "prof", line = line, label = D.Professions[line].name }
+      g.e = firstTodo(list, function(e) return e.prof == line end)
+      if g.e then
+        g.text = g.e.text
+      else
+        for _, t in ipairs(todo or {}) do
+          if t.skillLine == line then g.text = L.PROF_RANK:format(g.label, profs[line].rank or 0, t.rank.name) end
+        end
+        if not g.text and D.Professions[line].herbs then g.text = L.GUIDE_HERB_GATHER
+        elseif not g.text and ns.Prof then g.text = ns.Prof.Text(line) end
+      end
+      if g.text then out[#out + 1] = g end
+    end
+  end
+  return out
 end
 
 local function levels(from, to)

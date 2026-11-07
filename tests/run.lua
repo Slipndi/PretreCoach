@@ -970,11 +970,12 @@ local function suite(label)
     n.State.profs = { [182] = { rank = 1, max = 75 } }
     assert(st(ev(n, "learn_prof")) == "todo", "une seule profession")
     n.State.level, n.State.profs = 12, nil
-    assert(st(ev(n, "rank_comp")) == "unknown")
+    assert(st(ev(n, "rank_comp_herb")) == "unknown" and st(ev(n, "rank_comp_alch")) == "unknown")
     n.State.profs = { [182] = { rank = 100, max = 150 }, [171] = { rank = 10, max = 75 } }
-    assert(st(ev(n, "rank_comp")) == "todo")
+    assert(st(ev(n, "rank_comp_herb")) == "done" and st(ev(n, "rank_comp_alch")) == "todo", "un objectif par metier")
+    assert(ev(n, "rank_comp_herb").prof == 182 and ev(n, "rank_comp_alch").prof == 171, "prof recopie")
     n.State.profs[171].max = 150
-    assert(st(ev(n, "rank_comp")) == "done")
+    assert(st(ev(n, "rank_comp_alch")) == "done")
     n.State.level, n.State.wand = 14, nil
     assert(st(ev(n, "wand_sup")) == "unknown")
     n.State.wand = false
@@ -1148,7 +1149,7 @@ local function suite(label)
     for _, m in ipairs(n.Guide.Milestones()) do assert(m.state == "futur") end
     setState(n, { level = 12, talents = tl{ [14524] = 0, [15270] = 0 }, profs = {} })
     local list = n.Guide.Evaluate()
-    assert(list[1].id == "wandspec" and list[2].id == "spirittap" and list[3].id == "rank_comp", "priorites d'abord : " .. list[1].id)
+    assert(list[1].id == "wandspec" and list[2].id == "spirittap" and list[3].id == "rank_comp_herb", "priorites d'abord : " .. list[1].id)
     assert(n.Guide.Next().id == "wandspec")
     local ms = n.Guide.Milestones()
     assert(#ms == #n.Data.Milestones)
@@ -1246,7 +1247,7 @@ local function suite(label)
     G.win.tabs[1].scripts.OnClick(G.win.tabs[1])
     local todo = 0
     for _, e in ipairs(n.Guide.Evaluate()) do if not e.done then todo = todo + 1 end end
-    assert(G.used == todo and G.used > 0, "Maintenant : une ligne par objectif restant")
+    assert(G.used == #n.Guide.Goals() and G.used > 0, "Maintenant : une ligne par categorie")
     G.win.tabs[2].scripts.OnClick(G.win.tabs[2])
     assert(G.used == #n.Guide.Milestones(), "Etapes : une ligne par jalon")
     G.win.tabs[3].scripts.OnClick(G.win.tabs[3])
@@ -1262,6 +1263,13 @@ local function suite(label)
     local calls = {}
     local real = n.Guide.SetManual
     n.Guide.SetManual = function(id, v) calls[#calls + 1] = { id, v } return real(id, v) end
+    local ev0 = n.Guide.Evaluate -- ne garde que l'objectif manuel : c'est alors l'objectif XP
+    n.Guide.Evaluate = function()
+      local o = {}
+      for _, e in ipairs(ev0()) do if e.id == "legacy_toa" then o[#o + 1] = e end end
+      return o
+    end
+    n.Fire("GUIDE")
     local row
     for i = 1, G.used do if G.rows[i].entry.id == "legacy_toa" then row = G.rows[i] end end
     assert(row and row.entry.unknown, "ligne inconnue")
@@ -1319,7 +1327,7 @@ local function suite(label)
     local n, G = gw()
     n.SetCompact(true)
     assert(n.db.guide.compact == true and G.card:IsShown() and not (G.win and G.win:IsShown()))
-    assert(G.card.text.text == n.Guide.Next().text or G.card.text.text == "? " .. n.Guide.Next().text, "texte de Next()")
+    assert(G.card.text.text:find(n.Guide.Goals()[1].text, 1, true), "texte de l'objectif XP")
     n.Fire("GUIDE")
     n.ToggleGuide()
     assert(not G.card:IsShown(), "ToggleGuide ferme la carte")
@@ -3712,6 +3720,51 @@ local function suite(label)
     SlashCmdList.PRETRECOACH("conso")
     assert(n.db.show.cons == false and not B.frame.shown, "et la masque")
     assert(not findSecret(n.db, "db"))
+  end)
+
+  check("Guide : Goals, un objectif XP puis un par metier actif", function()
+    local n = fresh().n
+    setState(n, { level = 12, profs = { [182] = { rank = 60, max = 75 }, [171] = { rank = 10, max = 75 } } })
+    local goals = n.Guide.Goals()
+    assert(#goals == 3 and goals[1].kind == "xp" and goals[2].line == 182 and goals[3].line == 171, "XP, Herboristerie, Alchimie")
+    assert(goals[1].e and not goals[1].e.prof, "XP : objectif sans metier")
+    for i = 2, 3 do assert(goals[i].kind == "prof" and goals[i].e and goals[i].e.prof == goals[i].line, "objectif du metier") end
+    assert(goals[2].label == "Herboristerie" and goals[3].label == "Alchimie")
+    for _, g in ipairs(goals) do assert(g.line ~= 129, "pas de Secourisme : metier non appris") end
+    n.State.profs[129] = { rank = 1, max = 75 }
+    goals = n.Guide.Goals()
+    assert(#goals == 4 and goals[4].line == 129, "Secourisme appris : sa ligne arrive en dernier")
+    n.State.profs = nil
+    assert(#n.Guide.Goals() == 1, "metiers illisibles : XP seul")
+  end)
+
+  check("Guide : Goals, repli XP et repli metier (rang chez le maitre, Prof.Text)", function()
+    local n = fresh().n
+    setState(n, { level = 12, profs = { [182] = { rank = 60, max = 75 }, [171] = { rank = 10, max = 75 } } })
+    n.Guide.Evaluate = function() return {} end -- tout est fait
+    local goals = n.Guide.Goals()
+    assert(goals[1].e == nil and (goals[1].text:find("Monte de niveau", 1, true) or goals[1].text:find("Continue", 1, true)), goals[1].text)
+    assert(goals[2].e == nil and goals[2].text:find("rang Compagnon", 1, true), "rang a prendre chez le maitre : " .. goals[2].text)
+    assert(goals[3].text == n.Prof.Text(171), "conseil de recette : " .. goals[3].text)
+    n.State.profs[182].rank = 10
+    assert(n.Guide.Goals()[2].text == n.L.GUIDE_HERB_GATHER, "herboristerie : cueillette")
+  end)
+
+  check("GuideWindow : carte et onglet Maintenant = les entrees de Goals", function()
+    local n, G = gw()
+    n.State.profs = { [182] = { rank = 10, max = 75 }, [171] = { rank = 10, max = 75 } }
+    local goals = n.Guide.Goals()
+    n.SetCompact(true)
+    local text = G.card.text.text
+    assert(text:find("XP : ", 1, true) and text:find("Herboristerie : ", 1, true) and text:find("Alchimie : ", 1, true), text)
+    local _, lines = text:gsub("\n", "\n")
+    assert(lines + 1 == #goals, "une ligne par categorie")
+    n.SetCompact(false)
+    n.ToggleGuide()
+    G.win.tabs[1].scripts.OnClick(G.win.tabs[1])
+    local open = 0
+    for _, e in ipairs(n.Guide.Evaluate()) do if not e.done then open = open + 1 end end
+    assert(G.used == #goals and G.used < open, "Maintenant : seulement les entrees de Goals")
   end)
 end
 

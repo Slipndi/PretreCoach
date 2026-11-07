@@ -188,10 +188,17 @@ end
 local function items()
   local t = tab()
   if t == "now" then
-    -- objectifs faits : retirés de la liste (seul ce qui reste à faire s'affiche)
-    local todo = {}
-    for _, e in ipairs(Guide.Evaluate()) do if not e.done then todo[#todo + 1] = e end end
-    return "now", todo, L.GW_NOW_EMPTY
+    -- une ligne par catégorie (XP, puis un par métier actif) ; la case reste cochable pour un objectif manuel
+    local rowsNow = {}
+    for _, g in ipairs(Guide.Goals()) do
+      local e = g.e
+      rowsNow[#rowsNow + 1] = {
+        id = e and e.id or ("goal:" .. (g.line or "xp")), text = L.GW_GOAL:format(g.label, g.text),
+        done = e and e.done or false, unknown = e and e.unknown or false, manual = e and e.manual or false,
+        go = g.kind == "xp" and e and e.go or nil, sub = e and e.sub,
+      }
+    end
+    return "now", rowsNow, L.GW_NOW_EMPTY
   end
   if t == "next" then return "next", Guide.Milestones(), L.GW_EMPTY end
   if t == "sell" then return "ref", ns.Sell.Rows(), L.GW_SELL_EMPTY end
@@ -231,9 +238,11 @@ local function refreshWin()
 end
 
 local function refreshCard()
-  local e = Guide.Next()
-  local text = e and ((e.unknown and "? " or "") .. e.text) or L.GW_NEXT_NONE
-  card.text:SetText(text)
+  local goals = Guide.Goals()
+  local lines = {}
+  for i, g in ipairs(goals) do lines[i] = L.GW_GOAL:format(g.label, (g.e and g.e.unknown and "? " or "") .. g.text) end
+  card.text:SetText(table.concat(lines, "\n"))
+  local e = goals[1] and goals[1].e -- « Où aller » et Repère : objectif XP seulement
   local d = e and not e.done and e.go and ns.Goto.For(e.go) or nil
   card.dest = d
   local can = ns.Goto.CanPlace(d)
