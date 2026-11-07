@@ -111,6 +111,7 @@ ns.L = {
   ROT_SMITE = "Châtiment",
   ROT_MELEE = "Finis au corps à corps",
   ROT_SHOOT = "Achève à la baguette",
+  ROT_SHOOT_WAIT = "Baguette : relance un sort dans %d s",
   ROT_STOP = "Arrête-toi pour tirer",
   ROT_PSCREAM = "Cri psychique : seulement si l'endroit est dégagé",
   ROT_CANNIBAL = "Cannibalisme sur le cadavre",

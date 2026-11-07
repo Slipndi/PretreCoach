@@ -1401,13 +1401,24 @@ local function suite(label)
     rk({ level = 8, known = K, hasSWP = true, cdNil = true, weakenedSoul = false }, "SMITE,MELEE", "recharge inconnue")
   end)
 
-  check("Rotation : avant baguette, vie de la cible illisible = Chatiment x2 puis corps a corps", function()
+  check("Rotation : avant baguette, vie de la cible illisible = Chatiment tant qu'il reste du mana", function()
     local K = { SMITE = 1 }
-    for smites, want in pairs({ [0] = "SMITE,MELEE", [1] = "SMITE,MELEE", [2] = "MELEE", [3] = "MELEE" }) do
-      rk({ level = 8, known = K, hasSWP = true, inCombat = true, smitesOnTarget = smites }, want, smites .. " Chatiments")
+    for smites = 0, 3 do
+      rk({ level = 8, known = K, hasSWP = true, inCombat = true, smitesOnTarget = smites }, "SMITE,MELEE", smites .. " Chatiments")
     end
-    local res = rk({ level = 8, known = K, hasSWP = true, inCombat = true, smitesOnTarget = 2 }, "MELEE")
+    local res = rk({ level = 8, known = K, hasSWP = true, inCombat = true, oom = true }, "MELEE", "plus de mana : corps a corps")
     assert(res.text ~= "" and res.reason ~= "")
+  end)
+
+  check("Rotation : regle des 5 s, mana illisible : baguette pendant 5 s puis Attaque mentale", function()
+    local o = { level = 12, hasWand = true, inCombat = true, hasSWP = true, known = { SWP = 1, MINDBLAST = 1 } }
+    o.fiveSec = 3
+    local r = rk(o, "SHOOT", "5 s en cours : baguette")
+    assert(r.text:find("3 s", 1, true), "compte a rebours affiche")
+    o.fiveSec = 0
+    rk(o, "MINDBLAST,SHOOT", "5 s ecoulees : Attaque mentale puis baguette")
+    o.hasWand = false o.fiveSec = 3 o.known.SMITE = 1
+    rk(o, "MINDBLAST,SMITE,MELEE", "sans baguette : pas d'attente")
   end)
 
   check("Rotation : paliers 10-40 avec baguette", function()

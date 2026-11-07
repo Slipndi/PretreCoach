@@ -116,7 +116,9 @@ function Rotation.Compute(ctx)
   -- palier 3 : Forme d'Ombre apprise ou active (le niveau 40 seul ne suffit pas : sans le talent, on reste au palier 2)
   local tier = lvl < 10 and 1 or ((known("SHADOWFORM") or ctx.shadowformActive == true) and 3 or 2)
   local mana, tgtHp = ctx.manaPct, ctx.targetHpPct
-  local canCast = not (mana ~= nil and mana < MIN_MANA) and not (tgtHp ~= nil and tgtHp < BURST_MIN_HP)
+  local canCast = not (mana ~= nil and mana < MIN_MANA) and not (tgtHp ~= nil and tgtHp < BURST_MIN_HP) and ctx.oom ~= true
+  -- règle des 5 s (minuteur maison) : un sort à mana lancé il y a moins de 5 s -> baguette ; après, on relance un sort
+  local regenWait = type(ctx.fiveSec) == "number" and ctx.fiveSec > 0
   -- Tir : automatique, pas de sort à apprendre (pas de known) ; il faut une baguette lue ET le niveau 5
   local wand = ctx.hasWand == true and lvl >= 5
 
@@ -146,6 +148,8 @@ function Rotation.Compute(ctx)
         if known("SWP") then add("SWP", L.ROT_SWP, "Douleur absente de la cible") end
       elseif swp == true and above(ctx.mbHigh, mana, REBLAST_ON) and ready("MINDBLAST") then
         add("MINDBLAST", L.ROT_MB, "mana lisible et haut : Attaque mentale reconseillée")
+      elseif swp == true and mana == nil and type(ctx.fiveSec) == "number" and ready("MINDBLAST") and not (wand and regenWait) then
+        add("MINDBLAST", L.ROT_MB, "mana illisible, 5 s écoulées depuis le dernier sort : Attaque mentale")
       end
     else
       local mp30 = mana ~= nil and mana >= TIER3_MANA
@@ -164,11 +168,16 @@ function Rotation.Compute(ctx)
 
   -- finisseur : baguette, sinon Châtiment puis corps à corps
   if wand then
-    add("SHOOT", L.ROT_SHOOT, "baguette équipée : option la plus économe")
+    if regenWait then
+      add("SHOOT", L.ROT_SHOOT_WAIT:format(math.ceil(ctx.fiveSec)), "règle des 5 s en cours : baguette")
+    else
+      add("SHOOT", L.ROT_SHOOT, "baguette équipée : option la plus économe")
+    end
   else
     local smite
-    if known("SMITE") and not (mana ~= nil and mana < MIN_MANA) then
-      if tgtHp == nil then smite = (ctx.smitesOnTarget or 0) < SMITE_BLIND
+    if known("SMITE") and not (mana ~= nil and mana < MIN_MANA) and ctx.oom ~= true then
+      -- vie de la cible illisible (secrète en combat) : Châtiment tant qu'il reste du mana, pas de corps à corps à l'aveugle
+      if tgtHp == nil then smite = true
       else smite = tgtHp > SMITE_UNTIL end
     end
     if smite then
@@ -389,6 +398,13 @@ function Rotation.Context()
   if type(speed) == "number" then ctx.moving = speed > 0
   else ctx.moving = S.Get(IsPlayerMoving) end
   ctx.smitesOnTarget = smites
+  ctx.fiveSec = ns.Timers.FiveSecRemaining()
+  -- plus assez de mana : IsSpellUsable(Châtiment) rend (false, true), lisible en combat d'après la sonde
+  local smiteID = Rotation.SpellID("SMITE")
+  if smiteID and C_Spell and C_Spell.IsSpellUsable then
+    local st, usable, noMana = S.GetAll(C_Spell.IsSpellUsable, smiteID)
+    ctx.oom = st == "lisible" and usable == false and noMana == true or nil
+  end
   ctx.shadowformActive = aura(AURA.SHADOWFORM)
   mbHigh, flayHigh = hyst(mbHigh, ctx.manaPct, REBLAST_ON, REBLAST_OFF), hyst(flayHigh, ctx.manaPct, FLAY_ON, FLAY_OFF)
   ctx.mbHigh, ctx.flayHigh = mbHigh, flayHigh
