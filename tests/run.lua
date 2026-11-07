@@ -3263,6 +3263,73 @@ local function suite(label)
     mock.areas, mock.mapKids = nil, nil
   end)
 
+  check("Guide : quetes cles (tranche, prerequis, fait, sans Questie, donneur en instance)", function()
+    local n = fresh().n
+    for _, q in ipairs(n.Data.KeyQuests) do
+      assert(type(q.id) == "number" and q.from <= q.to and type(q.why) == "string" and q.source:find(":%d+"), "donnee : " .. tostring(q.id))
+    end
+    local done, unk = {}, { [8888] = true }
+    local orig = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted
+    if C_QuestLog then C_QuestLog.IsQuestFlaggedCompleted = function(id) if not unk[id] then return done[id] == true end end end
+    local ok, err = pcall(function()
+      mock.qquests = { [5658] = { name = "Toucher", startedBy = { { 375 } }, requiredLevel = 10 },
+        [6921] = { name = "Ruines", startedBy = { { 308 } }, requiredLevel = 21 } }
+      setState(n, { level = 12 })
+      assert(st(ev(n, "kq5658")) == "todo" and ev(n, "kq5658").priority == 3, "dans la tranche")
+      if LibQuestieDB then
+        assert(ev(n, "kq5658").go == "Q5658" and ev(n, "kq5658").text:find("Toucher", 1, true) and ev(n, "kq5658").text:find("faiblesse", 1, true))
+      else
+        assert(ev(n, "kq5658").go == nil and ev(n, "kq5658").text == n.Data.KeyQuests[3].why, "sans Questie : why seul, pas de Ou aller")
+      end
+      assert(ev(n, "kq906") == nil, "hors tranche")
+      assert((ev(n, "kq451") == nil) == (C_QuestLog ~= nil), "prerequis (450) pas fait masque, inconnu propose")
+      setState(n, { level = 9 })
+      assert(ev(n, "kq5658") == nil, "avant la tranche")
+      setState(n, { level = 20 })
+      assert(ev(n, "kq5658") == nil, "apres la tranche")
+      setState(n, { level = 12 })
+      if C_QuestLog then
+        done[450] = true
+        assert(st(ev(n, "kq451")) == "todo", "prerequis fait")
+        done[5658] = true
+        assert(st(ev(n, "kq5658")) == "done", "fait : l'onglet Maintenant la retire comme les autres")
+        done[5658] = nil
+      end
+      if LibQuestieDB then
+        mock.qquests[5658].requiredLevel = 14
+        assert(ev(n, "kq5658") == nil, "niveau requis Questie pas atteint")
+        mock.qquests[5658].requiredLevel, mock.qquests[5658].preQuestGroup = 10, { 9999 }
+        assert(ev(n, "kq5658") == nil, "prerequis de groupe pas fait")
+        mock.qquests[5658].preQuestGroup = { 8888 }
+        assert(st(ev(n, "kq5658")) == "todo", "prerequis inconnu : on propose")
+        mock.qquests[5658].preQuestGroup, mock.qquests[5658].preQuestSingle = nil, { 9999, 9998 }
+        assert(ev(n, "kq5658") == nil, "aucun prerequis alternatif fait")
+        done[9998] = true
+        assert(st(ev(n, "kq5658")) == "todo", "un prerequis alternatif suffit")
+        setState(n, { level = 26 })
+        local e = ev(n, "kq6921")
+        assert(e and e.go == "Q6921")
+        assert(not n.Goto.CanPlace(n.Goto.For(e.go)), "donneur en instance : pas de bouton Repere")
+      end
+    end)
+    if C_QuestLog then C_QuestLog.IsQuestFlaggedCompleted = orig end
+    mock.qquests = nil
+    assert(ok, err)
+    if LibQuestieDB then
+      -- sans Questie : les donnees seules
+      local lib = LibQuestieDB
+      _G.LibQuestieDB = nil
+      local ok2, err2 = pcall(function()
+        local m = fresh().n
+        setState(m, { level = 12 })
+        assert(not m.Q.Available() and st(ev(m, "kq5658")) == "todo" and ev(m, "kq5658").go == nil)
+        assert(ev(m, "kq451") == nil, "prerequis `after` des donnees")
+      end)
+      _G.LibQuestieDB = lib
+      assert(ok2, err2)
+    end
+  end)
+
   check("GuideWindow : la sous-ligne garde le niveau et ajoute Ou aller", function()
     local n, G = gw()
     n.Guide.Evaluate = function() return { { id = "x", text = "T", sub = "Niv. 5-9", go = "WAND", done = false } } end

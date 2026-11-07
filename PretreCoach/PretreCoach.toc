@@ -19,6 +19,7 @@ Data\Professions.lua
 Data\Spells.lua
 Data\Talents.lua
 Data\Objectives.lua
+Data\KeyQuests.lua
 Data\Undead.lua
 Secrets.lua
 Core.lua

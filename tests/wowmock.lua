@@ -226,6 +226,7 @@ local function qDefaults()
 end
 function mock.qinit()
   mock.qnpcs, mock.qver, mock.qboom, mock.qreads, mock.ah, mock.ahBoom = qDefaults(), "1.0.11", nil, 0, { [2589] = { 120, 3 } }, nil
+  mock.qquests = nil
 end
 mock.qinit()
 local function qIds() local t = {} for i = 1, 450 do t[i] = i end return t end
@@ -240,7 +241,11 @@ LibQuestieDB = {
   RequireContract = function(v) if v <= 4 then return true end return false, "trop recent" end,
   Enum = { npcFlags = { TRAINER = 16, AUCTIONEER = 4096 }, zoneIDs = { UNDERCITY = 1497, ORGRIMMAR = 1637, THUNDER_BLUFF = 1638 } },
   Npc = { Get = qGet, GetAllIds = function() return qIds() end },
-  Quest = { Get = function(id, key) if mock.qboom then error("boom") end if id == 6561 then return key == "name" and "Quete" or (key == "startedBy" and { { 375 } }) or nil end end },
+  -- mock.qquests = { [id] = { name, startedBy, requiredLevel, preQuestSingle, preQuestGroup } } en plus de 6561
+  Quest = { Get = function(id, key) if mock.qboom then error("boom") end
+    local q = (mock.qquests or {})[id]
+    if q then return q[key] end
+    if id == 6561 then return key == "name" and "Quete" or (key == "startedBy" and { { 375 } }) or nil end end },
 }
 -- mock.ah = { [itemID] = { prix, age } } ; mock.ahBoom = l'API leve une erreur
 Auctionator = { API = { v1 = {

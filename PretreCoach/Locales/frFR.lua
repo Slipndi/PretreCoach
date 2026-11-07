@@ -56,6 +56,7 @@ ns.L = {
   GUIDE_POINTS = "%s (%d points)",
   GUIDE_NOT_LEARNED = "non apprise",
   GUIDE_UNKNOWN = "inconnu",
+  GUIDE_KEYQUEST = "Quête « %s » : %s",
   GW_LEVEL = "Niveau %d / 60",
   GW_LEVEL_UNKNOWN = "Niveau inconnu",
   GW_TIER = "palier %s",

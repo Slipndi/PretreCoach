@@ -4,7 +4,7 @@
 -- État d'un objectif : done=true/false ; unknown=true si l'API ne répond pas (ou check "manual") : la case se coche
 -- alors à la main (ns.db.guide.manual[id]). Seuls des booléens sont enregistrés.
 local _, ns = ...
-local S, State, Calc, D, L = ns.S, ns.State, ns.Calc, ns.Data, ns.L
+local S, State, Calc, D, L, Q = ns.S, ns.State, ns.Calc, ns.Data, ns.L, ns.Q
 
 local Guide = {}
 ns.Guide = Guide
@@ -130,6 +130,29 @@ local function evalOne(o)
   return e
 end
 
+-- Quête clé (Data/KeyQuests.lua) proposable : niveau requis atteint et prérequis faits. Sans Questie, seul `after` compte ;
+-- une réponse inconnue (nil) n'écarte jamais la quête.
+local function questDone(id) -- sans C_QuestLog : inconnu (pas de repli Classic, absent de Forever)
+  if C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then return State.QuestDone(id) end
+end
+
+local function keyQuestOpen(q)
+  local req = Q.Quest(q.id, "requiredLevel")
+  if type(req) == "number" and State.level < req then return false end
+  if q.after and questDone(q.after) == false then return false end
+  local single = Q.Quest(q.id, "preQuestSingle")
+  if type(single) == "table" and #single > 0 then
+    local any
+    for _, p in ipairs(single) do if questDone(p) ~= false then any = true end end
+    if not any then return false end
+  end
+  local group = Q.Quest(q.id, "preQuestGroup")
+  for _, p in ipairs(type(group) == "table" and group or {}) do
+    if questDone(p) == false then return false end
+  end
+  return true
+end
+
 -- Objectifs du palier courant, rangés par priorité (1 à 3, puis le reste dans l'ordre des données).
 function Guide.Evaluate()
   local level = State.level
@@ -140,6 +163,19 @@ function Guide.Evaluate()
       local e = evalOne(o)
       e.order = i
       out[#out + 1] = e
+    end
+  end
+  for i, q in ipairs(D.KeyQuests) do
+    if level >= q.from and level <= tierEnd(q.to) then
+      -- shortcut: QuestDone illisible (API absente) = pas fait, la quête ne disparaît alors jamais ; à revoir si Forever perd l'API.
+      local done = questDone(q.id) == true
+      if done or keyQuestOpen(q) then
+        local name = Q.Quest(q.id, "name")
+        out[#out + 1] = {
+          id = "kq" .. q.id, text = type(name) == "string" and L.GUIDE_KEYQUEST:format(name, q.why) or q.why, priority = 3,
+          go = Q.Available() and ("Q" .. q.id) or nil, done = done, unknown = false, manual = false, order = #D.Objectives + i,
+        }
+      end
     end
   end
   table.sort(out, function(a, b)
