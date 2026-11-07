@@ -6,7 +6,7 @@ local C = UI.color
 
 local P = {}
 UI.RotationPanel = P
-local frame, lastFirst
+local frame, lastFirst, lastStop
 local barActive, barAcc = false, 0
 
 local function setIcon(btn, key)
@@ -44,7 +44,7 @@ function P.Render(result)
   result = result or Rotation.current
   local keys = result and result.keys or {}
   if #keys == 0 or (ns.db and ns.db.show and ns.db.show.rotation == false) then
-    lastFirst = nil
+    lastFirst, lastStop = nil, nil
     frame:Hide()
     return
   end
@@ -52,8 +52,9 @@ function P.Render(result)
   setIcon(frame.small[1], keys[2])
   setIcon(frame.small[2], keys[3])
   frame.text:SetText(result.text or "")
-  if keys[1] ~= lastFirst or result.stop then frame.big:Pulse() end
-  lastFirst = keys[1]
+  -- pulse seulement si le conseil change vraiment (un Render forcé, ex. raccourci modifié, ne fait pas clignoter)
+  if keys[1] ~= lastFirst or (result.stop and not lastStop) then frame.big:Pulse() end
+  lastFirst, lastStop = keys[1], result.stop and true or nil
   frame:Show()
   P.UpdateBar()
 end

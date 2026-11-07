@@ -71,7 +71,7 @@ function mock.reset()
   mock.events, mock.timers, mock.errors, mock.printed = {}, {}, {}, {}
   mock.inCombat, mock.hasTarget, mock.rejectEvents, mock.noRegisterUnitEvent, mock.lastText = false, true, nil, false, nil
   mock.unknown, mock.tickers, mock.actions, mock.bindings, mock.auras = {}, {}, nil, nil, nil
-  mock.dead, mock.canAttack, mock.items = nil, nil, nil
+  mock.dead, mock.canAttack, mock.items, mock.hp, mock.cooldowns, mock.mana = nil, nil, nil, nil, nil, nil
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known, mock.talentList = 0, "Creature-0", nil, nil, nil, nil, nil
   SlashCmdList = {}
   PretreCoachDB = nil
@@ -113,9 +113,12 @@ function GetBuildInfo() return "1.15.0", "60001", "Jan 1 2026", 16001 end
 function UnitClass() return "Pretre", "PRIEST", 5 end
 function UnitRace() return "Mort-vivant", "Scourge" end
 function UnitLevel() return 12 end
-UnitHealth, UnitHealthMax = sec(100), sec(100)
-function UnitPower() return secretNow() and mock.SECRET or 50 end
-UnitPowerMax = UnitPower
+-- mock.hp = vie du joueur (100 par defaut)
+function UnitHealth(unit) if secretNow() then return mock.SECRET end return unit == "player" and mock.hp or 100 end
+UnitHealthMax = sec(100)
+-- mock.mana = mana du joueur en % (100 par defaut)
+function UnitPower() return secretNow() and mock.SECRET or mock.mana or 100 end
+function UnitPowerMax() return secretNow() and mock.SECRET or 100 end
 GetPowerRegen = sec(1)
 function UnitExists() return mock.hasTarget end
 UnitCreatureType = sec("Humanoïde")
@@ -165,10 +168,16 @@ end }
 C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { professionName = "Metier" .. id } end }
 C_ActionBar = { FindSpellActionButtons = function() return nil end }
 Settings = { RegisterCanvasLayoutCategory = function() end, RegisterAddOnCategory = function() end }
-GetSpellCooldown = sec(0)
+-- mock.cooldowns = { [spellID] = { start, duree } } ; sans entree : pas de recharge
+local function cdOf(id) local c = (mock.cooldowns or {})[id] return c and c[1] or 0, c and c[2] or 0 end
+function GetSpellCooldown(id) if secretNow() then return mock.SECRET end local s, d = cdOf(id) return s, d, 1 end
 C_Spell = {
   GetSpellName = function(id) if (mock.unknown.spell or {})[id] then return nil end return "Sort" .. id end,
-  GetSpellCooldown = function() return secretNow() and mock.SECRET or { startTime = 0, duration = 0, isEnabled = true } end,
+  GetSpellCooldown = function(id)
+    if secretNow() then return mock.SECRET end
+    local s, d = cdOf(id)
+    return { startTime = s, duration = d, isEnabled = true }
+  end,
   IsSpellUsable = sec(true),
   IsSpellInRange = sec(true),
 }

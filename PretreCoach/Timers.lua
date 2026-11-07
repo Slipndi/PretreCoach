@@ -19,14 +19,14 @@ for _, sp in ipairs(ns.Data.Spells) do
 end
 
 local fiveEnd, cdEnd = 0, {}
-local swpEnd, swpCurrent = {}, nil -- Douleur : fin par GUID ; repli « cible actuelle » si le GUID est illisible
+local swpEnd, swpCurrent, swpCurGuid = {}, nil, nil -- Douleur : fin par GUID ; repli « cible actuelle » si le GUID est illisible
 local lastOn = {}                   -- guid -> { key, t, nonShoot }
 
 local function prune(now)
   for g, e in pairs(swpEnd) do if e <= now then swpEnd[g] = nil end end
   for g, l in pairs(lastOn) do if l.t + LAST_TTL <= now then lastOn[g] = nil end end
   for k, e in pairs(cdEnd) do if e <= now then cdEnd[k] = nil end end
-  if swpCurrent and swpCurrent <= now then swpCurrent = nil end
+  if swpCurrent and swpCurrent <= now then swpCurrent, swpCurGuid = nil, nil end
 end
 
 ns.OnUnit("UNIT_SPELLCAST_SUCCEEDED", "player", function(_, _, _, spellID)
@@ -61,14 +61,16 @@ ns.OnUnit("UNIT_SPELLCAST_SUCCEEDED", "player", function(_, _, _, spellID)
     end
     if sp.key == "SWP" and sp.duration then
       local d = math.min(sp.duration, 18)
-      if guid then swpEnd[guid] = now + d else swpCurrent = now + d end
+      -- swpCurrent aussi quand le GUID est lisible : s'il devient secret en combat, la Douleur de la cible actuelle est retrouvée
+      if guid then swpEnd[guid] = now + d end
+      swpCurrent, swpCurGuid = now + d, guid
     end
   end
   if not repeatedShoot or recovered then ns.Fire("TIMERS") end
 end)
 
 ns.On("PLAYER_TARGET_CHANGED", function()
-  swpCurrent = nil
+  swpCurrent, swpCurGuid = nil, nil
   -- cible morte : plus de Douleur à suivre (au mieux, l'état « mort » peut être illisible)
   local guid = S.Get(UnitGUID, "target")
   if guid and S.Get(UnitIsDead, "target") == true then swpEnd[guid] = nil end
@@ -76,7 +78,7 @@ ns.On("PLAYER_TARGET_CHANGED", function()
 end)
 
 local function reset()
-  swpEnd, lastOn, cdEnd, swpCurrent = {}, {}, {}, nil
+  swpEnd, lastOn, cdEnd, swpCurrent, swpCurGuid = {}, {}, {}, nil, nil
   ns.Fire("TIMERS")
 end
 ns.On("PLAYER_DEAD", reset)
@@ -103,7 +105,7 @@ function T.HasSWP()
   prune(GetTime())
   local guid = S.Get(UnitGUID, "target")
   if guid then
-    if S.Get(UnitIsDead, "target") == true then swpEnd[guid] = nil return false end
+    if S.Get(UnitIsDead, "target") == true then swpEnd[guid], swpCurrent, swpCurGuid = nil, nil, nil return false end
     return swpEnd[guid] ~= nil
   end
   return swpCurrent ~= nil
@@ -113,8 +115,9 @@ end
 function T.SWPCount()
   if T.degraded then return nil end
   prune(GetTime())
-  local n = swpCurrent and 1 or 0
+  local n = 0
   for _ in pairs(swpEnd) do n = n + 1 end
+  if swpCurrent and not (swpCurGuid and swpEnd[swpCurGuid]) then n = n + 1 end -- pas deux fois la même cible
   return n
 end
 

@@ -546,6 +546,20 @@ local function suite(label)
     mock.noGuid = false
   end)
 
+  check("Timers : Douleur lancee avec un GUID lisible retrouvee si le GUID devient illisible, sans double compte", function()
+    local T = N.Timers
+    mock.time, mock.guid = 700, "G"
+    mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 589)
+    assert(T.HasSWP() and T.SWPCount() == 1)
+    mock.noGuid = true
+    assert(T.HasSWP() == true, "GUID devenu illisible : Douleur de la cible actuelle")
+    assert(T.SWPCount() == 1, "meme cible comptee une fois")
+    mock.noGuid = false
+    mock.fire("PLAYER_TARGET_CHANGED")
+    mock.time = 800
+    assert(T.SWPCount() == 0)
+  end)
+
   check("Timers : mode degrade puis cast lisible", function()
     local T = N.Timers
     mock.time = 500
@@ -1071,7 +1085,13 @@ local function suite(label)
     PSCREAM = 1, CANNIBAL = 1, DARKSAC = 1 }
   -- hasSWP vaut false par defaut ; swpNil = Douleur inconnue (Timers degrade) ; cdNil = recharges inconnues
   local function rctx(o)
-    local known, cdv = o.known or FULL, o.cd or {}
+    -- sans Forme d'Ombre apprise (avant le 40 ou sans le talent) le palier reste le 2 : on ne la donne que du 40
+    local known, cdv = o.known, o.cd or {}
+    if not known then
+      known = {}
+      for k, v in pairs(FULL) do known[k] = v end
+      if (o.level or 12) < 40 then known.SHADOWFORM = nil end
+    end
     local c = { level = 12, inCombat = false, hasHostileTarget = true, hasWand = false, hasSWP = false,
       knows = function(k) return known[k] end, cd = function(k) return cdv[k] or 0 end }
     for k, v in pairs(o) do if k ~= "known" and k ~= "cd" and k ~= "cdNil" and k ~= "swpNil" then c[k] = v end end
@@ -1127,7 +1147,7 @@ local function suite(label)
     rk(merge(o, { hasSWP = true, manaPct = 50 }), "SHOOT", "mana moyen")
     rk(merge(o, { manaPct = 10 }), "SHOOT", "mana tres bas : plus de sort")
     rk(merge(o, { targetHpPct = 10 }), "SHOOT", "cible presque morte : on acheve")
-    rk(merge(o, { cdNil = true, swpNil = true }), "SHOOT", "Timers degrade : pas d'Attaque mentale supposee prete")
+    rk(merge(o, { cdNil = true, swpNil = true }), "SHOOT,SWP", "Timers degrade : Douleur en 2e, pas d'Attaque mentale supposee prete")
     rk(merge(o, { cdNil = true, hasSWP = true, manaPct = 90 }), "SHOOT", "recharge inconnue, mana haut")
     rk(merge(o, { hasWand = false, hasSWP = true, manaPct = 80 }), "MINDBLAST,SMITE,MELEE", "sans baguette")
     rk(merge(o, { known = {} }), "SHOOT", "rien d'appris : baguette")
@@ -1176,19 +1196,114 @@ local function suite(label)
 
   check("Rotation : paliers 40-60, Forme d'Ombre", function()
     local o = { level = 40, hasWand = true }
-    rk(merge(o, { shadowformActive = false }), "SHADOWFORM,MINDBLAST,SWP", "Forme d'Ombre absente au 40")
-    rk(merge(o, { shadowformActive = true }), "MINDBLAST,SWP,SWD", "Forme d'Ombre active")
-    rk(o, "MINDBLAST,SWP,SWD", "Forme d'Ombre illisible : pas de rappel")
-    rk(merge(o, { shadowformActive = false, inCombat = true }), "MINDBLAST,SWP,SWD", "pas de rappel en combat")
-    rk(merge(o, { shadowformActive = false, known = { SWP = 1 } }), "SWP,SHOOT", "Forme d'Ombre non apprise")
-    rk(merge(o, { level = 39, shadowformActive = false }), "MINDBLAST,SWP,SHOOT", "pas avant 40")
-    rk(merge(o, { level = 45, weakenedSoul = false, shadowformActive = true }), "PWS,MINDBLAST,SWP", "Bouclier d'abord")
+    rk(merge(o, { shadowformActive = false }), "SHADOWFORM,SWP,SHOOT", "Forme d'Ombre absente au 40, mana illisible")
+    rk(merge(o, { shadowformActive = false, manaPct = 80 }), "SHADOWFORM,MINDBLAST,SWP", "idem, mana lisible")
+    rk(merge(o, { shadowformActive = true, manaPct = 80 }), "MINDBLAST,SWP,SWD", "Forme d'Ombre active")
+    rk(merge(o, { shadowformActive = true }), "SWP,SHOOT", "mana illisible : ni Attaque mentale ni Mort")
+    rk(merge(o, { manaPct = 80 }), "MINDBLAST,SWP,SWD", "Forme d'Ombre illisible : pas de rappel")
+    rk(merge(o, { shadowformActive = false, inCombat = true, manaPct = 80 }), "MINDBLAST,SWP,SWD", "pas de rappel en combat")
+    rk(merge(o, { shadowformActive = false, known = { SWP = 1 } }), "SWP,SHOOT", "Forme d'Ombre non apprise : palier 2")
+    rk(merge(o, { shadowformActive = false, known = { SWP = 1, MINDBLAST = 1 }, manaPct = 80 }), "MINDBLAST,SWP,SHOOT",
+      "Forme d'Ombre non apprise : ouverture du palier 2")
+    rk(merge(o, { shadowformActive = true, known = { SWP = 1, SWD = 1 }, manaPct = 80 }), "SWP,SWD,SHOOT",
+      "Forme d'Ombre active sans etre apprise (lecture de l'aura) : palier 3")
+    rk(merge(o, { level = 39, shadowformActive = false, manaPct = 80 }), "MINDBLAST,SWP,SHOOT", "pas avant 40")
+    rk(merge(o, { level = 45, weakenedSoul = false, shadowformActive = true, manaPct = 80 }), "PWS,MINDBLAST,SWP", "Bouclier d'abord")
     local c = merge(o, { level = 45, inCombat = true, hasSWP = true })
-    rk(c, "SWD,MINDBLAST,SHOOT", "Mort et Attaque mentale prets")
+    rk(c, "SHOOT", "mana illisible, Douleur posee : baguette")
+    rk(merge(c, { manaPct = 80 }), "SWD,MINDBLAST,MINDFLAY", "Mort, Attaque mentale puis Fouet mental")
+    rk(merge(c, { manaPct = 29 }), "SHOOT", "mana sous 30 % : ni Mort ni Attaque mentale")
     rk(merge(c, { manaPct = 80, cd = { MINDBLAST = 5, SWD = 5 } }), "MINDFLAY,SHOOT,MINDBLAST", "Fouet mental pour combler")
     rk(merge(c, { cd = { MINDBLAST = 5, SWD = 5 } }), "SHOOT,MINDBLAST,SWD", "mana secret : pas de Fouet mental")
     rk(merge(c, { cdNil = true, manaPct = 80 }), "MINDFLAY,SHOOT", "recharges inconnues")
     rk(merge(c, { cdNil = true, hasWand = false, known = { SWP = 1 } }), "MELEE", "sans baguette, tout inconnu")
+    -- mana illisible : Douleur si absente, puis baguette, sinon Fouet mental
+    rk(merge(c, { hasSWP = false }), "SWP,SHOOT", "Douleur absente, baguette")
+    rk(merge(c, { hasWand = false }), "MINDFLAY,SMITE,MELEE", "sans baguette : Fouet mental")
+    rk(merge(c, { hasWand = false, hasSWP = false }), "SWP,MINDFLAY,SMITE", "sans baguette, Douleur absente")
+  end)
+
+  check("Rotation : Douleur inconnue en combat, jamais en premier", function()
+    local o = { level = 20, hasWand = true, inCombat = true, swpNil = true }
+    local res = rk(o, "SHOOT,SWP", "avec baguette")
+    assert(res.text == N.L.ROT_SWP_UNKNOWN, "texte dedie")
+    rk(merge(o, { level = 8 }), "SHOOT,SWP", "palier 1")
+    rk(merge(o, { hasWand = false }), "SMITE,SWP,MELEE", "sans baguette : 2e apres le sort principal")
+    rk(merge(o, { hasWand = false, known = { SWP = 1 } }), "MELEE,SWP", "sans baguette ni autre sort")
+    res = rk(merge(o, { hasWand = false }), "SMITE,SWP,MELEE")
+    assert(res.text == N.L.ROT_SMITE, "le texte reste celui du sort principal")
+    rk(merge(o, { inCombat = false }), "SHOOT", "hors combat : rien")
+    rk(merge(o, { known = {} }), "SHOOT", "Douleur non apprise")
+    rk(merge(o, { manaPct = 10 }), "SHOOT", "mana trop bas")
+    rk(merge(o, { level = 45, manaPct = 80, shadowformActive = true }), "SHOOT,SWP,SWD", "palier 3 : baguette, Douleur, Mort")
+  end)
+
+  check("Rotation : Flammes sacrees une seule fois par cible", function()
+    local o = { level = 20, hasWand = true, inCombat = true, cd = { MINDBLAST = 5 } }
+    rk(o, "HOLYFIRE,SWP,SHOOT")
+    rk(merge(o, { holyDone = false }), "HOLYFIRE,SWP,SHOOT")
+    rk(merge(o, { holyDone = true }), "SWP,SHOOT,MINDBLAST", "deja lancees : Douleur")
+  end)
+
+  check("Rotation : groupe de monstres, Douleur sur les autres cibles", function()
+    local o = { level = 20, hasWand = true, inCombat = true, hasSWP = false }
+    rk(merge(o, { swpCount = 0 }), "MINDBLAST,SWP,SHOOT", "aucune autre Douleur : ouverture normale")
+    for _, n in ipairs({ 1, 2, 3 }) do
+      local res = rk(merge(o, { swpCount = n }), "SWP,SHOOT", n .. " Douleurs")
+      assert(res.text == N.L.ROT_SWP_GROUP)
+    end
+    rk(merge(o, { swpCount = 4 }), "SHOOT", "au-dela de 4 cibles : baguette")
+    rk(merge(o, { swpCount = 2, inCombat = false }), "MINDBLAST,SWP,SHOOT", "hors combat : pas de groupe")
+    rk(merge(o, { swpCount = 2, hasSWP = true }), "SHOOT", "Douleur deja sur cette cible")
+    rk(merge(o, { swpCount = 2, level = 8 }), "SWP,SHOOT", "palier 1")
+    rk(merge(o, { swpCount = 2, known = {} }), "SHOOT", "Douleur non apprise")
+    local nc = merge(o, {}) nc.swpCount = nil
+    rk(nc, "MINDBLAST,SWP,SHOOT", "compte inconnu : ouverture normale")
+  end)
+
+  check("Rotation : Forme d'Ombre active, aucun sort du Sacre ; le Bouclier reste permis", function()
+    for _, k in ipairs({ "SMITE", "HOLYFIRE", "LESSERHEAL", "HEAL", "GREATERHEAL", "FLASHHEAL", "RENEW", "POH", "HOLYNOVA",
+      "RESURRECTION" }) do
+      local found
+      for _, sp in ipairs(N.Data.Spells) do if sp.key == k then found = sp.school end end
+      assert(found == "holy", k .. " : school = holy")
+    end
+    local o = { level = 45, known = { SMITE = 1, SHADOWFORM = 1 }, hasWand = false, hasSWP = true, inCombat = true,
+      manaPct = 80, targetHpPct = 80 }
+    rk(merge(o, { shadowformActive = false }), "SMITE,MELEE", "sans Forme d'Ombre : Chatiment")
+    rk(merge(o, { shadowformActive = true }), "MELEE", "Forme d'Ombre active : pas de Chatiment")
+    rk(merge(o, { shadowformActive = true, known = { PWS = 1, SHADOWFORM = 1 }, inCombat = false, weakenedSoul = false }),
+      "PWS,MELEE", "Bouclier permis")
+  end)
+
+  check("Rotation : Tir seulement avec une baguette lue et le niveau 5", function()
+    local o = { known = {}, hasWand = true, inCombat = true }
+    rk(merge(o, { level = 4 }), "MELEE", "niveau 4")
+    rk(merge(o, { level = 5 }), "SHOOT", "niveau 5")
+    rk(merge(o, { level = 5, hasWand = false }), "MELEE", "sans baguette")
+    local nw = merge(o, { level = 5 }) nw.hasWand = nil
+    rk(nw, "MELEE", "baguette inconnue")
+  end)
+
+  check("Rotation : hysteresis de l'Attaque mentale (60/50) et du Fouet mental (30/25), memoire passee par ctx", function()
+    local o = { level = 20, hasWand = true, inCombat = true, hasSWP = true }
+    rk(merge(o, { manaPct = 55, mbHigh = true }), "MINDBLAST,SHOOT", "55 % apres etre monte : toujours conseillee")
+    rk(merge(o, { manaPct = 55, mbHigh = false }), "SHOOT", "55 % apres etre descendu : non")
+    rk(merge(o, { manaPct = 55 }), "SHOOT", "sans memoire, le seuil haut decide")
+    rk(merge(o, { manaPct = 60 }), "MINDBLAST,SHOOT", "60 % sans memoire")
+    rk(merge(o, { manaPct = 80, mbHigh = false }), "SHOOT", "la memoire prime (Context la tient a jour)")
+    rk(merge(o, { mbHigh = true }), "SHOOT", "mana illisible : jamais")
+    local c = merge(o, { level = 45, shadowformActive = true, manaPct = 28 })
+    rk(merge(c, { flayHigh = true }), "MINDFLAY,SHOOT", "28 % apres etre monte : Fouet mental")
+    rk(merge(c, { flayHigh = false }), "SHOOT", "28 % apres etre descendu : non")
+    rk(merge(c, { flayHigh = true, manaPct = 24 }), "MINDFLAY,SHOOT", "la memoire prime ici aussi")
+  end)
+
+  check("Rotation : Cri psychique absent du texte si aucun conseil", function()
+    local res = N.Rotation.Compute(rctx({ level = 20, hasHostileTarget = false, hpPct = 100, manaPct = 100, targetMelee = true }))
+    assert(#res.keys == 0 and not res.text:find(N.L.ROT_PSCREAM, 1, true))
+    res = N.Rotation.Compute(rctx({ level = 20, inCombat = true, hasWand = true, hasSWP = true, targetMelee = true }))
+    assert(res.keys[2] == "PSCREAM" and res.text:find(N.L.ROT_PSCREAM, 1, true))
   end)
 
   check("Rotation : recuperation hors combat sans cible", function()
@@ -1226,12 +1341,16 @@ local function suite(label)
     mock.auras = { [6788] = true }
     local c = n.Rotation.Context()
     assert(c.level == 12 and c.inCombat == false and c.hasHostileTarget == true and c.hasWand == true)
-    assert(c.knows == n.State.Knows and c.cd == n.Timers.CooldownRemaining)
+    assert(c.knows == n.State.Knows and type(c.cd) == "function")
     assert(c.manaPct == 100 and c.hpPct == 100 and c.targetHpPct == 100 and c.targetMelee == false)
     assert(c.weakenedSoul == true and c.shieldUp == false and c.shadowformActive == false and c.smitesOnTarget == 0)
     mock.hasTarget = false
     c = n.Rotation.Context()
+    assert(c.hasHostileTarget == false and c.bandageCount == nil and c.recentlyBandaged == nil, "vie pleine : ni bandages ni aura lus")
+    mock.hp = 40
+    c = n.Rotation.Context()
     assert(c.hasHostileTarget == false and c.bandageCount == (GetItemCount and 3 or 0), "bandages : rang et anti-venin exclus")
+    mock.hp = nil
     mock.hasTarget, mock.dead = true, true
     c = n.Rotation.Context()
     assert(c.hasHostileTarget == false and c.targetDead == true and c.targetCreatureType == N.L.CT_HUMANOID)
@@ -1428,28 +1547,235 @@ local function suite(label)
       mock.bindings = { ACTIONBUTTON3 = "F5" }
       assert(n.Rotation.Hotkey("SWP") == want, "cache")
       mock.fire("UPDATE_BINDINGS")
+      mock.flushTimers() -- les evenements sont regroupes sur 0,2 s
       assert(n.Rotation.Hotkey("SWP") == "F5", "cache invalide sur UPDATE_BINDINGS")
       -- sans C_ActionBar : scan de GetActionInfo, hors combat seulement
       C_ActionBar = nil
       mock.actions = { [26] = 594 }
       mock.bindings = { MULTIACTIONBAR3BUTTON2 = "F2", ACTIONBUTTON1 = "1" }
       mock.fire("ACTIONBAR_SLOT_CHANGED")
+      mock.flushTimers()
       mock.setCombat(true)
       assert(n.Rotation.Hotkey("SWP") == nil and scans == 0, "pas de scan en combat")
       mock.setCombat(false)
       assert(n.Rotation.Hotkey("SWP") == "F2", "scan hors combat, barre de droite")
-      assert(scans == 120, "120 emplacements scannes une fois : " .. scans)
+      assert(scans == 180, "180 emplacements scannes une fois : " .. scans)
       n.Rotation.Hotkey("SWP") n.Rotation.Hotkey("SMITE")
-      assert(scans == 120, "scan reutilise")
+      assert(scans == 180, "scan reutilise")
       mock.actions = { [1] = 585 }
       mock.fire("ACTIONBAR_SLOT_CHANGED")
-      assert(n.Rotation.Hotkey("SMITE") == "1" and scans == 240, "cache invalide sur ACTIONBAR_SLOT_CHANGED")
+      mock.flushTimers()
+      assert(n.Rotation.Hotkey("SMITE") == "1" and scans == 360, "cache invalide sur ACTIONBAR_SLOT_CHANGED")
       assert(n.Rotation.Hotkey("SWP") == nil, "sort retire des barres")
+      -- plusieurs emplacements : le premier qui a un raccourci ; barres 5 et 6
+      mock.actions = { [2] = 594, [30] = 594, [145] = 585, [157] = 589 }
+      mock.bindings = { MULTIACTIONBAR3BUTTON6 = "F6", MULTIACTIONBAR5BUTTON1 = "N1", MULTIACTIONBAR6BUTTON1 = "N2" }
+      mock.fire("UPDATE_BINDINGS")
+      mock.flushTimers()
+      assert(n.Rotation.Hotkey("SWP") == "F6", "emplacement 2 sans raccourci, 30 avec")
+      assert(n.Rotation.Hotkey("SMITE") == "N1", "barre 5 (145)")
+      C_ActionBar = { FindSpellActionButtons = function(id) if id == 10894 then return { 2, 30 } end end }
+      mock.fire("UPDATE_BINDINGS")
+      mock.flushTimers()
+      assert(n.Rotation.Hotkey("SWP") == "F6", "Find : premier emplacement avec raccourci")
+      mock.actions = { [157] = 10894 }
+      C_ActionBar = nil
+      mock.fire("UPDATE_BINDINGS")
+      mock.flushTimers()
+      assert(n.Rotation.Hotkey("SWP") == "N2", "barre 6 (157)")
     end, function()
       C_ActionBar, GetActionInfo = keepAB, keepGAI
       mock.bindings, mock.actions = nil, nil
       mock.setCombat(false)
     end)
+  end)
+
+  -- Compteur d'appels aux auras du joueur et aux bandages (lectures a eviter en combat)
+  local function counting(fn)
+    local auraCalls, itemCalls = 0, 0
+    local keepA, keepI = C_UnitAuras.GetPlayerAuraBySpellID, GetItemCount
+    C_UnitAuras.GetPlayerAuraBySpellID = function(...) auraCalls = auraCalls + 1 return keepA(...) end
+    if keepI then GetItemCount = function(...) itemCalls = itemCalls + 1 return keepI(...) end end
+    local ok, err = pcall(fn, function() return auraCalls, itemCalls end, function() auraCalls, itemCalls = 0, 0 end)
+    C_UnitAuras.GetPlayerAuraBySpellID, GetItemCount = keepA, keepI
+    mock.setCombat(false)
+    mock.hp, mock.mana, mock.hasTarget = nil, nil, true
+    if not ok then error(err, 0) end
+  end
+
+  check("Rotation : Context ne lit que le necessaire (auras, bandages) selon le combat", function()
+    isolated(function()
+      local n = loadAddon()
+      n.State.level, n.State.profs = 20, { [129] = { rank = 30, max = 75 } }
+      counting(function(calls, zero)
+        mock.setCombat(true)
+        n.Rotation.Context()
+        local a, i = calls()
+        assert(a == 1 and i == 0, "en combat : seule la Forme d'Ombre (" .. a .. " auras, " .. i .. " objets)")
+        zero() mock.setCombat(false)
+        n.Rotation.Context()
+        a = calls()
+        assert(a > 1, "hors combat avec cible hostile : Bouclier et Ame affaiblie lus")
+        zero() mock.hasTarget = false
+        local c = n.Rotation.Context()
+        a, i = calls()
+        assert(a == 1 and i == 0 and c.bandageCount == nil, "sans cible, vie pleine : ni bandages ni aura de bandage")
+        zero() mock.hp = 40
+        c = n.Rotation.Context()
+        a, i = calls()
+        assert(a == 2 and c.bandageCount ~= nil and (GetItemCount == nil or i > 0), "vie basse : bandages lus")
+        zero() mock.setCombat(true)
+        n.Rotation.Context()
+        a, i = calls()
+        assert(a == 1 and i == 0, "vie basse mais en combat : pas de bandages")
+      end)
+    end, function() mock.hp = nil end)
+  end)
+
+  check("Rotation : recharge reelle hors combat quand Timers est degrade, inconnue en combat", function()
+    isolated(function()
+      local n = loadAddon()
+      mock.time = 100
+      knows({ [8092] = true })
+      local id = n.Rotation.SpellID("MINDBLAST")
+      local keepC = C_Spell.GetSpellCooldown
+      local ok, err = pcall(function()
+        mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", mock.noSecrets and "illisible" or mock.SECRET) -- Timers degrade
+        local c = n.Rotation.Context()
+        assert(n.Timers.CooldownRemaining("MINDBLAST") == nil, "Timers degrade")
+        if not id then assert(c.cd("MINDBLAST") == nil, "sort inconnu : recharge inconnue") return end
+        assert(c.cd("MINDBLAST") == 0, "pas de recharge : prete")
+        mock.cooldowns = { [id] = { 95, 8 } }
+        assert(c.cd("MINDBLAST") == 3, "recharge en cours : " .. tostring(c.cd("MINDBLAST")))
+        mock.cooldowns = { [id] = { 100, 1.5 } }
+        assert(c.cd("MINDBLAST") == 0, "recharge globale seule : prete")
+        mock.cooldowns = { [id] = { 0, 0 } }
+        assert(c.cd("MINDBLAST") == 0 and c.cd("SWD") == nil, "sort non appris : inconnue")
+        C_Spell.GetSpellCooldown = nil -- ancienne API : GetSpellCooldown(id)
+        mock.cooldowns = { [id] = { 95, 8 } }
+        assert(c.cd("MINDBLAST") == 3, "ancienne API")
+        C_Spell.GetSpellCooldown = keepC
+        mock.setCombat(true)
+        assert(c.cd("MINDBLAST") == nil, "en combat : jamais suppose pret")
+        mock.setCombat(false)
+        mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 585) -- Timers redevient lisible : sa valeur prime
+        assert(c.cd("MINDBLAST") == 0, "Timers lisible : sa valeur")
+      end)
+      C_Spell.GetSpellCooldown = keepC
+      mock.cooldowns = nil
+      knows(nil)
+      if not ok then error(err, 0) end
+    end, function() mock.setCombat(false) end)
+  end)
+
+  check("Rotation : le Context tient l'hysteresis de mana", function()
+    isolated(function()
+      local n = loadAddon()
+      local function st(mana) mock.mana = mana local c = n.Rotation.Context() return c.mbHigh, c.flayHigh end
+      local mb, fl = st(70) assert(mb == true and fl == true)
+      mb, fl = st(55) assert(mb == true and fl == true, "55 % : reste haut")
+      mb, fl = st(49) assert(mb == false and fl == true, "sous 50 % : Attaque mentale arretee")
+      mb = st(55) assert(mb == false, "55 % apres etre descendu")
+      mb = st(60) assert(mb == true)
+      mb, fl = st(24) assert(mb == false and fl == false, "sous 25 % : Fouet mental arrete")
+      _, fl = st(27) assert(fl == false, "27 % : toujours arrete")
+      _, fl = st(30) assert(fl == true)
+      if not mock.noSecrets then
+        mock.setCombat(true)
+        mb, fl = st(10)
+        assert(mb == false and fl == true, "mana secret : etat conserve")
+      end
+    end, function() mock.mana = nil mock.setCombat(false) end)
+  end)
+
+  check("Rotation : Flammes sacrees notees par GUID, remises a zero hors combat ; sans GUID, au changement de cible", function()
+    isolated(function()
+      local n = loadAddon()
+      mock.guid = "A"
+      assert(n.Rotation.Context().holyDone == false)
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 14914)
+      assert(n.Rotation.Context().holyDone == true, "cible A")
+      mock.guid = "B"
+      assert(n.Rotation.Context().holyDone == false, "cible B")
+      mock.guid = "A"
+      assert(n.Rotation.Context().holyDone == true, "retour sur A")
+      mock.fire("PLAYER_REGEN_ENABLED")
+      assert(n.Rotation.Context().holyDone == false, "oublie apres le combat")
+      mock.noGuid = true
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 14914)
+      assert(n.Rotation.Context().holyDone == true, "GUID illisible : drapeau de la cible actuelle")
+      mock.fire("PLAYER_TARGET_CHANGED")
+      assert(n.Rotation.Context().holyDone == false, "remis a zero au changement de cible")
+    end, function() mock.noGuid, mock.guid = nil, "Creature-0" end)
+  end)
+
+  check("Rotation : un changement de cible = une seule mise a jour, dans les deux ordres d'ecouteurs", function()
+    isolated(function()
+      local n = loadAddon()
+      local Ro = n.Rotation
+      local updates, orig = 0, Ro.Update
+      Ro.Update = function(...) updates = updates + 1 return orig(...) end
+      mock.time = 10
+      mock.fire("PLAYER_TARGET_CHANGED") -- Timers (TIMERS) puis Rotation
+      assert(updates == 1, "une mise a jour (" .. updates .. ")")
+      mock.time = 11
+      n.Fire("TIMERS")
+      assert(updates == 2, "TIMERS seul : une mise a jour (" .. updates .. ")")
+      mock.time = 12
+      mock.fire("UNIT_SPELLCAST_SUCCEEDED", "player", "c", 585)
+      assert(updates >= 3, "un lancer de sort (TIMERS) : mise a jour (" .. updates .. ")")
+      Ro.Update = orig
+    end)
+  end)
+
+  check("Raccourcis : evenements regroupes sur 0,2 s, jamais de vidage en combat", function()
+    local keepAB = C_ActionBar
+    isolated(function()
+      local n = loadAddon()
+      local rot = 0
+      n.Listen("ROTATION", function() rot = rot + 1 end)
+      C_ActionBar = { FindSpellActionButtons = function(id) if id == 10894 then return { 3 } end end }
+      mock.bindings = { ACTIONBUTTON3 = "F1" }
+      assert(n.Rotation.Hotkey("SWP") == "F1")
+      mock.bindings = { ACTIONBUTTON3 = "F2" }
+      if C_Timer then
+        mock.timers = {}
+        for _ = 1, 3 do mock.fire("ACTIONBAR_SLOT_CHANGED") end
+        mock.fire("UPDATE_BINDINGS")
+        assert(#mock.timers == 1, "un seul regroupement en attente (" .. #mock.timers .. ")")
+        assert(n.Rotation.Hotkey("SWP") == "F1", "rien avant l'echeance")
+        mock.flushTimers()
+        assert(n.Rotation.Hotkey("SWP") == "F2", "un rescan a l'echeance")
+      else
+        mock.fire("UPDATE_BINDINGS")
+        assert(n.Rotation.Hotkey("SWP") == "F2", "sans minuteur : immediat")
+      end
+      -- en combat : le cache n'est pas vide, le rescan attend la sortie de combat
+      mock.bindings = { ACTIONBUTTON3 = "F3" }
+      mock.setCombat(true)
+      mock.fire("UPDATE_BINDINGS")
+      mock.flushTimers()
+      assert(n.Rotation.Hotkey("SWP") == "F2", "cache conserve en combat")
+      mock.setCombat(false)
+      mock.fire("PLAYER_REGEN_ENABLED")
+      assert(n.Rotation.Hotkey("SWP") == "F3", "rescan a la sortie de combat")
+    end, function() C_ActionBar = keepAB mock.bindings = nil mock.setCombat(false) end)
+  end)
+
+  check("RotationPanel : un Render force ne fait pas clignoter, un vrai changement oui", function()
+    local keep = PretreCoachDB
+    isolated(function()
+      local n, P = panel()
+      local res = { keys = { "SHOOT" }, text = "Arrete", stop = true }
+      n.Fire("ROTATION", res)
+      assert(P.log.pulse == 1)
+      P.Render(res) P.Render(res)
+      assert(P.log.pulse == 1, "Render force avec le meme conseil : pas de pulse")
+      n.Fire("ROTATION", { keys = { "SHOOT" }, text = "Tir" })
+      assert(P.log.pulse == 1, "stop termine : pas de pulse")
+      n.Fire("ROTATION", res)
+      assert(P.log.pulse == 2, "stop de nouveau : pulse")
+    end, function() PretreCoachDB = keep end)
   end)
 
   ------------------------------------------------------------------------
