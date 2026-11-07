@@ -1257,31 +1257,28 @@ local function suite(label)
     for i = 1, #TABS do G.win.tabs[i].scripts.OnClick(G.win.tabs[i]) end
   end)
 
-  check("GuideWindow : clic sur un objectif inconnu appelle SetManual", function()
+  check("GuideWindow : aucun objectif manuel ni case a cocher (carte et Maintenant)", function()
     local n, G = gw()
     n.ToggleGuide()
-    local calls = {}
-    local real = n.Guide.SetManual
-    n.Guide.SetManual = function(id, v) calls[#calls + 1] = { id, v } return real(id, v) end
-    local ev0 = n.Guide.Evaluate -- ne garde que l'objectif manuel : c'est alors l'objectif XP
+    local ev0 = n.Guide.Evaluate -- ne garde que des objectifs manuels : repli de zone, rien de manuel affiche
     n.Guide.Evaluate = function()
       local o = {}
-      for _, e in ipairs(ev0()) do if e.id == "legacy_toa" then o[#o + 1] = e end end
+      for _, e in ipairs(ev0()) do if e.manual then o[#o + 1] = e end end
+      assert(#o > 0, "des objectifs manuels existent")
       return o
     end
     n.Fire("GUIDE")
-    local row
-    for i = 1, G.used do if G.rows[i].entry.id == "legacy_toa" then row = G.rows[i] end end
-    assert(row and row.entry.unknown, "ligne inconnue")
-    row.box.scripts.OnClick(row.box)
-    assert(#calls == 1 and calls[1][1] == "legacy_toa" and calls[1][2] == true, "SetManual(id, true)")
-    assert(n.db.guide.manual.legacy_toa == true, "coche memorisee")
-    local still
-    for i = 1, G.used do if G.rows[i].entry.id == "legacy_toa" then still = true end end
-    assert(not still, "objectif coche : retire de la liste")
-    n.Guide.SetManual("legacy_toa", false)
-    assert(calls[2][2] == false and not n.db.guide.manual.legacy_toa, "decoche")
-    row.box.scripts.OnEnter(row.box); row.box.scripts.OnLeave(row.box)
+    local goal = n.Guide.Goals()[1]
+    assert(goal.e == nil and not goal.text:find("Legacy", 1, true), "XP : repli, pas d'objectif manuel : " .. goal.text)
+    for i = 1, G.used do assert(not G.rows[i].entry or not G.rows[i].entry.manual, "Maintenant : rien de manuel") end
+    n.SetCompact(true)
+    for _, r in ipairs(G.card.rows) do assert(r.box == nil, "carte : plus de case manuelle") end
+    assert(not G.card.rows[1].text.text:find("Legacy", 1, true))
+    -- un objectif automatique illisible est passe lui aussi : le suivant prend sa place
+    n.Guide.Evaluate = ev0
+    setState(n, { level = 12, wand = nil })
+    local first = n.Guide.Goals()[1]
+    assert(not (first.e and (first.e.unknown or first.e.manual)), "XP : ni illisible ni manuel")
   end)
 
   check("GuideWindow : GUIDE fenetre fermee, aucun rafraichissement, puis a l'ouverture", function()
@@ -3930,6 +3927,149 @@ local function suite(label)
     r = n2.Guide.Reference("spells")
     assert(#r == 1 and r[1].text == "Rien à apprendre", r[1].text)
     knows(nil)
+  end)
+
+  ------------------------------------------------------------------------
+  -- Objectif XP precis : texte et detail calcules en direct (Guide.Goals()[1])
+  ------------------------------------------------------------------------
+  -- Goals() avec l'entree `id` comme objectif XP (l'ordre des donnees ne compte pas ici).
+  local function xpFor(n, id)
+    local e = ev(n, id)
+    assert(e, "entree absente : " .. id)
+    local text, detail = n.Guide.Detail(e)
+    return { text = text, detail = detail }
+  end
+
+  check("Guide XP : sorts a apprendre, avec et sans cout", function()
+    local n = fresh().n
+    if not hasKnows then return end
+    knows(knownUpTo(n, 5))
+    setState(n, { level = 10 })
+    n.db.trainer = {}
+    local g = xpFor(n, "spells")
+    local pend = n.Calc.PendingSpells(10, n.State.Knows)
+    assert(g.text:find("^Apprends " .. #pend .. " sorts chez ton maître %(") and not g.text:find(" : ", 1, true), g.text)
+    local total = 0
+    for i, p in ipairs(pend) do
+      for _, sp in ipairs(n.Data.Spells) do
+        if sp.key == p.key then
+          total = total + 100 * i
+          n.db.trainer["Sort" .. sp.ranks[p.rankIndex].id .. "|" .. (p.rankIndex > 1 and "Rang " .. p.rankIndex or "")] = { cost = 100 * i, category = "available" }
+        end
+      end
+    end
+    g = xpFor(n, "spells")
+    assert(g.text:find(" : " .. n.Training.Coin(total) .. "$", 1), g.text)
+    knows(nil)
+  end)
+
+  check("Guide XP : talent = Talents.Describe, bandages lisibles ou non, sort a apprendre", function()
+    local n = fresh().n
+    setState(n, { level = 10 })
+    local g = xpFor(n, "wandspec")
+    local want
+    for _, it in ipairs(n.Talents.Todo(10)) do if it.entry.key == "WANDSPEC" then want = n.Talents.Describe(it) end end
+    assert(want and g.text == want, g.text)
+    -- bandages : compte lu, puis API illisible
+    setState(n, { level = 12 })
+    mock.items = { [1251] = 3, [2581] = 1 }
+    g = xpFor(n, "bandages")
+    assert(not GetItemCount or g.text == "Bandages : 4/10 sur toi : fabrique-en 6 (Secourisme)", g.text)
+    local fn, ci = GetItemCount, C_Item
+    GetItemCount, C_Item = nil, nil
+    g = xpFor(n, "bandages")
+    GetItemCount, C_Item = fn, ci
+    mock.items = nil
+    assert(g.text == "Bandages : aie-en 10 sur toi (Secourisme)" and not g.text:find("0/10", 1, true), g.text)
+    -- sort connu chez le maitre : niveau, puis cout
+    setState(n, { level = 20 })
+    n.db.trainer = {}
+    g = xpFor(n, "fearward")
+    assert(g.text:find("^Apprends .+ chez ton maître %(niveau %d+%)$"), g.text)
+    local name
+    for _, sp in ipairs(n.Data.Spells) do if sp.key == "FEARWARD" then name = sp.name end end
+    n.db.trainer[name .. "|"] = { cost = 12000, category = "available" }
+    g = xpFor(n, "fearward")
+    assert(g.text:find(" : " .. n.Training.Coin(12000) .. "$"), g.text)
+  end)
+
+  check("Guide XP : baguette (nom, source, prix HdV) et baguette superieure", function()
+    local n = fresh().n
+    setState(n, { level = 8, wand = false })
+    mock.ah = { [11287] = { 5000, 1 } }
+    local g = xpFor(n, "wand_equip")
+    assert(n.Guide.Goals()[1].text == g.text and n.Guide.Goals()[1].detail == g.detail, "Goals() porte le meme texte et detail")
+    assert(g.text == "Équipe Baguette magique inférieure (niveau 5)", g.text)
+    assert(g.detail:find("Hôtel des ventes", 1, true), g.detail)
+    assert(not Auctionator or g.detail:find("environ " .. n.Training.Coin(5000) .. " à l'hôtel des ventes", 1, true), g.detail)
+    mock.ah = {}
+    assert(not xpFor(n, "wand_equip").detail:find("environ", 1, true), "prix inconnu : omis")
+    local ah = Auctionator
+    Auctionator = nil
+    g = xpFor(n, "wand_equip")
+    Auctionator = ah
+    assert(g.detail:find("Hôtel des ventes", 1, true) and not g.detail:find("environ", 1, true), "sans Auctionator : la source seule")
+    setState(n, { level = 14, wand = { itemID = 11287, reqLevel = 5 } })
+    g = xpFor(n, "wand_sup")
+    assert(g.text == "Équipe Baguette magique supérieure (niveau 13)", g.text)
+    mock.qinit()
+  end)
+
+  check("Guide XP : quete avec et sans Questie, pourquoi des objectifs manuels", function()
+    local n = fresh().n
+    setState(n, { level = 28 })
+    local lib = LibQuestieDB
+    if lib then
+      mock.qquests = { [6561] = { name = "Quete", startedBy = { { 375 } }, requiredLevel = 21 } }
+      mock.qnpcs[375][6] = "Maitre Test"
+      local g = xpFor(n, "bfd_quest")
+      assert(g.text:find("Blackfathom", 1, true), g.text)
+      assert(g.detail == "niveau 21 requis · donneur : Maitre Test", g.detail)
+    end
+    -- Q.Available() garde sa reponse : un ns neuf sans la bibliotheque
+    _G.LibQuestieDB = nil
+    local n2 = fresh().n
+    setState(n2, { level = 28 })
+    local g = xpFor(n2, "bfd_quest")
+    _G.LibQuestieDB = lib
+    mock.qinit()
+    assert(g.text:find("Blackfathom", 1, true) and g.detail == nil, "sans Questie : texte seul, rien d'invente")
+    setState(n, { level = 45 })
+    assert(xpFor(n, "dualspec").detail:find("Ombre", 1, true), "specGroups : pourquoi")
+  end)
+
+  check("Guide XP : repli de zone avec duree du prochain niveau", function()
+    local n = fresh().n
+    local zid
+    for id, z in pairs(n.Data.Zones) do if z[2] < 30 then zid = id end end
+    setState(n, { level = 30, zone = zid })
+    n.Guide.Evaluate = function() return {} end
+    n.Pace.NextLevel = function() return 270 end
+    local g = n.Guide.Goals()[1]
+    assert(g.e == nil and g.text:find("^Monte dans ") and g.detail:find("prochain niveau dans ~5 min", 1, true), g.text .. " / " .. tostring(g.detail))
+    n.Pace.NextLevel = function() return nil end
+    assert(n.Guide.Goals()[1].detail == nil or not n.Guide.Goals()[1].detail:find("prochain", 1, true), "duree inconnue : omise")
+  end)
+
+  check("GuideWindow : le detail s'affiche dans la carte (hauteur incluse) et dans Maintenant", function()
+    local n, G = gw()
+    setState(n, { level = 8, wand = false })
+    local goal = n.Guide.Goals()[1]
+    assert(goal.detail, "detail attendu")
+    n.SetCompact(true)
+    local r = G.card.rows[1]
+    assert(r.detail.shown and r.detail.text == goal.detail, "detail sous le texte")
+    local with = G.card.height
+    local real = n.Guide.Goals
+    n.Guide.Goals = function() local t = real() t[1].detail = nil return t end
+    n.Fire("GUIDE")
+    assert(not r.detail.shown and with > G.card.height, "hauteur : le detail compte")
+    n.Guide.Goals = real
+    n.SetCompact(false)
+    n.db.guide.tab = "now"
+    n.ToggleGuide()
+    n.Fire("GUIDE")
+    assert(G.rows[1].sub.text:find(goal.detail, 1, true), "Maintenant : detail " .. tostring(G.rows[1].sub.text))
   end)
 end
 

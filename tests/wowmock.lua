@@ -244,7 +244,7 @@ C_AddOns = { IsAddOnLoaded = function(n) return (mock.addons or {})[n] == true e
 
 -- LibQuestieDB minimal (contrat 4). mock.qnpcs = { [id] = { flags, subName, faction, zoneID, spawns } } en plus de 450 PNJ neutres ;
 -- mock.qver = version de l'addon ; mock.qboom = les lectures levent une erreur ; mock.qreads = nombre de lectures de PNJ.
-local NPC_KEYS = { npcFlags = 1, subName = 2, friendlyToFaction = 3, zoneID = 4, spawns = 5 }
+local NPC_KEYS = { npcFlags = 1, subName = 2, friendlyToFaction = 3, zoneID = 4, spawns = 5, name = 6 }
 local function qDefaults()
   return {
     [375] = { 16, "Priest Trainer", "H", 1497, { [1497] = { { 52.3, 41.2 } } } },

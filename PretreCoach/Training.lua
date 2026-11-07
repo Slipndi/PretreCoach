@@ -58,6 +58,8 @@ local function knownCost(name, rankIndex)
   end
 end
 
+Training.Cost = knownCost
+
 local function rankText(name, i) return i > 1 and L.GUIDE_RANK:format(name, i) or name end
 
 -- Ce qui est à apprendre maintenant : { pending = { { text, cost } }, total (nil si un coût est inconnu), nextLevel,

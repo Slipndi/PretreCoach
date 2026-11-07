@@ -90,10 +90,6 @@ local function newRow()
   a:SetFromAlpha(0)
   a:SetToAlpha(1)
   a:SetDuration(0.4)
-  b:SetScript("OnClick", function()
-    local e = r.entry
-    if e and e.manual then Guide.SetManual(e.id, not e.done) end
-  end)
   b:SetScript("OnEnter", function(self)
     if r.entry and r.entry.unknown then tooltip(self, L.GW_UNKNOWN_TIP) end
   end)
@@ -136,7 +132,7 @@ local function fill(r, mode, item, y, w)
     local e = item
     r.box.check:SetShown(e.done)
     r.box.q:SetShown(e.unknown)
-    r.box:EnableMouse(e.manual == true)
+    r.box:EnableMouse(false) -- indicateur seulement : plus de case à cocher à la main
     if e.done then setColor(r.text, C.good, 0.6) else setColor(r.text, C.white) end
     if lastDone[e.id] == false and e.done then r.pop:Play() end
     lastDone[e.id] = e.done
@@ -195,7 +191,7 @@ local function items()
       rowsNow[#rowsNow + 1] = {
         id = e and e.id or ("goal:" .. (g.line or "xp")), text = L.GW_GOAL:format(g.label, g.text),
         done = e and e.done or false, unknown = e and e.unknown or false, manual = e and e.manual or false,
-        go = g.kind == "xp" and e and e.go or nil, sub = e and e.sub,
+        go = g.kind == "xp" and e and e.go or nil, sub = g.detail or (e and e.sub),
       }
     end
     return "now", rowsNow, L.GW_NOW_EMPTY
@@ -266,6 +262,9 @@ local function newCardRow()
   r.text:SetPoint("TOPLEFT", r.label, "BOTTOMLEFT", 0, -1)
   r.text:SetWidth(CARD_TEXT_W)
   setColor(r.text, C.white)
+  r.detail = fontString(r, UI.font.small)
+  r.detail:SetJustifyH("LEFT")
+  setColor(r.detail, { 0.65, 0.65, 0.7 })
   r.back = r:CreateTexture(nil, "ARTWORK")
   r.back:SetColorTexture(1, 1, 1, 0.08)
   r.back:SetHeight(4)
@@ -280,21 +279,6 @@ local function newCardRow()
   r.go:SetPoint("BOTTOMRIGHT", r, "BOTTOMRIGHT", 0, 4)
   r.go:SetScript("OnClick", function() ns.Goto.Place(r.dest) end)
   r.go:Hide()
-  -- case manuelle : meme mecanisme que l'onglet Maintenant
-  r.box = CreateFrame("Button", nil, r)
-  r.box:SetSize(14, 14)
-  r.box:SetPoint("TOPRIGHT", r, "TOPRIGHT", 0, -6)
-  r.box.bg = r.box:CreateTexture(nil, "BACKGROUND")
-  r.box.bg:SetAllPoints(r.box)
-  r.box.bg:SetTexture("Interface\\Buttons\\UI-CheckBox-Up")
-  r.box.check = r.box:CreateTexture(nil, "ARTWORK")
-  r.box.check:SetAllPoints(r.box)
-  r.box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-  r.box:SetScript("OnClick", function()
-    local e = r.entry
-    if e and e.manual then Guide.SetManual(e.id, not e.done) end
-  end)
-  r.box:Hide()
   return r
 end
 
@@ -315,9 +299,16 @@ local function fillCardRow(r, g, i, y)
   setColor(r.label, color)
   r.text:SetText((g.e and g.e.unknown and "? " or "") .. g.text)
   r.sep:SetShown(i > 1)
-  r.box:SetShown(g.e ~= nil and g.e.manual == true)
-  r.box.check:SetShown(g.e ~= nil and g.e.done == true)
   local h = 6 + 13 + (r.text:GetStringHeight() or 14) + 1
+  -- detail : une ligne en petit gris sous le texte (avant la barre et « Où aller »)
+  local hasDetail = type(g.detail) == "string" and g.detail ~= ""
+  r.detail:ClearAllPoints()
+  r.detail:SetPoint("TOPLEFT", r.text, "BOTTOMLEFT", 0, -2)
+  r.detail:SetWidth(CARD_TEXT_W)
+  r.detail:SetText(hasDetail and g.detail or "")
+  r.detail:SetShown(hasDetail)
+  local last = hasDetail and r.detail or r.text
+  if hasDetail then h = h + 2 + (r.detail:GetStringHeight() or 12) end
   local frac, d, can
   if g.kind == "xp" then
     frac = ns.Pace and ns.Pace.Fraction()
@@ -327,13 +318,13 @@ local function fillCardRow(r, g, i, y)
   end
   r.dest = d
   r.back:ClearAllPoints()
-  r.back:SetPoint("TOPLEFT", r.text, "BOTTOMLEFT", 0, -4)
+  r.back:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, -4)
   r.back:SetWidth(CARD_TEXT_W)
   r.back:SetShown(frac ~= nil)
   r.bar:SetShown(frac ~= nil)
   if frac then r.bar:SetValue(frac) h = h + 8 end
   r.where:ClearAllPoints()
-  r.where:SetPoint("TOPLEFT", frac and r.back or r.text, "BOTTOMLEFT", 0, -3)
+  r.where:SetPoint("TOPLEFT", frac and r.back or last, "BOTTOMLEFT", 0, -3)
   r.where:SetWidth(CARD_TEXT_W - (can and 48 or 0))
   r.where:SetText(d and L.GO_WHERE:format(d.text) or "")
   r.where:SetShown(d ~= nil)

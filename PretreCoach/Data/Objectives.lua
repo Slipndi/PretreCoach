@@ -6,6 +6,8 @@ ns.Data = ns.Data or {}
 -- check (voir Guide.lua) : prof (arg = skillLine ou liste), profRank (arg = { line, max }), wand, wandItem (arg = itemID),
 -- go (facultatif) : cible de Goto.For (WAND, PRIEST, HERBALISM, FIRSTAID, Q<id>), affichée en « Où aller ».
 -- talent (arg = key de TalentPlan), spells, known (arg = key de sort), quest (arg = questID), specGroups (arg = n),
+-- why (facultatif, jamais sur un objectif manuel) : le « pourquoi », affiché en détail sous l'objectif (d'après la spec).
+-- Les objectifs manuels ne sont plus affichés (ni carte ni Maintenant) : voir Guide.lua, xpPick et firstTodo.
 -- prof (facultatif) : skillLine du métier concerné (objectif de métier du guide) ; herbZone (arg = skillLine), items (arg = { count, ids }), manual (case cochée à la main, aucune API connue).
 local HERB, ALCH, AID = 182, 171, 129
 
@@ -51,6 +53,6 @@ ns.Data.Objectives = {
 	{ id = "triage", from = 35, to = 45, text = "Secourisme Artisan : quête Triage", check = "manual", prof = AID },
 	-- 40-60
 	{ id = "shadowform", from = 40, to = 60, text = "Forme d'Ombre", check = "known", arg = "SHADOWFORM", priority = 1 },
-	{ id = "dualspec", from = 40, to = 60, text = "Double spécialisation", check = "specGroups", arg = 2, priority = 2 },
+	{ id = "dualspec", from = 40, to = 60, text = "Double spécialisation", check = "specGroups", arg = 2, priority = 2, why = "une spécialisation Ombre en solo, une spécialisation soin pour les donjons" },
 	{ id = "wandspec2", from = 41, to = 60, text = "Spécialisation Baguette 2/2 (à reprendre après le respec)", check = "talent", arg = "WANDSPEC", priority = 3 },
 }

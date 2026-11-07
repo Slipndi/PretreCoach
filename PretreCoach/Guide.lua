@@ -103,14 +103,19 @@ function CHECKS.herbZone(o)
 end
 
 -- arg = { count, ids } : total des objets portés ; inconnu si aucun compte n'est lisible.
-function CHECKS.items(o)
+local function itemTotal(arg)
   local fn = (C_Item and C_Item.GetItemCount) or GetItemCount
   local total, answered = 0, false
-  for _, id in ipairs(o.arg.ids) do
+  for _, id in ipairs(arg.ids) do
     local n = S.Get(fn, id)
     if type(n) == "number" then total, answered = total + n, true end
   end
-  if not answered then return nil end
+  if answered then return total end
+end
+
+function CHECKS.items(o)
+  local total = itemTotal(o.arg)
+  if not total then return nil end
   return total >= o.arg.count
 end
 
@@ -121,7 +126,7 @@ local function guideDB() return ns.db and ns.db.guide end
 local function evalOne(o)
   local check = CHECKS[o.check]
   local r = check and check(o)
-  local e = { id = o.id, text = o.text, priority = o.priority, go = o.go, prof = o.prof, done = r == true, unknown = false, manual = false }
+  local e = { id = o.id, text = o.text, priority = o.priority, go = o.go, prof = o.prof, check = o.check, arg = o.arg, why = o.why, from = o.from, done = r == true, unknown = false, manual = false }
   if r == nil then
     local g = guideDB()
     e.manual = true
@@ -173,7 +178,7 @@ function Guide.Evaluate()
         local name = Q.Quest(q.id, "name")
         out[#out + 1] = {
           id = "kq" .. q.id, text = type(name) == "string" and L.GUIDE_KEYQUEST:format(name, q.why) or q.why, priority = 3,
-          go = Q.Available() and ("Q" .. q.id) or nil, done = done, unknown = false, manual = false, order = #D.Objectives + i,
+          check = "quest", arg = q.id, go = Q.Available() and ("Q" .. q.id) or nil, done = done, unknown = false, manual = false, order = #D.Objectives + i,
         }
       end
     end
@@ -228,20 +233,106 @@ end
 
 -- Premier objectif à faire (non fait, non inconnu d'abord, puis inconnu) parmi ceux qui passent `keep`.
 local function firstTodo(list, keep)
-  for _, e in ipairs(list) do if keep(e) and not e.done and not e.unknown then return e end end
-  for _, e in ipairs(list) do if keep(e) and e.unknown then return e end end
+  -- jamais d'objectif à cocher à la main (check "manual") dans les rangées de la carte
+  for _, e in ipairs(list) do if keep(e) and not e.manual and not e.done and not e.unknown then return e end end
+  for _, e in ipairs(list) do if keep(e) and not e.manual and e.unknown then return e end end
 end
 
+-- Texte et détail du repli : « Monte dans <zone> », « ta zone est verte pour toi : prochain niveau dans ~X min ».
 local function xpFallback()
   local h = Guide.Header()
-  local zone = h.zoneStatus == "verte" and h.nextZone or h.zoneName
+  local green = h.zoneStatus == "verte" and h.nextZone
+  local zone = green or h.zoneName
   local text = zone and L.GUIDE_XP_ZONE:format(zone) or L.GUIDE_XP_KEEP
+  local parts = { green and L.GUIDE_XP_GREEN or nil }
   local secs = ns.Pace and ns.Pace.NextLevel()
-  if type(secs) == "number" then
+  if type(secs) == "number" and not S.IsSecret(secs) then
     local t = secs < 5400 and ("%d min"):format(math.max(1, math.floor(secs / 60 + 0.5))) or ("%d h"):format(math.floor(secs / 3600 + 0.5))
-    text = text .. " (" .. L.GUIDE_XP_NEXT:format(t) .. ")"
+    parts[#parts + 1] = L.GUIDE_XP_NEXT:format(t)
   end
-  return text
+  return text, #parts > 0 and table.concat(parts, " : ") or nil
+end
+
+-- Texte précis et détail d'une entrée XP, calculés en direct : DETAIL[check](e) rend text, detail (nil = on garde e.text).
+-- Une valeur illisible ou secrète n'est jamais affichée : la partie inconnue est omise.
+local DETAIL = {}
+local function coin(c) return ns.Training.Coin(c) end
+
+function DETAIL.spells()
+  local plan = ns.Training.Plan(State.level)
+  local p = plan.pending
+  if not p or #p == 0 then return end
+  local names = {}
+  for i = 1, math.min(#p, 4) do names[i] = p[i].text end
+  local list = table.concat(names, ", ") .. (#p > 4 and ", …" or "")
+  local text = #p == 1 and L.GUIDE_SPELLS_1:format(list) or L.GUIDE_SPELLS:format(#p, list)
+  return plan.total and (text .. " : " .. coin(plan.total)) or text
+end
+
+function DETAIL.talent(e)
+  for _, it in ipairs(ns.Talents.Todo(State.level)) do
+    if it.entry.key == e.arg then return ns.Talents.Describe(it) end
+  end
+end
+
+function DETAIL.wand(e)
+  local w
+  if e.check == "wandItem" then
+    for _, x in ipairs(D.Wands) do if x.itemID == e.arg then w = x end end
+  else
+    local _, best = Calc.WandStatus(State.level, State.wand)
+    w = best
+  end
+  if not w then return end
+  local detail = w.source
+  local price = ns.AH and ns.AH.Price(w.itemID)
+  if type(price) == "number" and price > 0 then detail = detail .. " ; " .. L.GUIDE_AH_PRICE:format(coin(price)) end
+  return L.GUIDE_WAND:format(w.name, w.level), detail
+end
+DETAIL.wandItem = DETAIL.wand
+
+function DETAIL.items(e)
+  local n = itemTotal(e.arg)
+  if n then return L.GUIDE_ITEMS:format(n, e.arg.count, math.max(e.arg.count - n, 0)) end
+  return L.GUIDE_ITEMS_BLIND:format(e.arg.count)
+end
+
+function DETAIL.known(e)
+  for _, sp in ipairs(D.Spells) do
+    if sp.key == e.arg and type(sp.ranks[1].level) == "number" then
+      local text = L.GUIDE_KNOWN:format(sp.name, sp.ranks[1].level)
+      local cost = ns.Training.Cost(sp.name, 1)
+      return cost and (text .. " : " .. coin(cost)) or text
+    end
+  end
+end
+
+-- Quête : niveau requis et donneur, tels que Questie les connaît (rien sans Questie).
+function DETAIL.quest(e)
+  local parts = {}
+  local req = Q.Quest(e.arg, "requiredLevel")
+  if type(req) == "number" and req > 0 then parts[#parts + 1] = L.GUIDE_QLEVEL:format(req) end
+  local by = Q.Quest(e.arg, "startedBy")
+  local npc = type(by) == "table" and type(by[1]) == "table" and by[1][1]
+  local name = npc and Q.Npc(npc, "name")
+  if type(name) == "string" then parts[#parts + 1] = L.GUIDE_QNPC:format(name) end
+  return nil, #parts > 0 and table.concat(parts, " · ") or nil
+end
+
+local function xpText(e)
+  if not e then return xpFallback() end
+  local fn = DETAIL[e.check]
+  local text, detail
+  if fn then text, detail = fn(e) end
+  return text or e.text, detail or e.why
+end
+Guide.Detail = xpText -- aussi pour une entrée métier (ex. bandages) : text, detail
+
+-- XP : premier objectif automatique à faire ; un objectif illisible (nil) ou manuel est passé.
+local function xpPick(list)
+  for _, e in ipairs(list) do
+    if not e.prof and not e.manual and not e.unknown and not e.done then return e end
+  end
 end
 
 local PROF_ORDER = { 182, 171, 129 } -- Herboristerie, Alchimie, Secourisme, puis les autres métiers connus
@@ -250,8 +341,9 @@ local PROF_ORDER = { 182, 171, 129 } -- Herboristerie, Alchimie, Secourisme, pui
 function Guide.Goals()
   local list = Guide.Evaluate()
   local out = {}
-  local xp = firstTodo(list, function(e) return not e.prof end)
-  out[1] = { kind = "xp", label = L.GUIDE_XP, e = xp, text = xp and xp.text or xpFallback() }
+  local xp = xpPick(list)
+  local text, detail = xpText(xp)
+  out[1] = { kind = "xp", label = L.GUIDE_XP, e = xp, text = text, detail = detail }
   local profs = State.profs
   if type(profs) ~= "table" then return out end
   local lines, seen = {}, {}
