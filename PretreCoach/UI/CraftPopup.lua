@@ -17,7 +17,9 @@ local TRADE = {
   [129] = { spell = 3273, tex = "Interface\\Icons\\Spell_Holy_SealOfSacrifice" },
 }
 local ORDER = { 171, 129 }
-local want -- { recipeID, name, t, pending } memorise par le clic du joueur
+local want -- { line, recipeID, name, t } memorise par le clic du joueur
+local RETRY = { 0.2, 0.5, 1.0, 2.0, 3.0 }
+local preselect -- defini plus bas
 
 local function spellName(line)
   local id = TRADE[line].spell
@@ -85,7 +87,14 @@ local function newButton(line)
   b:SetScript("OnLeave", function() pcall(function() GameTooltip:Hide() end) end)
   -- non securise : memorise la recette voulue ; le sort du metier part du clic, pas de l'addon
   b:HookScript("PreClick", function()
-    want = { recipeID = b.recipeID, name = b.entry and b.entry.recipe, t = GetTime(), pending = 2 }
+    local name = b.entry and b.entry.recipe
+    if not (name or b.recipeID) then want = nil return end
+    local w = { line = line, recipeID = b.recipeID, name = name, t = GetTime() }
+    want = w
+    -- reessais par minuterie (la liste du metier n'est pas prete tout de suite) ; w perime = on s'arrete
+    for _, d in ipairs(RETRY) do
+      if C_Timer then C_Timer.After(d, function() if want == w then preselect() end end) end
+    end
   end)
   return b
 end
@@ -130,19 +139,87 @@ function P.Sync()
 end
 
 -- Selection de la recette dans la fenetre de metier : navigation d'UI, ne fabrique rien.
-local function preselect()
-  if not want then return end
-  if GetTime() - want.t > 10 then want = nil return end
-  if not want.recipeID then
-    ns.Toast(L.CRAFT_FIND:format(want.name or "?"), { key = "pc:craft:find", cooldown = 5 })
-    want = nil
-    return
-  end
+local function norm(s) return type(s) == "string" and s:lower():gsub("%s+", "") or nil end
+
+-- Recette apprise de la fenetre ouverte : egalite sans casse ni espaces, sinon « contient ». Rend recipeInfo.
+local function findLive(name, advID)
   local T = C_TradeSkillUI
-  local fn = T and (T.OpenRecipe or T.SetRecipeSelected)
-  if fn then pcall(fn, want.recipeID) end
-  want.pending = want.pending - 1
-  if want.pending <= 0 then want = nil end
+  local ids = T and ns.S.Get(T.GetAllRecipeIDs)
+  if type(ids) ~= "table" then return nil end
+  local target, partial = norm(name), nil
+  if advID then -- recipeID d'Advice : repli si la recherche par nom ne trouve rien
+    local a = ns.S.Get(T.GetRecipeInfo, advID)
+    if type(a) == "table" and a.learned == true then partial = a end
+  end
+  for _, id in ipairs(ids) do
+    local info = ns.S.Get(T.GetRecipeInfo, id)
+    if type(info) == "table" and info.learned == true then
+      local n = norm(info.name)
+      if id == advID or (n and target and n == target) then return info end
+      if n and target and not partial and n:find(target, 1, true) then partial = info end
+    end
+  end
+  return partial
+end
+
+local function selectedID()
+  local ok, info = pcall(function() return ProfessionsFrame.CraftingPage.SchematicForm:GetRecipeInfo() end)
+  local id = ok and type(info) == "table" and info.recipeID
+  if type(id) == "number" and not ns.S.IsSecret(id) then return id end
+end
+
+-- Classic : index de la recette dans TradeSkillFrame
+local function classicIndex(name)
+  local n = ns.S.Get(GetNumTradeSkills)
+  for i = 1, type(n) == "number" and n or 0 do
+    if norm(ns.S.Get(GetTradeSkillInfo, i)) == norm(name) then return i end
+  end
+end
+
+-- Methodes dans l'ordre (a, b, d) jusqu'a ce que la selection relue soit la bonne ; rend la lettre ou nil.
+local function selectInfo(info)
+  local id = info.recipeID
+  local function good() local s = selectedID() return s == nil or s == id end -- illisible : on croit l'appel
+  if C_TradeSkillUI and C_TradeSkillUI.OpenRecipe and pcall(C_TradeSkillUI.OpenRecipe, id) and good() then return "a" end
+  local list = ProfessionsFrame and ProfessionsFrame.CraftingPage and ProfessionsFrame.CraftingPage.RecipeList
+  if list and list.SelectRecipe and pcall(list.SelectRecipe, list, info, true) and good() then return "b" end
+  if TradeSkillFrame and SelectTradeSkill then
+    local i = classicIndex(info.name)
+    if i and pcall(SelectTradeSkill, i) then
+      if TradeSkillFrame_Update then pcall(TradeSkillFrame_Update) end
+      return "d"
+    end
+  end
+end
+
+-- Vendeur de la recette dans le plan du metier (step.buy), sinon nil.
+local function vendorOf(line, name)
+  local plan = ns.Data.ProfPlan and ns.Data.ProfPlan[line]
+  for _, st in ipairs(plan and plan.steps or {}) do
+    if st.buy and norm(st.buy.recipe) == norm(name) then return st.buy.where end
+  end
+end
+
+-- Une tentative ; arrete (want = nil) sur reussite, expiration (10 s) ou echec definitif (3 s).
+function preselect()
+  local w = want
+  if not w then return end
+  local age = GetTime() - w.t
+  if age > 10 then want = nil return end
+  local ready = ns.S.Get(C_TradeSkillUI and C_TradeSkillUI.IsTradeSkillReady)
+  local info = ready and findLive(w.name, w.recipeID)
+  if info then
+    local m = selectInfo(info)
+    if m then P.last = { method = m, recipeID = info.recipeID } want = nil return end
+  end
+  if age < 1 or (info and age < 3) then return end -- la liste peut ne pas etre prete : on reessaie
+  if ready or age >= 3 then
+    P.last = { method = "aucune", recipeID = info and info.recipeID or w.recipeID }
+    local where = not info and vendorOf(w.line, w.name)
+    ns.Toast(where and L.CRAFT_UNLEARNED:format(w.name or "?", where) or L.CRAFT_FIND:format(w.name or "?"),
+      { key = "pc:craft:find", cooldown = 5 })
+    want = nil
+  end
 end
 ns.On("TRADE_SKILL_SHOW", preselect)
 ns.On("TRADE_SKILL_LIST_UPDATE", preselect)

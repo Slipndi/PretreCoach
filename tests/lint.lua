@@ -16,6 +16,7 @@ GetNumTalentTabs GetProfessions GetProfessionInfo GetNumSkillLines GetSkillLineI
 GetNumTrainerServices GetTrainerServiceInfo GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString
 GetTime GetNumTalents GetTalentInfo GetNumTalentGroups GetNumSpecGroups GetNumUnspentTalents
 Settings Minimap GameTooltip GetCursorPosition GetItemInfo GetItemCount GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED UiMapPoint C_SuperTrack Enum C_Container C_ClassColor RAID_CLASS_COLORS
+ProfessionsFrame TradeSkillFrame SelectTradeSkill TradeSkillFrame_Update GetNumTradeSkills GetTradeSkillInfo
 ]]):gmatch("%S+") do READ_OK[w] = true end
 
 local bad = 0

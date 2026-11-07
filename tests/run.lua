@@ -4362,19 +4362,87 @@ local function suite(label)
     assert(mock.selected == nil, "sans clic : pas de presélection")
     b.hooks.PreClick(b)
     mock.fire("TRADE_SKILL_SHOW")
-    assert(mock.selected and mock.selected[1] == 555 and #mock.selected == 1, "recipeID voulu presélectionné")
+    assert(mock.selected and mock.selected[1] == 555 and #mock.selected == 1, "recipeID d'Advice presélectionné")
     mock.fire("TRADE_SKILL_LIST_UPDATE")
-    assert(#mock.selected == 2 and mock.selected[2] == 555, "une seconde fois a la mise a jour de la liste")
-    mock.fire("TRADE_SKILL_LIST_UPDATE")
-    assert(#mock.selected == 2, "puis plus rien")
+    assert(#mock.selected == 1, "une seule presélection par clic")
     assert(mock.crafted == nil and #toasts == 0, "aucune fabrication")
-    -- recipeID inconnu : pas de presélection, toast discret
+    -- recette introuvable : rien presélectionné, toast discret apres 1 s
     n, toasts = craftBoot(nil, false)
     b = n.UI.CraftPopup.btns[171]
     b.hooks.PreClick(b)
     mock.fire("TRADE_SKILL_SHOW")
+    assert(mock.selected == nil and #toasts == 0, "trop tot : on reessaie")
+    mock.time = 1.1
+    mock.flushTimers()
     assert(mock.selected == nil and mock.crafted == nil, "recette inconnue : rien presélectionné")
     assert(toasts[1] == "Cherche Élixir de défense mineure dans la liste", tostring(toasts[1]))
+  end)
+
+  -- Presélection en direct (recette trouvee par nom dans la fenetre ouverte, selection robuste, reessais)
+  local function liveBoot(rec)
+    local n, toasts = craftBoot(nil, false)
+    mock.time = 0
+    mock.recipes = 3
+    mock.recipeInfo = { [102] = { name = "Élixir DE défense  mineure" }, [103] = rec }
+    local b = n.UI.CraftPopup.btns[171]
+    b.hooks.PreClick(b)
+    return n, toasts, b
+  end
+
+  check("Craft : recipeID trouve en direct par nom (casse/espaces), OpenRecipe, une seule fois, rien fabrique", function()
+    if not GetItemCount then return end
+    local n, toasts = liveBoot({ name = "Autre" })
+    mock.fire("TRADE_SKILL_SHOW")
+    assert(mock.selected and #mock.selected == 1 and mock.selected[1] == 102, "ID 102 par nom")
+    assert(n.UI.CraftPopup.last.method == "a" and n.UI.CraftPopup.last.recipeID == 102, "sonde : methode a")
+    mock.fire("TRADE_SKILL_LIST_UPDATE") mock.flushTimers()
+    assert(#mock.selected == 1 and mock.crafted == nil and not tostring(toasts[1]):find("non apprise", 1, true) and not tostring(toasts[1]):find("Cherche", 1, true), tostring(toasts[1]))
+    -- repli « contient » seulement si pas d'egalite
+    n, toasts = liveBoot({ name = "Élixir de défense mineure supérieur" })
+    mock.recipeInfo[102] = { name = "Rien" }
+    mock.fire("TRADE_SKILL_SHOW")
+    assert(mock.selected[1] == 103, "contient")
+  end)
+
+  check("Craft : repli sur RecipeList:SelectRecipe quand OpenRecipe est absent", function()
+    if not GetItemCount then return end
+    local n = liveBoot({ name = "Autre" })
+    local open, got = C_TradeSkillUI.OpenRecipe, nil
+    C_TradeSkillUI.OpenRecipe = nil
+    ProfessionsFrame = { CraftingPage = { RecipeList = { SelectRecipe = function(self, info, flag) got = { info.recipeID, flag } end } } }
+    mock.fire("TRADE_SKILL_SHOW")
+    C_TradeSkillUI.OpenRecipe, ProfessionsFrame = open, nil
+    assert(got and got[1] == 102 and got[2] == true, "SelectRecipe(info, true)")
+    assert(n.UI.CraftPopup.last.method == "b" and mock.crafted == nil)
+  end)
+
+  check("Craft : reessais par minuterie jusqu'a ce que la liste soit prete", function()
+    if not GetItemCount then return end
+    local n = liveBoot({ name = "Autre" })
+    mock.tsNotReady = true
+    mock.fire("TRADE_SKILL_SHOW")
+    assert(mock.selected == nil and #mock.timers >= 3, "pas prete : minuteries en attente")
+    local pending = mock.timers
+    mock.time = 0.3 mock.flushTimers()
+    assert(mock.selected == nil, "toujours pas prete")
+    mock.tsNotReady = nil
+    mock.timers = pending -- les minuteries restantes (0,5 s, ...) se redeclenchent
+    mock.time = 0.6 mock.flushTimers()
+    assert(mock.selected and #mock.selected == 1 and mock.selected[1] == 102, "prete : presélectionnée")
+    mock.time = 1.5 mock.flushTimers()
+    assert(#mock.selected == 1 and mock.crafted == nil, "pas de seconde presélection")
+  end)
+
+  check("Craft : recette non apprise : toast avec le vendeur du plan, sinon toast actuel", function()
+    if not GetItemCount then return end
+    local n, toasts, b = liveBoot({ name = "Autre" })
+    mock.recipeInfo[102] = { name = "Potion de mana supérieure", learned = false }
+    b.entry = { recipe = "Potion de mana supérieure" }
+    b.hooks.PreClick(b)
+    mock.time = 1.1 mock.flushTimers()
+    assert(mock.selected == nil and mock.crafted == nil, "rien presélectionné")
+    assert(toasts[1] == "Recette Potion de mana supérieure non apprise : achète-la chez Algernon (Fossoyeuse)", tostring(toasts[1]))
+    assert(n.UI.CraftPopup.last.method == "aucune")
   end)
 
   check("Craft : option masquer et /coach craft", function()

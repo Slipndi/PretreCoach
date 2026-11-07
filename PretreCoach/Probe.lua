@@ -504,6 +504,9 @@ local function ExtraSections(add, section)
     for _, ev in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_CLOSE" }) do
       add("%s : %s", ev, reg[ev] and "inscrit" or "REFUSÉ")
     end
+    local last = ns.UI and ns.UI.CraftPopup and ns.UI.CraftPopup.last
+    add("présélection de recette (icône Craft), dernière méthode : %s, recipeID %s",
+      last and last.method or "aucune (pas encore tentée)", last and tostring(last.recipeID) or "-")
     local ts = ns.db.probe.tradeskill
     if not ts then add("fenêtre de métier pas encore ouverte : ouvre-la, puis retape /coach probe") return end
     add("relevé de %s : %d recettes", ts.when, ts.count)
