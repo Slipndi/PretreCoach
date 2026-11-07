@@ -4220,7 +4220,7 @@ local function suite(label)
       end
     end
     local g2 = n.Guide.Goals()[3]
-    assert(g2.line == 171 and g2.text:find("^72/75 : fais Élixir de vigueur mineure\nPrends le rang Compagnon"), g2.text)
+    assert(g2.line == 171 and g2.text:find("72/75 : encore 3 points possibles, puis maître (Compagnon)\nVa voir le maître pour le rang Compagnon", 1, true), g2.text)
     local r = n.Guide.Reference("profs")
     assert(#r == 3 and r[1].text == "Secourisme" and r[2].text == "Alchimie" and r[3].text == "Herboristerie", "trois metiers actifs")
     assert(r[3].sub:find("^Herboristerie 10/75 : cueille") and r[3].sub:find("• Cueille", 1, true), r[3].sub)
@@ -4458,6 +4458,75 @@ local function suite(label)
     SlashCmdList.PRETRECOACH("craft")
     assert(n.db.show.craft == true and b.shown, "commande : reaffiche")
     assert(not findSecret(n.db, "db"))
+  end)
+
+  -- Rang de metier a prendre : rangee marquee, maitre le plus proche, ramassage masque
+  local MASTER = { text = "Maître d'herboristerie, Fossoyeuse (35.0, 50.0)", where = "x", mapID = 1458, x = 35, y = 50 }
+  local function rankBoot(rank, level, dest)
+    local n, G = gw()
+    planState(n, { [182] = { rank = rank, max = 75 } }, level)
+    n.Guide.Evaluate = function() return {} end
+    n.Goto.For = function(k) if k == "HERBALISM" then return dest end end
+    return n, G
+  end
+
+  check("Rang bloquant : plafond atteint, titre marque, maitre avec lieu, ramassage masque", function()
+    local n = rankBoot(75, 20, MASTER)
+    local s = n.Prof.Steps(182)
+    assert(s.alert and s.go == "HERBALISM" and s.title == "Herboristerie 75/75 : va prendre Compagnon", s.title)
+    assert(s.todo[1].kind == "rank" and s.todo[1].text == "Va voir le maître pour le rang Compagnon : " .. MASTER.text, s.todo[1].text)
+    for i = 2, #s.todo do assert(s.todo[i].held, "action grisee : " .. s.todo[i].kind) end
+    local g = n.Guide.Goals()[2]
+    assert(g.alert and g.go == "HERBALISM" and g.text == "75/75 : va prendre Compagnon\n" .. s.todo[1].text, g.text)
+    assert(not g.text:find("Cueille", 1, true), "aucun ramassage dans la carte")
+    local sub = n.Guide.Reference("profs")[1].sub
+    assert(sub:find("^|cffff9919Herboristerie 75/75 : va prendre Compagnon|r\n") and sub:find("|cff808080• Cueille", 1, true), sub)
+  end)
+
+  check("Rang bloquant : rang pas encore disponible (niveau) ou presque au plafond", function()
+    local n = rankBoot(75, 5, MASTER)
+    local s = n.Prof.Steps(182)
+    assert(not s.alert and s.go == nil and s.todo[1].kind == "wait" and s.todo[1].text == "Compagnon au niveau 10 : continue", s.todo[1].text)
+    assert(not s.todo[2].held and n.Guide.Goals()[2].go == nil and n.Guide.Goals()[2].text:find("Compagnon au niveau 10", 1, true))
+    n.State.level = 20
+    n.State.profs[182].rank = 72
+    s = n.Prof.Steps(182)
+    assert(s.alert and s.title == "Herboristerie 72/75 : encore 3 points possibles, puis maître (Compagnon)", s.title)
+    assert(s.todo[1].kind == "rank" and not s.todo[2].held, "presque : le reste n'est pas masque")
+    n.State.profs[182].rank = 60
+    assert(not n.Prof.Steps(182).alert, "loin du plafond")
+    n.State.profs[182] = { rank = 300, max = 300 }
+    assert(not n.Prof.Steps(182).alert, "dernier rang : rien a prendre")
+  end)
+
+  check("Rang bloquant : Ou aller et Repere sur la rangee metier (carte, Maintenant, Metiers)", function()
+    local n, G = rankBoot(75, 20, MASTER)
+    n.SetCompact(true)
+    local r = G.card.rows[2]
+    assert(r.where.shown and r.where.text:find("Où aller : Maître d'herboristerie", 1, true), tostring(r.where.text))
+    assert(r.go.shown == true and r.dest == MASTER, "bouton Repere sur la rangee metier")
+    n.State.profs[182].rank = 10
+    n.Fire("GUIDE")
+    assert(not r.where.shown and not r.go.shown, "plus de rang a prendre : ni lieu ni bouton")
+    n.State.profs[182].rank = 75
+    n.SetCompact(false)
+    n.ToggleGuide()
+    G.win.tabs[1].scripts.OnClick(G.win.tabs[1])
+    local row = G.rows[2]
+    assert(row.sub.text:find("Où aller", 1, true) and row.go.shown == true, "Maintenant")
+  end)
+
+  check("Rang bloquant : Goto absent ou illisible, aucun lieu invente", function()
+    local n = rankBoot(75, 20, nil) -- Goto.For ne trouve rien
+    local s = n.Prof.Steps(182)
+    assert(s.todo[1].text == "Va voir le maître pour le rang Compagnon : Martha Alliestar (Fossoyeuse)", s.todo[1].text)
+    n.Goto.For = function() error("illisible") end
+    assert(n.Prof.Steps(182).todo[1].text:find("Martha Alliestar", 1, true), "erreur Goto : repli sur les donnees")
+    n.Goto.For = function() return { text = "ton maître d'herboristerie (Questie conseillé pour le localiser)" } end
+    local t = n.Prof.Steps(182).todo[1].text
+    assert(t:find("Martha Alliestar", 1, true) and not t:find("Questie", 1, true), "sans coordonnees : pas de lieu invente")
+    n.Goto = nil
+    assert(n.Prof.Steps(182).todo[1].kind == "rank", "Goto absent")
   end)
 end
 

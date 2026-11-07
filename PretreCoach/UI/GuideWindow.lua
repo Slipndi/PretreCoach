@@ -117,7 +117,7 @@ local function fill(r, mode, item, y, w)
   r.text:SetText(item.text or "")
   local sub = item.sub
   -- « Où aller » : objectif pas encore fait et doté d'une cible ; le bouton n'existe que s'il y a des coordonnées
-  local d = mode == "now" and not item.done and item.go and ns.Goto.For(item.go) or nil
+  local d = (mode == "now" and not item.done or mode == "ref") and item.go and ns.Goto.For(item.go) or nil
   r.dest = d
   local can = ns.Goto.CanPlace(d)
   if d then sub = (sub and sub ~= "") and (sub .. "  ·  " .. L.GO_WHERE:format(d.text)) or L.GO_WHERE:format(d.text) end
@@ -133,7 +133,7 @@ local function fill(r, mode, item, y, w)
     r.box.check:SetShown(e.done)
     r.box.q:SetShown(e.unknown)
     r.box:EnableMouse(false) -- indicateur seulement : plus de case à cocher à la main
-    if e.done then setColor(r.text, C.good, 0.6) else setColor(r.text, C.white) end
+    if e.done then setColor(r.text, C.good, 0.6) else setColor(r.text, e.alert and C.warn or C.white) end
     if lastDone[e.id] == false and e.done then r.pop:Play() end
     lastDone[e.id] = e.done
   elseif mode == "next" then
@@ -142,7 +142,7 @@ local function fill(r, mode, item, y, w)
     setColor(r.text, c, item.state == "passe" and 0.5 or 1)
     setColor(r.sub, C.accent, item.state == "passe" and 0.4 or 0.9)
   else
-    setColor(r.text, C.white, item.highlight and 1 or 0.55)
+    setColor(r.text, item.alert and C.warn or C.white, item.highlight and 1 or 0.55)
     setColor(r.sub, C.accent, item.highlight and 0.95 or 0.5)
   end
   local h = 8 + (r.text:GetStringHeight() or 14) + ((sub and sub ~= "") and ((r.sub:GetStringHeight() or 12) + 1) or 0)
@@ -191,7 +191,7 @@ local function items()
       rowsNow[#rowsNow + 1] = {
         id = e and e.id or ("goal:" .. (g.line or "xp")), text = L.GW_GOAL:format(g.label, g.text),
         done = e and e.done or false, unknown = e and e.unknown or false, manual = e and e.manual or false,
-        go = g.kind == "xp" and e and e.go or nil, sub = g.detail or (e and e.sub),
+        go = g.kind == "xp" and e and e.go or g.go, sub = g.detail or (e and e.sub), alert = g.alert,
       }
     end
     return "now", rowsNow, L.GW_NOW_EMPTY
@@ -296,7 +296,8 @@ local function fillCardRow(r, g, i, y)
   r.entry = g.e
   r.icon:SetTexture(tex)
   r.label:SetText(g.kind == "xp" and L.GW_XP_LABEL or g.label)
-  setColor(r.label, color)
+  setColor(r.label, g.alert and C.warn or color)
+  setColor(r.text, g.alert and C.warn or C.white)
   r.text:SetText((g.e and g.e.unknown and "? " or "") .. g.text)
   r.sep:SetShown(i > 1)
   local h = 6 + 13 + (r.text:GetStringHeight() or 14) + 1
@@ -309,13 +310,15 @@ local function fillCardRow(r, g, i, y)
   r.detail:SetShown(hasDetail)
   local last = hasDetail and r.detail or r.text
   if hasDetail then h = h + 2 + (r.detail:GetStringHeight() or 12) end
-  local frac, d, can
+  local frac
   if g.kind == "xp" then
     frac = ns.Pace and ns.Pace.Fraction()
     if not (type(frac) == "number" and not secret(frac)) then frac = nil end
-    d = g.e and not g.e.done and g.e.go and ns.Goto.For(g.e.go) or nil
-    can = ns.Goto.CanPlace(d)
   end
+  -- « Où aller » : cible de l'objectif XP non fait, ou du metier dont le rang est a prendre
+  local go = g.kind == "xp" and (g.e and not g.e.done and g.e.go) or g.kind ~= "xp" and g.go or nil
+  local d = go and ns.Goto.For(go) or nil
+  local can = ns.Goto.CanPlace(d)
   r.dest = d
   r.back:ClearAllPoints()
   r.back:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, -4)

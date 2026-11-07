@@ -368,6 +368,8 @@ function Guide.Goals()
         if not g.text and D.Professions[line].herbs then g.text = L.GUIDE_HERB_GATHER
         elseif not g.text and ns.Prof then g.text = ns.Prof.Text(line) end
       end
+      local st = ns.Prof and ns.Prof.Steps(line)
+      if st and st.alert then g.alert, g.go = true, st.go end -- rang a prendre : rangee marquee + « Où aller »
       if g.text then out[#out + 1] = g end
     end
   end
@@ -454,24 +456,28 @@ function REFERENCE.profs(level)
   if #bag > 0 then out[1] = { text = L.PROF_BAG_HEAD, sub = table.concat(bag, "\n"), highlight = true } end
   for _, id in ipairs(ids) do
     local p = type(State.profs) == "table" and State.profs[id]
-    local sub, hi
+    local sub, hi, alert, go
     if type(State.profs) ~= "table" then
       sub, hi = L.GUIDE_UNKNOWN, false
     elseif p then
       sub, hi = ("%d/%d"):format(p.rank or 0, p.max or 0), false
       local s = ns.Prof and ns.Prof.Steps(id)
       if s then
-        -- checklist de l'etape courante : coche verte = fait, point = a faire
-        local t = { s.title }
-        for _, a in ipairs(s.todo) do t[#t + 1] = (a.done == true and "|cff40ff40✓|r " or "• ") .. a.text end
+        -- checklist de l'etape courante : coche verte = fait, point = a faire, gris = en attente du rang
+        local t = { s.alert and ("|cffff9919" .. s.title .. "|r") or s.title }
+        for _, a in ipairs(s.todo) do
+          local line = (a.done == true and "|cff40ff40✓|r " or "• ") .. a.text
+          t[#t + 1] = a.held and ("|cff808080" .. line .. "|r") or line
+        end
         sub = table.concat(t, "\n")
+        if s.alert then alert, go = true, s.go end
       end
       -- conseil lu en direct (cout, marge) ; Herboristerie n'a pas de fenetre de recettes
       if ns.Prof and not D.Professions[id].herbs then sub = sub .. "\n" .. ns.Prof.Text(id) end
       for _, t in ipairs(todo or {}) do if t.skillLine == id then hi = true end end
     end
     -- metier non appris : pas de ligne (seuls les metiers actifs sont listes)
-    if p or type(State.profs) ~= "table" then out[#out + 1] = { text = D.Professions[id].name, sub = sub, highlight = hi } end
+    if p or type(State.profs) ~= "table" then out[#out + 1] = { text = D.Professions[id].name, sub = sub, highlight = hi, alert = alert, go = go } end
   end
   return out
 end

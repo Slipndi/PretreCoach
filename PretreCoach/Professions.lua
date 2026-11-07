@@ -273,6 +273,8 @@ end
 
 local function names(t, sep) return table.concat(t, sep or ", ") end
 
+local GOKEY = { [182] = "HERBALISM", [171] = "ALCHEMY", [129] = "FIRSTAID" } -- cibles de Goto.For ; autres metiers : pas de lieu
+
 function Prof.Steps(line)
   local plan = D.ProfPlan and D.ProfPlan[line]
   local p = type(State.profs) == "table" and State.profs[line]
@@ -288,14 +290,30 @@ function Prof.Steps(line)
   local function add(kind, text, done) todo[#todo + 1] = { kind = kind, text = text, done = done } end
   local adv = Get(line)
 
+  -- Rang suivant a prendre (disponible) ou pas encore (niveau trop bas) quand on approche du plafond.
+  local lock, goKey
   if rank >= max - 5 then
     for _, t in ipairs(Calc.ProfessionTodo(State.level, State.profs, D.Professions) or {}) do
-      if t.skillLine == line then
-        local m = plan.masters and plan.masters[t.rank.name]
-        add("rank", m and L.PROF_STEP_RANK:format(t.rank.name, m) or L.PROF_STEP_RANK_ANY:format(t.rank.name), false)
+      if t.skillLine == line then lock = t.rank end
+    end
+    if lock then
+      goKey = GOKEY[line]
+      local ok, d = false, nil
+      if goKey and ns.Goto then ok, d = pcall(ns.Goto.For, goKey) end
+      local where = ok and type(d) == "table" and d.x and d.text or plan.masters and plan.masters[lock.name]
+      add("rank", where and L.PROF_STEP_RANK:format(lock.name, where) or L.PROF_STEP_RANK_ANY:format(lock.name), false)
+      if rank >= max then title = L.PROF_STEP_TITLE_RANK:format(pname, rank, max, lock.name)
+      else title = L.PROF_STEP_TITLE_SOON:format(pname, rank, max, max - rank, lock.name) end
+    else
+      for _, r in ipairs(D.Professions[line] and D.Professions[line].ranks or {}) do
+        if r.max > max then
+          if type(State.level) == "number" and State.level < r.minLevel then add("wait", L.PROF_STEP_RANK_LEVEL:format(r.name, r.minLevel)) end
+          break
+        end
       end
     end
   end
+  local held = lock ~= nil and rank >= max -- plafond atteint : rien d'autre a faire avant le maitre
   if step.buy then
     local b = step.buy
     local known = knownRecipe(adv, b.recipe) and true or nil
@@ -327,7 +345,8 @@ function Prof.Steps(line)
   if top and top.name and top.name ~= step.recipe and (top.color == "orange" or top.color == "yellow") then
     add("live", L.PROF_STEP_LIVE:format(top.name, L["PROF_C_" .. top.color]))
   end
-  return { title = title, short = title:sub(#pname + 2), todo = todo, step = step }
+  if held then for _, a in ipairs(todo) do if a.kind ~= "rank" then a.held = true end end end
+  return { title = title, short = title:sub(#pname + 2), todo = todo, step = step, alert = lock ~= nil, go = goKey }
 end
 
 -- Texte court pour la carte : titre + premiere action non faite (2 lignes max), ou le conseil « tes sacs » si une
@@ -336,7 +355,7 @@ function Prof.StepsText(line)
   local s = Prof.Steps(line)
   if not s then return nil end
   local first
-  for _, a in ipairs(s.todo) do if a.done ~= true then first = a break end end
+  for _, a in ipairs(s.todo) do if a.done ~= true and not a.held then first = a break end end
   if not (first and first.kind == "rank") then
     for _, e in ipairs(Prof.Craftable()) do
       if e.line == line and e.skillUp then return s.short .. "\n" .. Prof.BagShort(e) end
