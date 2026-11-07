@@ -55,6 +55,7 @@ WoW Forever (sorti le 4 novembre 2026) a le contenu de Vanilla (niveau max 60, r
 - **La baguette** (sort « Tir » / Shoot) demande d'être immobile 0,5 seconde avant de tirer.
 - **API différente de Retail sur certains points** : certains modèles (templates) et fonctions de Retail n'existent pas dans Forever. Avant d'utiliser une API (`C_Spell`, `C_SpellBook`, `C_Map`, `C_QuestLog`, `C_Timer`, `Settings`, `C_AssistedCombat`, fonctions du maître de classe, emplacement d'arme à distance, etc.), vérifie qu'elle existe et prévois une solution de repli.
 - **Client en français** : n'identifie rien par son nom anglais. Utilise les identifiants (sorts, objets, quêtes, cartes `uiMapID`) et récupère les noms localisés à l'exécution.
+- **Faits relevés en jeu** : une sonde réelle a déjà tranché plusieurs points de cette section (vie et mana secrets, API de talents, globales absentes). Voir la section 10.1, qui prime en cas de conflit.
 
 ---
 
@@ -361,3 +362,49 @@ PretreCoach/
 7. Peaufine l'interface (section 7).
 
 À chaque étape, dis-moi quoi tester en jeu et ce que je dois te renvoyer si ça ne marche pas.
+
+---
+
+## 10. Phase 2 : guide de bout en bout (validée le 2026-11-07)
+
+### 10.1 Faits relevés en jeu
+
+Sonde réelle : client 1.60.1 build 70862, Interface 16001, frFR. Ces faits priment sur les suppositions des sections 1 à 9.
+
+- **Vie et mana du joueur : SECRETS, même hors combat.** Les valeurs max sont lisibles.
+- **Talents** : ils passent par `C_ClassTalents` / `C_Traits`. Les API Classic (`GetTalentInfo`, etc.) sont absentes. `GetNumUnspentTalents` et `GetNumSpecGroups` existent.
+- **Globales absentes** : `GetSpellInfo`, `GetSpellCooldown`, `GetItemInfo`, `GetItemInfoInstant`, `IsQuestFlaggedCompleted`, `GetSkillLineInfo`. Utiliser les API `C_*`.
+- **Événement** : `LEARNED_SPELL_IN_TAB` n'existe pas.
+- **ID de sorts** : 32379 (Mot de l'ombre : Mort) et 47540 (Pénitence) n'existent pas sous ces ID.
+- **Noms du client** qui diffèrent : « Gardien de peur » pour Protection contre la peur, « Sombre sacrifice » pour Sacrifice sombre.
+- **Cartes** : `uiMapID` de type Classic (Tirisfal = 1420).
+- **Métiers** : la skillLine est la 7e valeur de `GetProfessionInfo` (Alchimie 171, Herboristerie 182, Secourisme 129, Cuisine 185).
+- **Conséquence** : le coach ne décide jamais sur la vie ou le mana. Il affiche une carte « Récupère » après chaque combat.
+
+### 10.2 Principes
+
+- **Zéro supposition** : on privilégie les données LUES EN JEU (API du jeu, Questie et Auctionator en direct) plutôt qu'écrites en dur.
+- Tout ce qui est écrit en dur cite sa source et est contrôlé par `/coach probe`.
+- **Dépendances optionnelles** : `Questie` (`LibQuestieDB`, API publique, contrat 4) et `Auctionator` (`Auctionator.API.v1`, avec un `callerID` "PretreCoach"). L'addon marche sans elles.
+- **Licence** : aucune donnée de Questie n'est embarquée (GPL). On la lit seulement en direct.
+- **Pas de doublon** : Questie trace déjà les quêtes et place les PNJ de ville sur la carte, Auctionator met les prix dans les infobulles. Notre addon priorise et dit où aller.
+- **Pas de taux de butin inventés** : les tables de butin de Questie ne sont lisibles qu'avec `loadstring`, interdit par la Règle 0.
+- **Noms des PNJ** : Questie les donne en anglais. On affiche donc un rôle + une zone localisée + des coordonnées.
+
+### 10.3 Lots
+
+| Lot | Contenu | Données | Repli |
+| --- | --- | --- | --- |
+| **L13 Sonde étendue** | Sonde de `C_Map.SetUserWaypoint` / `CanSetUserWaypointOnMap`, `C_SuperTrack`, `C_TradeSkillUI`, `C_Container`, prix marchand de `C_Item.GetItemInfo`, `C_EncounterJournal`, présence de LibQuestieDB et d'Auctionator. Plus `/coach here` : position du joueur, copiable | API du jeu, lues par la sonde | Une API absente est notée « n'existe pas » et la fonction qui en dépend est désactivée |
+| **L14 Ponts** `Ext/Questie.lua` et `Ext/Auctionator.lua` | Chargement paresseux, `pcall`, conversion AreaID → uiMapID, coordonnées /100. Index local des maîtres et des commissaires-priseurs, construit une fois, hors combat, par petits morceaux | Questie (`LibQuestieDB`) et Auctionator en direct. Index gardé en cache dans les SavedVariables de la machine (rien n'est livré) | Sans Questie ou Auctionator, les ponts restent inactifs et l'addon fonctionne seul |
+| **L15 « Où aller »** | Sur chaque objectif et chaque règle : texte (rôle, zone, x y) + bouton « Placer un repère » | Index local du L14, zones de `Data/Zones.lua` | Sans Questie, le texte seul |
+| **L16 Métiers en direct** | À l'ouverture de la fenêtre de métier : lecture des recettes et de leur difficulté → « Fabrique X pour monter ». Coût des composants et marge via Auctionator. Route des herbes en liste statique par tranche (section 6.6) | `C_TradeSkillUI`, Auctionator, `Data/Professions.lua` | Sans Auctionator, pas de coût ni de marge. Sans `C_TradeSkillUI`, listes de la section 6.6 |
+| **L17 Vente et farm** | **Vente** : scan des sacs hors combat → quoi vendre à l'hôtel des ventes (prix Auctionator contre prix marchand). **Farm** : liste sourcée des boss et objets utiles au prêtre, plus le journal de donjon du jeu | Scans du joueur uniquement (`C_Container`), `Data/` pour le farm, `C_EncounterJournal` si la sonde confirme qu'il existe | Pas de scan, pas de conseil de vente. Sans journal de donjon, la liste de `Data/` seule |
+| **L18 Quêtes clés** | Courte liste écrite par ID : quêtes de classe, donjons, récompenses utiles au prêtre | Vérifiée en direct : `Quest.Exists`, prérequis, donneur et coordonnées via Questie, nom localisé via `C_QuestLog` | ID non confirmé : objectif à cocher à la main, marqué « à vérifier » |
+| **L19 Diffusion** | Dépôt GitHub public. Installation sur chaque PC ou Mac par WowUp si un essai à blanc prouve qu'il gère `_forever_`. Sauvegardes locales par machine (choix de l'utilisateur) | Dépôt GitHub | Sinon git clone + lien : `install.ps1` (Windows), `install.sh` (Mac). Mise à jour = `git pull` puis `/reload`. Chemin Mac : `/Applications/World of Warcraft/_forever_/Interface/AddOns/` |
+
+### 10.4 Règle 0 rappelée
+
+- **Permis** : repères de carte, lecture des sacs et lecture d'autres addons. Lire et afficher.
+- **Interdit** : tout achat, toute vente et toute enchère automatiques, tout lancement de sort, tout clic à la place du joueur.
+- Le bouton « Placer un repère » ne pose qu'un repère de carte. Il n'achète, ne vend et ne lance rien.
