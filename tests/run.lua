@@ -3271,7 +3271,7 @@ local function suite(label)
     saved.qindex.fmt = nil -- ancien format
     local n2 = qboot(saved)
     assert(n2.Q.StartIndex() == true, "format different : reconstruit"); drain()
-    assert(n2.db.qindex.fmt == 1)
+    assert(n2.db.qindex.fmt == 2)
     local n3 = qboot(n2.db)
     mock.qver = nil -- version illisible : "?" n'est jamais reutilise
     assert(n3.Q.StartIndex() == true); drain()
@@ -3294,6 +3294,18 @@ local function suite(label)
     end)
     _G.LibQuestieDB = lib
     assert(ok, err)
+  end)
+
+  check("Questie : maitres reconnus par un subName francais (Questie frFR)", function()
+    if not LibQuestieDB then return end
+    local n = qboot()
+    mock.qnpcs[310] = { 16, "Maître des alchimistes", "H", 1497, { [1497] = { { 50, 40 } } } }
+    mock.qnpcs[311] = { 16, "Maître herboriste", "AH", 1497, { [1497] = { { 52, 41 } } } }
+    n.Q.StartIndex(); drain()
+    local idx = n.db.qindex
+    local function has(list, id) for _, x in ipairs(list or {}) do if x == id then return true end end end
+    assert(idx and has(idx.trainers.ALCHEMY, 310) and has(idx.trainers.HERBALISM, 311), "maitres francais indexes")
+    mock.qnpcs[310], mock.qnpcs[311] = nil, nil
   end)
 
   check("Questie : ligne de spawn sans y numerique rejetee", function()

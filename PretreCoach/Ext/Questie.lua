@@ -7,7 +7,9 @@ ns.Q = Q
 
 local CHUNK = 200 -- PNJ lus par tick
 -- role -> morceau du subName (anglais, minuscules). Les subName reels : « Priest Trainer », « First Aid Trainer »...
-local ROLES = { PRIEST = "priest", ALCHEMY = "alchemy", HERBALISM = "herbalism", FIRSTAID = "first aid", COOKING = "cooking" }
+-- Questie peut rendre le subName localise (client frFR) : morceaux anglais ET francais, sans majuscule accentuee.
+local ROLES = { PRIEST = { "priest", "prêtre", "pretre" }, ALCHEMY = { "alchemy", "alchimi" },
+  HERBALISM = { "herbalism", "herboris" }, FIRSTAID = { "first aid", "secouris" }, COOKING = { "cooking", "cuisin" } }
 
 local lib, tried -- lib : nil = pas encore teste, false = absente ou contrat refuse ; tried : table testee en dernier
 function Q.Available()
@@ -93,7 +95,7 @@ local function dbVersion()
   return ok and v ~= nil and tostring(v) or "?" -- "?" : jamais reutilise comme cache
 end
 
-local FORMAT = 1 -- a incrementer quand la forme de qindex change
+local FORMAT = 2 -- a incrementer quand la forme de qindex change (2 : subName francais reconnus)
 local TRIES, RETRY = 3, 30
 local tries, nearCache = 0, {}
 ns.Listen("QINDEX", function() nearCache = {} end)
@@ -125,8 +127,10 @@ function Q.StartIndex()
     local sub = isT and Q.Npc(id, "subName")
     if type(sub) == "string" then
       sub = sub:lower()
-      for role, part in pairs(ROLES) do
-        if sub:find(part, 1, true) then idx.trainers[role][#idx.trainers[role] + 1] = id end
+      for role, parts in pairs(ROLES) do
+        for _, part in ipairs(parts) do
+          if sub:find(part, 1, true) then idx.trainers[role][#idx.trainers[role] + 1] = id break end
+        end
       end
     end
   end

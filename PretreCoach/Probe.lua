@@ -585,6 +585,14 @@ local function ExtraSections(add, section)
       local ok, v = pcall(price, "PretreCoach", 2589)
       add("GetAuctionPriceByItemID(2589, étoffe de lin) : %s", ok and Show(v) or ("erreur : " .. tostring(v)))
     end
+    local idx = ns.db and ns.db.qindex
+    if type(idx) == "table" and type(idx.trainers) == "table" then
+      local t = {}
+      for _, role in ipairs({ "PRIEST", "ALCHEMY", "HERBALISM", "FIRSTAID" }) do t[#t + 1] = role .. " " .. #(idx.trainers[role] or {}) end
+      add("Index des maîtres (format %s) : %s | commissaires %d", tostring(idx.fmt), table.concat(t, ", "), #(idx.auctioneers or {}))
+    else
+      add("Index des maîtres : pas encore construit")
+    end
   end)
 end
 
