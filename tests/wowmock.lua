@@ -1,6 +1,6 @@
 -- Fausse API WoW minimale : seulement ce que PretreCoach appelle. Charger avec dofile, rend le module `mock`.
 local mock = { errors = {}, printed = {}, events = {}, timers = {}, inCombat = false, hasTarget = true, noSecrets = false,
-  unknown = {} } -- unknown.spell / .item / .map : { [id] = true } = l'API ne repond pas pour cet ID
+  unknown = {}, time = 0, guid = "Creature-0" } -- unknown.spell / .item / .map : { [id] = true } = l'API ne repond pas pour cet ID
 
 -- Valeur secrete simulee : toute operation autre que issecretvalue leve une erreur.
 local function deny(op) return function() error("attempt to " .. op .. " a secret value", 2) end end
@@ -58,6 +58,7 @@ function mock.reset()
   mock.events, mock.timers, mock.errors, mock.printed = {}, {}, {}, {}
   mock.inCombat, mock.hasTarget, mock.rejectEvents, mock.noRegisterUnitEvent, mock.lastText = false, true, nil, false, nil
   mock.unknown = {}
+  mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known, mock.talentList = 0, "Creature-0", nil, nil, nil, nil, nil
   SlashCmdList = {}
   PretreCoachDB = nil
 end
@@ -96,21 +97,31 @@ function UnitPower() return secretNow() and mock.SECRET or 50 end
 UnitPowerMax = UnitPower
 GetPowerRegen = sec(1)
 function UnitExists() return mock.hasTarget end
-UnitGUID, UnitIsDead, UnitCreatureType = sec("Creature-0"), sec(false), sec("Humanoide")
+UnitIsDead, UnitCreatureType = sec(false), sec("Humanoide")
+-- mock.guid pilote le GUID de la cible ; mock.noGuid = illisible (nil)
+function UnitGUID() if mock.noGuid then return nil end return secretNow() and mock.SECRET or mock.guid end
 function CheckInteractDistance() return false end
 function GetUnitSpeed() return 0 end
 function IsPlayerMoving() return false end
-function GetInventoryItemID() return nil end
+function GetTime() return mock.time end -- pilotable : mock.time
+function GetInventoryItemID(_, slot) if slot == 18 then return mock.rangedID end end -- mock.rangedID = baguette equipee
 function GetInventoryItemLink() return nil end
-function IsPlayerSpell() return true end
-function IsSpellKnown() return true end
+function GetItemInfo(id) if mock.uncached then return nil end return "Baguette " .. id, "lien", 1, 1, 5 end
+function IsPlayerSpell(id) if mock.known then return mock.known[id] or false end return true end -- mock.known = { [id] = true }
+function IsSpellKnown(id) return IsPlayerSpell(id) end
 function GetNumTalentTabs() return 3 end
+-- mock.talentList = { [tab] = { { row, col, rang }, ... } } ; sinon un talent par onglet
+function GetNumTalents(tab) return mock.talentList and #(mock.talentList[tab] or {}) or 1 end
 function GetProfessions() return 1, 2 end
 function GetProfessionInfo(i) return i == 1 and "Herboristerie" or "Alchimie", 0, 100, 300, 0, 0, i == 1 and 182 or 171 end
 function GetNumSkillLines() return 2 end
 function GetSkillLineInfo(i) return "Competence" .. i, false, 0, 50 end
 function GetTalentTabInfo(i) return "Onglet" .. i, 0, 0 end
-function GetTalentInfo() return "Talent", 0, 1, 1, 0, 5 end
+function GetTalentInfo(tab, i)
+  local t = mock.talentList and mock.talentList[tab] and mock.talentList[tab][i]
+  if t then return "Talent", 0, t[1], t[2], t[3], 5 end
+  return "Talent", 0, 1, 1, 0, 5
+end
 function GetNumTalentGroups() return 1 end
 function GetActiveTalentGroup() return 1 end
 function GetUnspentTalentPoints() return 0 end
@@ -118,9 +129,13 @@ function GetNumTrainerServices() return 3 end
 function GetTrainerServiceInfo(i) return "Sort" .. i, "", "available" end
 function GetTrainerServiceLevelReq() return 10 end
 function GetTrainerServiceCost() return 100 end
-C_SpellBook = { IsSpellKnown = function() return true end }
+C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
 C_QuestLog = { IsQuestFlaggedCompleted = function() return false end, GetTitleForQuestID = function() return "Titre" end }
-C_Item = { GetItemInfoInstant = function(id) if (mock.unknown.item or {})[id] then return nil end return id end }
+-- 11287 = baguette (classe 2, sous-classe 19) ; les autres IDs : un objet quelconque
+C_Item = { GetItemInfoInstant = function(id)
+  if (mock.unknown.item or {})[id] then return nil end
+  return id, "Arme", "Baguette", "", 0, 2, id == 11287 and 19 or 0
+end }
 C_TradeSkillUI = { GetProfessionInfoBySkillLineID = function(id) return { professionName = "Metier" .. id } end }
 C_ActionBar = { FindSpellActionButtons = function() return nil end }
 Settings = { RegisterCanvasLayoutCategory = function() end, RegisterAddOnCategory = function() end }
@@ -132,11 +147,11 @@ C_Spell = {
   IsSpellInRange = sec(true),
 }
 C_UnitAuras = { GetAuraDataByIndex = function() return secretNow() and mock.SECRET or nil end }
-C_Map = { GetBestMapForUnit = function() return 1 end, GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = "Tirisfal" } end }
+C_Map = { GetBestMapForUnit = function() return 1 end, GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = "Tirisfal", parentMapID = id == 1 and 1420 or 0 } end }
 
 -- APIs incertaines sur Forever : mock.setAbsent(true) les retire toutes (passe « absente »), false les remet.
 local UNCERTAIN = [[
-GetTalentTabInfo GetTalentInfo GetNumTalentTabs GetNumTalentGroups GetActiveTalentGroup GetUnspentTalentPoints
+GetTalentTabInfo GetTalentInfo GetNumTalentTabs GetNumTalents GetNumTalentGroups GetActiveTalentGroup GetUnspentTalentPoints
 C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo GetSkillLineInfo GetNumSkillLines
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetInventoryItemID C_ActionBar issecretvalue C_TradeSkillUI

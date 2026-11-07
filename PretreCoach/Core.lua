@@ -56,6 +56,18 @@ function ns.OnUnit(event, unit, fn)
   return ns.On(event, function(e, u, ...) if u == unit then return fn(e, u, ...) end end)
 end
 
+-- Petit bus interne entre modules : ns.Listen("STATE", fn) ; ns.Fire("STATE", ...) appelle fn("STATE", ...).
+local listeners = {}
+
+function ns.Listen(msg, fn)
+  listeners[msg] = listeners[msg] or {}
+  table.insert(listeners[msg], fn)
+end
+
+function ns.Fire(msg, ...)
+  for _, fn in ipairs(listeners[msg] or {}) do run(fn, msg, ...) end
+end
+
 ns.On("ADDON_LOADED", function(_, name)
   if name ~= ADDON then return end
   PretreCoachDB = PretreCoachDB or {}

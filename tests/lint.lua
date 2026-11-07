@@ -12,6 +12,7 @@ UnitHealth UnitHealthMax UnitPower UnitPowerMax GetPowerRegen UnitExists UnitGUI
 UnitClass UnitRace CheckInteractDistance GetUnitSpeed IsPlayerMoving GetInventoryItemID GetInventoryItemLink
 IsPlayerSpell IsSpellKnown GetSpellInfo GetSpellCooldown GetLocale GetBuildInfo GetRealZoneText
 GetNumTalentTabs GetProfessions GetProfessionInfo GetNumSkillLines GetSkillLineInfo
+GetTime GetNumTalents GetTalentInfo GetNumTalentGroups GetNumSpecGroups GetUnspentTalentPoints
 GetItemInfo GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED
 ]]):gmatch("%S+") do READ_OK[w] = true end
 
