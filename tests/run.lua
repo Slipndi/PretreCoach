@@ -1471,15 +1471,18 @@ local function suite(label)
     assert(res.text ~= "" and res.reason ~= "")
   end)
 
-  check("Rotation : regle des 5 s, mana illisible : baguette pendant 5 s puis Attaque mentale", function()
+  check("Rotation : regle des 5 s, mana illisible : toujours la baguette, jamais d'Attaque mentale par comptage", function()
     local o = { level = 12, hasWand = true, inCombat = true, hasSWP = true, known = { SWP = 1, MINDBLAST = 1 } }
     o.fiveSec = 3
     local r = rk(o, "SHOOT", "5 s en cours : baguette")
     assert(r.text:find("3 s", 1, true), "compte a rebours affiche")
     o.fiveSec = 0
-    rk(o, "MINDBLAST,SHOOT", "5 s ecoulees : Attaque mentale puis baguette")
+    rk(o, "SHOOT", "5 s ecoulees, mana secret : baguette seule")
+    o.manaPct = 80
+    rk(o, "MINDBLAST,SHOOT", "mana lisible et haut : Attaque mentale")
+    o.manaPct = nil
     o.hasWand = false o.fiveSec = 3 o.known.SMITE = 1
-    rk(o, "MINDBLAST,SMITE,MELEE", "sans baguette : pas d'attente")
+    rk(o, "SMITE,MELEE", "sans baguette, mana secret : pas d'Attaque mentale")
   end)
 
   check("Rotation : paliers 10-40 avec baguette", function()
@@ -1651,11 +1654,10 @@ local function suite(label)
     local sec = { hasHostileTarget = false, recover = true }
     sec.hpPct, sec.manaPct = nil, nil
     local corpse = merge(sec, { targetDead = true, targetCreatureType = N.L.CT_HUMANOID, cannibalUsable = true, bandageCount = 2, recentlyBandaged = false })
-    rk(corpse, "DARKSAC", "vie secrete : jamais de soin (ni cadavre ni bandage)")
+    rk(corpse, "DARKSAC,DRINK", "vie secrete : jamais de soin (ni cadavre ni bandage)")
     assert(N.Rotation.Compute(rctx(corpse)).text:find(N.L.ROT_RECOVER, 1, true), "titre Recupere")
-    rk(merge(sec, {}), "DARKSAC", "combat court, 0 sort a mana : pas de boire ni manger")
-    rk(merge(sec, { manaCasts = 2 }), "DARKSAC", "2 sorts a mana : pas encore boire")
-    rk(merge(sec, { manaCasts = 3, longFight = true }), "DARKSAC,DRINK", "3 sorts a mana : boire ; combat long sans vie lisible : pas manger")
+    rk(merge(sec, {}), "DARKSAC,DRINK", "mana secret : boire propose sans comptage de sorts ; vie secrete : pas manger")
+    rk(merge(sec, { manaCasts = 0, longFight = true }), "DARKSAC,DRINK", "aucun seuil de sorts a mana")
     local off = merge(sec, { recover = false }) rk(off, "", "fenetre close : baguette seule")
     rk(merge(sec, { inCombat = true }), "", "en combat : rien")
     assert(not N.Rotation.Compute(rctx(merge(sec, { hasHostileTarget = true }))).text:find(N.L.ROT_RECOVER, 1, true), "cible hostile : pas de carte")

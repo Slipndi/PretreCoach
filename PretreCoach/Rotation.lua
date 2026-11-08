@@ -81,8 +81,7 @@ function Rotation.Compute(ctx)
       if ctx.recover == true then
         -- vie secrète : aucun conseil de soin (bandage, manger, Cannibalisme), on ne sait pas si le joueur est blessé
         if ready("DARKSAC") then add("DARKSAC", L.ROT_DARKSAC, "Sacrifice sombre prêt") end
-        -- shortcut: mana secret, seuil de 3 sorts à mana dans le combat ; à remplacer si une jauge lisible apparaît
-        if (ctx.manaCasts or 0) >= 3 then add("DRINK", L.ROT_DRINK, "3 sorts à mana ou plus dans le combat") end
+        add("DRINK", L.ROT_DRINK, "mana secret : boire proposé après chaque combat")
         out.text = L.ROT_RECOVER .. " : " .. out.text
         out.reason = "récupération après combat (vie ou mana secrets) : " .. out.reason
       elseif #keys == 0 then out.reason = "vie ou mana illisible : rien à récupérer" end
@@ -142,8 +141,6 @@ function Rotation.Compute(ctx)
         if known("SWP") then add("SWP", L.ROT_SWP, "Douleur absente de la cible") end
       elseif swp == true and above(ctx.mbHigh, mana, REBLAST_ON) and ready("MINDBLAST") then
         add("MINDBLAST", L.ROT_MB, "mana lisible et haut : Attaque mentale reconseillée")
-      elseif swp == true and mana == nil and type(ctx.fiveSec) == "number" and ready("MINDBLAST") and not (wand and regenWait) then
-        add("MINDBLAST", L.ROT_MB, "mana illisible, 5 s écoulées depuis le dernier sort : Attaque mentale")
       end
     else
       local mp30 = mana ~= nil and mana >= TIER3_MANA
@@ -421,7 +418,6 @@ function Rotation.Context()
   end
   if ctx.hasHostileTarget then recoverUntil = nil end
   ctx.recover = not ctx.inCombat and not ctx.hasHostileTarget and recoverUntil ~= nil and GetTime() < recoverUntil
-  ctx.manaCasts = ns.Timers.manaCasts
   ctx.longFight = lastFightSecs ~= nil and lastFightSecs >= 20
   -- récupération : seulement hors combat, sans cible hostile, avec une vie lisible et basse (ou la carte « Récupère »)
   if not ctx.inCombat and not ctx.hasHostileTarget then
