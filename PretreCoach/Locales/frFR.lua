@@ -342,6 +342,7 @@ ns.L = {
   GOLD_LOOP = "Boucle d'herbes : %d points (%s) ≈ %s/h",
   GOLD_LOOP_GO = "%s, premier point de la boucle",
   GOLD_HERB_ROW = "%s : %s · %d nœuds",
+  GOLD_HERB_ROW_1 = "%s : %s · %d nœud",
   GOLD_HERB_NOPRICE = "prix inconnu",
   GATHER_SKILLUP = "donne encore des points d'Herboristerie",
   OPT_HERBPINS = "Nœuds d'herbes sur la carte du monde",

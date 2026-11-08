@@ -153,7 +153,7 @@ function Gold.Rows()
   local ok, herbs = pcall(function() return ns.Gather and ns.Gather.Herbs(State.mapID) or {} end)
   for _, h in ipairs(ok and herbs or {}) do
     rows[#rows + 1] = { icon = ns.Gather.Icon(h.itemID), highlight = false, sub = h.skillup and L.GATHER_SKILLUP or nil,
-      text = L.GOLD_HERB_ROW:format(h.name, h.price and money(h.price) or L.GOLD_HERB_NOPRICE, #h.nodes) }
+      text = (#h.nodes == 1 and L.GOLD_HERB_ROW_1 or L.GOLD_HERB_ROW):format(h.name, h.price and money(h.price) or L.GOLD_HERB_NOPRICE, #h.nodes) }
   end
   local s = Gold.SessionText()
   if s then rows[#rows + 1] = { text = s, highlight = false } end

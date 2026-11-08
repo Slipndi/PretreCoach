@@ -1,12 +1,12 @@
 -- Itinéraire des quêtes de la zone : Quests.Route() -> { { kind, questID, name, mapID, x, y, text, ... } } et Quests.Best() = premier arrêt.
 -- Lecture seule (Règle 0). kind : "turnin" (journal, terminée : à rendre), "progress" (journal, en cours), "pickup" (disponible, connue de QuestieDB).
--- QuestieDB (ns.Q) donne les lieux ; sans lui : journal seul, sans lieu. Rien n'est enregistré (cache en mémoire).
+-- QuestieDB (ns.Q) donne les lieux ; sans lui : journal seul, sans lieu. Récompenses : base apprise (QuestDB), journal, estimation.
 -- Ordre : plus proche voisin depuis le joueur (une quête à rendre dans la zone d'abord), puis 2-opt borné ; une quête à prendre
 -- passe toujours avant son objectif puis son rendu. Ce qui est sur une autre carte ou sans lieu passe après (rendre, en cours, prendre).
 -- Choix des quêtes retenues (au plus MAX_STOPS arrêts) : score = (or + poids x XP en or) / minutes, voir « Valeur » ci-dessous.
 -- Quests.Pins(uiMapID) : repères à dessiner sur la carte du monde (UI/QuestPins.lua).
 local _, ns = ...
-local S, L, Q, State = ns.S, ns.L, ns.Q, ns.State
+local S, L, Q, State, QuestDB = ns.S, ns.L, ns.Q, ns.State, ns.QuestDB
 
 local Quests = {}
 ns.Quests = Quests
@@ -111,15 +111,26 @@ local function median(t)
   return #t % 2 == 1 and t[m] or (t[m] + t[m + 1]) / 2
 end
 
+-- Échantillons réel/estimé : quêtes apprises (niveau du joueur à la lecture) puis journal (niveau actuel, prioritaire).
+-- shortcut: relu à chaque calcul (4000 quêtes au plus, ~ms) ; à mettre en cache si QuestDB grossit.
 local function calibrate(list, level)
-  local rx, rm = {}, {}
+  local sx, sm = {}, {}
+  QuestDB.Each(function(id, xp, l, ql, money)
+    if ql then
+      if xp and l and xp > 0 then sx[id] = xp / (rawXP(ql) * greyPct(ql, l)) end
+      if money and money > 0 then sm[id] = money / rawMoney(ql) end
+    end
+  end)
   for _, j in ipairs(list) do
     if j.ql then
       local xp, money = realReward(j.id)
-      if xp and xp > 0 then rx[#rx + 1] = xp / (rawXP(j.ql) * greyPct(j.ql, level)) end
-      if money and money > 0 then rm[#rm + 1] = money / rawMoney(j.ql) end
+      if xp and xp > 0 then sx[j.id] = xp / (rawXP(j.ql) * greyPct(j.ql, level)) end
+      if money and money > 0 then sm[j.id] = money / rawMoney(j.ql) end
     end
   end
+  local rx, rm = {}, {}
+  for _, v in pairs(sx) do rx[#rx + 1] = v end
+  for _, v in pairs(sm) do rm[#rm + 1] = v end
   local function clamp(v) return v and math.max(0.25, math.min(4, v)) or 1 end
   calib.xp, calib.money = clamp(median(rx)), clamp(median(rm))
 end
@@ -134,9 +145,18 @@ function Quests.ItemValue(item)
   local r = { S.GetAll((C_Item and C_Item.GetItemInfo) or GetItemInfo, id) }
   return r[1] == "lisible" and num(r[12]) or nil
 end
--- questID -> valeur de la meilleure récompense au choix, vue dans la session (UI/QuestReward.lua). Mémoire seulement.
--- shortcut: une quête dont la fenêtre n'a pas été vue compte sans objet ; à compléter si une API lit les choix par questID.
-Quests.seen = {}
+
+-- Récompense apprise (QuestDB) : XP ramenée à la pénalité grise du niveau actuel, argent, valeur des objets (fixes + meilleur choix).
+local function learned(id, ql, level)
+  local r = QuestDB.Get(id)
+  if not r then return nil end
+  local xp, q = r.xp, ql or r.ql
+  if xp and q and r.level and r.level ~= level then xp = math.floor(xp * greyPct(q, level) / greyPct(q, r.level) + 0.5) end
+  local items, bestChoice = 0, 0
+  for _, it in ipairs(QuestDB.Fixed(id) or {}) do items = items + (Quests.ItemValue(it[1]) or 0) * it[2] end
+  for _, it in ipairs(QuestDB.Choices(id) or {}) do bestChoice = math.max(bestChoice, (Quests.ItemValue(it[1]) or 0) * it[2]) end
+  return xp, r.money, items + bestChoice
+end
 
 local function focusWeight()
   local g = ns.db and ns.db.guide
@@ -170,15 +190,18 @@ end
 
 -- { xp, gold, rate (cuivre/min), score, grey, far } ; nil si rien n'est connu (ni récompense réelle, ni niveau de quête).
 local function value(id, ql, level, inLog, objs, nStops, travelYd)
-  local xp, money
-  if inLog then xp, money = realReward(id) end
+  local xp, money, items = learned(id, ql, level)
+  if inLog then
+    local jx, jm = realReward(id)
+    xp, money = xp or jx, money or jm
+  end
   if ql then
     local ex, em = Quests.Estimate(ql, level)
     xp, money = xp or ex, money or em
   end
   if not (xp or money) then return nil end
   xp, money = xp or 0, money or 0
-  local gold = money + (Quests.seen[id] or 0)
+  local gold = money + (items or 0)
   local move = travelYd / SPEED
   local mins = math.max(0.5, (move + objs * OBJ_SECS + nStops * STOP_SECS) / 60)
   return { xp = xp, gold = gold, rate = gold / mins, grey = ql ~= nil and greyPct(ql, level) < 1, far = move > mins * 30,

@@ -17,7 +17,7 @@ GetNumTrainerServices GetTrainerServiceInfo GetTrainerServiceLevelReq GetTrainer
 GetTime GetNumTalents GetTalentInfo GetNumTalentGroups GetNumSpecGroups GetNumUnspentTalents
 Settings Minimap GameTooltip GetCursorPosition GetItemInfo GetItemIcon GetItemCount GetItemInfoInstant IsQuestFlaggedCompleted INVSLOT_MAINHAND INVSLOT_RANGED UiMapPoint C_SuperTrack Enum C_Container C_ClassColor RAID_CLASS_COLORS GetMoney
 ProfessionsFrame TradeSkillFrame SelectTradeSkill TradeSkillFrame_Update GetNumTradeSkills GetTradeSkillInfo WorldMapFrame hooksecurefunc EventRegistry IsInGroup
-GetQuestLogRewardXP GetQuestLogRewardMoney GetNumQuestChoices GetQuestItemLink GetQuestItemInfo GetQuestID QuestInfoRewardsFrame
+GetRewardXP GetRewardMoney GetNumQuestRewards GetQuestLogRewardXP GetQuestLogRewardMoney GetNumQuestChoices GetQuestItemLink GetQuestItemInfo GetQuestID QuestInfoRewardsFrame
 ]]):gmatch("%S+") do READ_OK[w] = true end
 
 local bad = 0

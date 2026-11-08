@@ -702,6 +702,10 @@ function ns.Probe()
   section("Quêtes")
   add("Quête %d (Blackfathom Villainy / Gravestone Scepter) terminée : %s", ns.Data.GravestoneQuest,
     Dump("C_QuestLog.IsQuestFlaggedCompleted", ns.Data.GravestoneQuest))
+  local learned, exact = 0, 0
+  if ns.QuestDB then learned, exact = ns.QuestDB.Stats() end
+  add("Base de quêtes apprise : %d quêtes (dont %d avec XP exacte)", learned, exact)
+  add("%s | QUEST_TURNED_IN : %s", Presence({ "GetRewardXP", "GetQuestLogRewardXP" }), reg.QUEST_TURNED_IN and "inscrit" or "REFUSÉ")
 
   section("Contrôle des ID de Data/")
   CheckData(add)

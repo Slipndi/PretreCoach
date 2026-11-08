@@ -118,6 +118,7 @@ function mock.reset()
   mock.waypoint, mock.superTracked, mock.canWaypoint, mock.areas, mock.mapKids, mock.mapNames = nil, nil, nil, nil, nil, nil
   mock.worldMap, mock.hooked, mock.grouped = nil, nil, nil
   mock.qreward, mock.choices, mock.questID = nil, nil, nil
+  mock.rewards, mock.rewardXP, mock.rewardMoney = nil, nil, nil
   if WorldMapFrame then WorldMapFrame.shown = false end
   if mock.qinit then mock.qinit() end
   mock.recipeInfo, mock.schematics, mock.tsNotReady = nil, nil, nil
@@ -223,7 +224,7 @@ C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = 
 -- mock.qdone = { [questID] = true } : quetes deja faites
 C_QuestLog = { IsQuestFlaggedCompleted = function(id) return (mock.qdone or {})[id] == true end, GetTitleForQuestID = function() return "Titre" end,
   GetNumQuestLogEntries = function() return #(mock.qlog or {}), 0 end,
-  GetInfo = function(i) local q = (mock.qlog or {})[i] return q and { questID = q.questID, title = q.title, isHeader = q.isHeader == true } or nil end,
+  GetInfo = function(i) local q = (mock.qlog or {})[i] return q and { questID = q.questID, title = q.title, level = q.level, isHeader = q.isHeader == true } or nil end,
   IsComplete = function(id) for _, q in ipairs(mock.qlog or {}) do if q.questID == id then return q.complete == true end end end,
   GetQuestObjectives = function(id) for _, q in ipairs(mock.qlog or {}) do if q.questID == id then return q.objectives or {} end end return {} end }
 -- mock.icons sert aussi a GetItemIcon (ancienne API, repli)
@@ -401,9 +402,14 @@ function IsInGroup() return mock.grouped == true end
 -- pour la fenetre de quete ouverte (mock.questID) ; QuestInfoRewardsFrame.RewardButtons = boutons Blizzard
 function GetQuestLogRewardXP(id) local r = (mock.qreward or {})[id] return r and r[1] end
 function GetQuestLogRewardMoney(id) local r = (mock.qreward or {})[id] return r and r[2] end
-function GetNumQuestChoices() return #(mock.choices or {}) end
-function GetQuestItemLink(kind, i) local c = kind == "choice" and (mock.choices or {})[i] return c and ("|cffffffff|Hitem:" .. c[1] .. "::|h[Objet]|h|r") or nil end
-function GetQuestItemInfo(kind, i) local c = kind == "choice" and (mock.choices or {})[i] if c then return "Objet", 1, c[2] or 1, 1, true, c[1] end end
+-- fenetre ouverte : mock.rewardXP, mock.rewardMoney (valeurs mock.SECRET possibles), mock.rewards = objets fixes { { itemID, quantite } }
+local function items(kind) return (kind == "choice" and mock.choices or kind == "reward" and mock.rewards) or {} end
+function GetRewardXP() return mock.rewardXP end
+function GetRewardMoney() return mock.rewardMoney end
+function GetNumQuestChoices() return #items("choice") end
+function GetNumQuestRewards() return #items("reward") end
+function GetQuestItemLink(kind, i) local c = items(kind)[i] return c and ("|cffffffff|Hitem:" .. c[1] .. "::|h[Objet]|h|r") or nil end
+function GetQuestItemInfo(kind, i) local c = items(kind)[i] if c then return "Objet", 1, c[2] or 1, 1, true, c[1] end end
 function GetQuestID() return mock.questID end
 QuestInfoRewardsFrame = { RewardButtons = {} }
 for i = 1, 6 do QuestInfoRewardsFrame.RewardButtons[i] = newFrame() end
@@ -421,6 +427,7 @@ GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventor
 UiMapPoint C_SuperTrack WorldMapFrame hooksecurefunc Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
 EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator GetItemIcon UnitXP UnitXPMax RegisterUnitWatch UnitInRange
 GetQuestLogRewardXP GetQuestLogRewardMoney GetNumQuestChoices GetQuestItemLink GetQuestItemInfo GetQuestID QuestInfoRewardsFrame
+GetRewardXP GetRewardMoney GetNumQuestRewards
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end

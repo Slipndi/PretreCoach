@@ -1,7 +1,7 @@
 -- Meilleure récompense au choix (façon Pawn) : à la fenêtre de rendu (QUEST_COMPLETE), un liseré doré et une pièce marquent
 -- la récompense qui vaut le plus d'or (HdV sinon marchand, x quantité), avec sa valeur. Lecture seule (Règle 0) : cadre simple
 -- posé sur le bouton Blizzard, souris ignorée, aucun clic simulé, aucun choix à la place du joueur. Rien en combat ni en base.
--- La valeur vue (QUEST_DETAIL ou QUEST_COMPLETE) est notée en mémoire dans ns.Quests.seen pour le score des quêtes.
+-- Les récompenses vues sont apprises par ns.QuestDB (QuestDB.lua), pas ici.
 local _, ns = ...
 local UI, S = ns.UI, ns.S
 
@@ -57,14 +57,12 @@ function R.Hide()
   R.shown = nil
 end
 
--- Relit les choix de la fenêtre ouverte ; noMark : note seulement la valeur (fenêtre d'acceptation).
-function R.Update(noMark)
+-- Relit les choix de la fenêtre ouverte.
+function R.Update()
   R.Hide()
   if InCombatLockdown() then return end
   local best, n = R.Best()
-  local qid = S.Get(GetQuestID)
-  if best and type(qid) == "number" and ns.Quests then ns.Quests.seen[qid] = best.value end
-  if noMark or not best or n < 2 or (ns.db and ns.db.show and ns.db.show.questreward == false) then return end
+  if not best or n < 2 or (ns.db and ns.db.show and ns.db.show.questreward == false) then return end
   local b = rewardButton(best.index)
   if not b then return end
   if not mark then build() end
@@ -76,5 +74,4 @@ end
 
 -- après les gestionnaires Blizzard, qui remplissent les boutons au même événement
 ns.On("QUEST_COMPLETE", function() ns.After(0, R.Update) end)
-ns.On("QUEST_DETAIL", function() ns.After(0, function() R.Update(true) end) end)
 ns.On("QUEST_FINISHED", R.Hide)

@@ -5235,9 +5235,9 @@ local function suite(label)
     for _, r in ipairs(rows) do hit[r.text] = r end
     local f = hit["Feuillargent : " .. n.Prof.Money(30) .. " · 30 nœuds"]
     assert(f and f.icon == 1234 and rows[1].go, "rangee Feuillargent, icone ; candidat avec Repere")
-    local t = hit["Terrestrine : " .. n.Prof.Money(5) .. " · 1 nœuds"]
+    local t = hit["Terrestrine : " .. n.Prof.Money(5) .. " · 1 nœud"]
     assert(t and t.sub == "donne encore des points d'Herboristerie", "bonus de rang signale")
-    assert(not hit["Algue : " .. n.Prof.Money(900) .. " · 1 nœuds"], "rang trop bas : pas de rangee")
+    assert(not hit["Algue : " .. n.Prof.Money(900) .. " · 1 nœud"], "rang trop bas : pas de rangee")
   end)
 
   check("Cueillette : reperes d'herbes sur la carte (option, borne, clic, bulle)", function()
@@ -5417,7 +5417,8 @@ local function suite(label)
     R.Update()
     local want = Auctionator and 2 or 3 -- sans Auctionator : prix marchand seul
     assert(R.shown == want, "marquee : " .. tostring(R.shown))
-    assert(n.Quests.seen[555] == (want == 2 and 10000 or 7000), "valeur notee en memoire")
+    mock.fire("QUEST_COMPLETE")
+    assert(#n.QuestDB.Choices(555) == 3 and n.QuestDB.Choices(555)[2][2] == 5, "choix appris par la base")
     mock.ah = {}
     R.Update()
     assert(R.shown == 3, "sans prix HdV : prix marchand")
@@ -5427,7 +5428,7 @@ local function suite(label)
     n.db.show.questreward = true
     mock.choices = { { 1003, 1 } }
     R.Update()
-    assert(R.shown == nil and n.Quests.seen[555] == 7000, "un seul choix : pas de marque, valeur notee")
+    assert(R.shown == nil, "un seul choix : pas de marque")
     mock.choices = { { 1001, 1 }, { 1003, 1 } }
     mock.inCombat = true
     R.Update()
@@ -5471,6 +5472,128 @@ local function suite(label)
     mock.qreward, mock.pos = nil, nil
     restore()
   end) end)
+
+  ------------------------------------------------------------------------
+  -- Base de recompenses apprise (QuestDB)
+  ------------------------------------------------------------------------
+  check("QuestDB : apprend de la fenetre, du journal et de QUEST_TURNED_IN (prioritaire), jamais un secret", function()
+    local n = fresh().n
+    local DB = n.QuestDB
+    n.State.level = 10
+    if GetRewardXP then
+      mock.questID, mock.rewardXP, mock.rewardMoney = 700, 650, 300
+      mock.rewards, mock.choices = { { 2001, 1 } }, { { 1001, 1 }, { 1002, 5 } }
+      mock.fire("QUEST_DETAIL")
+      local r = DB.Get(700)
+      assert(r and r.xp == 650 and r.money == 300 and r.level == 10 and not r.exact, "QUEST_DETAIL")
+      assert(DB.Choices(700)[2][1] == 1002 and DB.Choices(700)[2][2] == 5 and DB.Fixed(700)[1][1] == 2001, "objets")
+      mock.rewardXP = 700
+      mock.fire("QUEST_COMPLETE")
+      assert(DB.Get(700).xp == 700, "QUEST_COMPLETE")
+      mock.rewardXP, mock.rewardMoney = mock.SECRET, mock.SECRET
+      mock.fire("QUEST_COMPLETE")
+      assert(DB.Get(700).xp == 700 and DB.Get(700).money == 300, "secret ignore")
+      mock.questID, mock.rewardXP, mock.rewardMoney, mock.rewards, mock.choices = 701, 100, 0, nil, nil
+      mock.fire("QUEST_DETAIL")
+      assert(DB.Get(701).money == 0 and #DB.Choices(701) == 0, "0 cuivre est une vraie valeur ; aucun choix")
+      mock.questID, mock.rewardXP = 702, 50
+      mock.inCombat = true
+      mock.fire("QUEST_DETAIL")
+      mock.inCombat = false
+      assert(DB.Get(702) == nil, "rien en combat")
+    end
+    if C_QuestLog and GetQuestLogRewardXP then
+      mock.qlog = { { questID = 800, level = 12 }, { questID = 801, level = 12 }, { questID = 802 } }
+      mock.qreward = { [800] = { 500, 40 }, [801] = { 900, 0 }, [802] = { mock.SECRET, mock.SECRET } }
+      mock.fire("QUEST_LOG_UPDATE")
+      mock.fire("QUEST_LOG_UPDATE")
+      assert(DB.Get(800) == nil, "regroupe : pas de lecture avant le delai")
+      mock.flushTimers()
+      assert(DB.Get(800).xp == 500 and DB.Get(800).money == 40 and DB.Get(800).ql == 12, "journal")
+      assert(DB.Get(801).xp == 900 and DB.Get(801).money == nil, "argent 0 du journal : inconnu")
+      assert(DB.Get(802) == nil, "journal secret ignore")
+      mock.qlog, mock.qreward = nil, nil
+    end
+    mock.fire("QUEST_TURNED_IN", 700, 640, 310)
+    local r = DB.Get(700)
+    assert(r.xp == 640 and r.money == 310 and r.exact, "QUEST_TURNED_IN")
+    if GetRewardXP then
+      mock.questID, mock.rewardXP, mock.rewardMoney = 700, 999, 999
+      mock.fire("QUEST_DETAIL")
+      assert(DB.Get(700).xp == 640 and DB.Get(700).money == 310, "la valeur exacte n'est pas ecrasee")
+    end
+    mock.fire("QUEST_TURNED_IN", 700, mock.SECRET, mock.SECRET)
+    mock.fire("QUEST_TURNED_IN", 703, mock.SECRET, mock.SECRET)
+    assert(DB.Get(700).xp == 640 and DB.Get(703) == nil, "TURNED_IN secret ignore")
+    mock.questID, mock.rewardXP, mock.rewardMoney, mock.rewards, mock.choices = nil, nil, nil, nil, nil
+    assert(n.db.qrewards.v == 1 and not findSecret(n.db, "db"), "version de format, rien de secret")
+    local total, withXP = DB.Stats()
+    assert(total >= 1 and withXP >= 1)
+  end)
+
+  check("QuestDB : taille bornee, les plus anciennes quetes partent", function()
+    local n = fresh().n
+    local DB = n.QuestDB
+    assert(DB.MAX == 4000)
+    DB.MAX = 5
+    for i = 1, 12 do DB.Learn(i, { xp = 100 + i }) end
+    local total = DB.Stats()
+    assert(total <= 5 and total >= 3, "borne : " .. total)
+    assert(DB.Get(12) and DB.Get(1) == nil, "la plus recente reste, la plus ancienne part")
+    DB.Learn(12, { xp = 1 }) -- une mise a jour ne grossit pas
+    assert(DB.Stats() == total)
+    n.db.qrewards = { v = 99, q = {} }
+    assert(DB.Get(12) == nil and DB.Stats() == 0, "format inconnu : ignore")
+    DB.Learn(5, { xp = 7 })
+    assert(n.db.qrewards.v == 1 and DB.Get(5).xp == 7, "format inconnu : repart a neuf")
+  end)
+
+  check("QuestDB : Quests prend la valeur apprise avant le journal et l'estimation, grise ajustee", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB and GetQuestLogRewardXP) then return end
+    local n = questN(20)
+    local DB = n.QuestDB
+    mock.qquests = { [201] = { name = "Q201", startedBy = { { 9001 } }, questLevel = 20 } }
+    valueLog({ 201 })
+    mock.qreward = { [201] = { 1000, 50 } } -- le journal dit autre chose
+    DB.Learn(201, { xp = 3300, money = 2400, ql = 20 })
+    n.Quests.Refresh()
+    local v = n.Quests.Route()[1].v
+    assert(v.xp == 3300 and v.gold == 2400, "appris : " .. v.xp .. " / " .. v.gold)
+    n.State.level = 26 -- ecart 1 : 80 % de l'XP
+    n.Quests.Refresh()
+    assert(n.Quests.Route()[1].v.xp == 2640, "XP ajustee au niveau : " .. n.Quests.Route()[1].v.xp)
+    n.State.level = 20
+    mock.qreward = { [202] = { 1650, 12 } } -- quete 202 jamais apprise : journal
+    valueLog({ 202 })
+    n.Quests.Refresh()
+    assert(n.Quests.Route()[1].v.xp == 1650, "journal puis estimation")
+    mock.qlog, mock.qreward = nil, nil
+    -- calibration : les valeurs apprises comptent comme echantillons
+    DB.Learn(301, { xp = 3300, money = 2400, ql = 20 })
+    DB.Learn(302, { xp = 3300, money = 2400, ql = 20 })
+    n.Quests.Refresh()
+    n.Quests.Route()
+    local cx, cm = n.Quests.Calib()
+    assert(cx == 2 and cm == 2, "calibration apprise : " .. cx .. " / " .. cm)
+    assert(not findSecret(n.db, "db"))
+  end)
+
+  check("QuestDB : les choix appris donnent la meilleure recompense d'une quete jamais vue ce soir", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB and GetNumQuestChoices) then return end
+    local n = questN(20)
+    mock.qquests = { [201] = { name = "Q201", startedBy = { { 9001 } }, questLevel = 20 } }
+    valueLog({ 201 })
+    mock.qreward = { [201] = { 1650, 100 } }
+    mock.ah, mock.sellPrice = {}, { [1001] = 100, [1002] = 50 }
+    mock.questID, mock.choices = 201, { { 1001, 1 }, { 1002, 5 } } -- 100 contre 5 x 50
+    mock.fire("QUEST_COMPLETE")
+    mock.choices, mock.questID = nil, nil -- fenetre fermee : seule la base se souvient
+    n.Quests.Refresh()
+    local v = n.Quests.Route()[1].v
+    assert(v.gold == 100 + 250, "meilleur choix appris : " .. v.gold)
+    mock.ah, mock.sellPrice = { [2589] = { 120, 3 } }, nil
+    assert(n.Quests.seen == nil, "Quests.seen supprime")
+  end)
 end
 
 suite("presentes")
