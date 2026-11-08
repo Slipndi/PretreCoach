@@ -1,6 +1,6 @@
--- Signal sur les monstres de quête (comme l'addon Questie) : petite icône dorée au-dessus de la barre de nom (épée = à tuer, sac = peut
+-- Signal sur les monstres de quête (comme l'addon Questie) : petite icône à gauche de la barre de nom (épée = à tuer, sac = peut
 -- lâcher un objet de quête) et ligne « Quête : ... » dans la bulle d'info. Affichage seul (Règle 0) : cadres simples non sécurisés,
--- ancrés (SetPoint) sur la barre de nom sans toucher aux cadres Blizzard. Index npcID -> quêtes recalculé hors combat, depuis le journal
+-- parentés et ancrés (SetParent/SetPoint) sur la barre de nom sans toucher aux cadres Blizzard. Index npcID -> quêtes recalculé hors combat, depuis le journal
 -- + QuestieDB (objectifs créatures, objets via npcDrops). GUID secret : pas de signal. Rien dans PretreCoachDB hors show.questmobs.
 -- shortcut: objectif du journal retrouvé par le nom (nom QuestieDB dans le texte), sinon premier objectif non fini ; à affiner si besoin.
 local _, ns = ...
@@ -91,21 +91,17 @@ local function release(unit)
   if not ic then return end
   used[unit] = nil
   pcall(ic.Hide, ic)
+  pcall(ic.SetParent, ic, UIParent) -- ne pas rester accroché à une barre de nom recyclée
   pool[#pool + 1] = ic
 end
 
 local function newIcon()
   local f = CreateFrame("Frame", nil, UIParent)
-  f:SetSize(18, 18)
-  f.ring = f:CreateTexture(nil, "BACKGROUND")
-  f.ring:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
-  f.ring:SetBlendMode("ADD")
-  f.ring:SetVertexColor(1, 0.82, 0)
-  f.ring:SetSize(40, 40)
-  f.ring:SetPoint("CENTER", f, "CENTER")
+  f:SetSize(16, 16)
+  f:EnableMouse(false)
   f.tex = f:CreateTexture(nil, "ARTWORK")
-  f.tex:SetSize(14, 14)
-  f.tex:SetPoint("CENTER", f, "CENTER")
+  f.tex:SetAllPoints(f)
+  f.tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
   return f
 end
 
@@ -127,8 +123,10 @@ local function sync(unit)
   end
   -- ancrage refusé (combat) : on cache, la sortie du combat réessaie
   local set = pcall(function()
+    ic:SetParent(plate)
+    ic:SetFrameStrata("HIGH")
     ic:ClearAllPoints()
-    ic:SetPoint("BOTTOM", plate, "TOP", 0, 2)
+    ic:SetPoint("LEFT", plate, "LEFT", -17, -7) -- à gauche de la barre de vie, réglage de Questie
   end)
   if not set then return release(unit) end
   ic.tex:SetTexture(ICON[kind])

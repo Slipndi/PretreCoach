@@ -5100,9 +5100,9 @@ local function suite(label)
     mock.guid = "Creature-0-1-2-3-7001-0000ABCD"
     mock.fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
     local ic = QM.Icon("nameplate1")
-    assert(ic and ic.shown and ic.pt[1] == "BOTTOM" and ic.pt[2] == plate, "icone ancree sur la barre")
+    assert(ic and ic.shown and ic.pt[1] == "LEFT" and ic.pt[2] == plate and ic.parent == plate, "icone ancree sur la barre")
     mock.fire("NAME_PLATE_UNIT_REMOVED", "nameplate1")
-    assert(QM.Icon("nameplate1") == nil and not ic.shown, "icone retiree")
+    assert(QM.Icon("nameplate1") == nil and not ic.shown and ic.parent == UIParent, "icone retiree")
     mock.fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
     assert(QM.Icon("nameplate1") == ic, "pool reutilise")
     -- GUID secret, illisible, absent : rien, aucune erreur

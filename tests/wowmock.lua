@@ -51,6 +51,7 @@ function FRAME.Show(self) guard(self) local was = self.shown self.shown = true i
 function FRAME.Hide(self) guard(self) local was = self.shown self.shown = false if was and self.scripts.OnHide then self.scripts.OnHide(self) end end
 function FRAME.SetShown(self, b) if b then FRAME.Show(self) else FRAME.Hide(self) end end
 function FRAME.IsShown(self) return self.shown == true end
+function FRAME.SetParent(self, p) self.parent = p end
 function FRAME.SetScale(self, s) self.scale = s end
 function FRAME.SetHeight(self, h) self.height = h end
 function FRAME.SetWidth(self, w) self.width = w end
