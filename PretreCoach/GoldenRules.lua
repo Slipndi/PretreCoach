@@ -49,11 +49,6 @@ local function flags()
   return ns.db.rules
 end
 
-local function manual(id)
-  local g = ns.db and ns.db.guide
-  return g and g.manual and g.manual[id] == true
-end
-
 -- Même lecture que Rotation.Context : vitesse, sinon IsPlayerMoving ; faux = mouvement indétectable.
 local function movingKnown()
   if type(S.Get(GetUnitSpeed, "player")) == "number" then return true end
@@ -113,15 +108,21 @@ local function evaluate()
       if h.nextZone then ns.Toast(L.RULE_R5_TOAST:format(h.nextZone), { key = "r5:" .. State.zone, cooldown = 3600 }) end
     else set(5, "ok", L.RULE_R5_OK) end
 
-    -- R6 : aucune API Legacy connue, on suit l'objectif manuel du guide.
-    if manual("legacy_toa") then set(6, "ok", L.RULE_R6_OK) else set(6, "unknown", L.RULE_R6_UNKNOWN) end
+    -- R6 : talent Legacy lu par son nom (C_Traits) ; illisible : un seul rappel par personnage, puis neutre.
+    local thrill = State.TalentRankByName(D.ThrillName)
+    if type(level) == "number" and level < 10 then set(6, "ok", L.RULE_R6_OK)
+    elseif thrill == nil then
+      set(6, "unknown", L.RULE_R6_UNKNOWN)
+      local g = ns.db and ns.db.guide -- dans guide (toujours présent) : pas de nouvelle clé racine en base
+      if type(level) == "number" and g and not g.r6 then g.r6 = true ns.Toast(L.RULE_R6_TOAST, { key = "r6" }) end
+    elseif thrill > 0 then set(6, "ok", L.RULE_R6_OK)
+    else set(6, "bad", L.RULE_R6_BAD) end
 
     -- R7 : Brassenoire.
     if type(level) ~= "number" then set(7, "unknown", L.RULE_R7_UNKNOWN)
     elseif level < BFD_LEVELS.from or level > BFD_LEVELS.to then set(7, "ok", L.RULE_R7_OK)
     else
       local done = State.QuestDone(D.GravestoneQuest)
-      if done ~= true and manual("bfd_quest") then done = true end
       if done == true then set(7, "ok", L.RULE_R7_OK)
       elseif done == false then set(7, "warn", L.RULE_R7_WARN)
       else set(7, "unknown", L.RULE_R7_UNKNOWN) end

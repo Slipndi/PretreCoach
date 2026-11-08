@@ -73,7 +73,7 @@ ns.DEFAULTS = {
   show = { guide = true, rotation = true, rules = true, toasts = true, minimap = true, progress = true, heal = true, cons = true, craft = true, mana = true, wandbar = true, gold = true, questpins = true, herbpins = true, questreward = true, keeptip = true, questmobs = true },
   pace = { levels = {} },
   heal = { spells = { ["1"] = "LESSERHEAL", ["2"] = "RENEW", ["shift-1"] = "PWS" } }, -- sort de chaque bouton de souris (cles de Data/Spells)
-  guide = { manual = {}, done = {}, tab = "now", compact = false, focus = "gold" }, -- focus : choix des quêtes (gold, balanced, xp)
+  guide = { done = {}, tab = "now", compact = false, focus = "gold" }, -- focus : choix des quêtes (gold, balanced, xp)
   training = { every = 1 }, trainer = {},
   locked = false, opacity = 0.9, scale = 1, frames = {}, minimap = { angle = 220 },
 }

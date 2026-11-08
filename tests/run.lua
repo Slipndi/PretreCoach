@@ -1105,27 +1105,18 @@ local function suite(label)
     end
   end)
 
-  check("Guide : manuel, inconnu cochable et memorise", function()
+  check("Guide : objectif illisible masque, jamais coche a la main (plus de SetManual)", function()
     local o = fresh()
     local n = o.n
     setState(n, { level = 12 })
+    n.State.talents = nil
     local e = ev(n, "legacy_toa")
-    assert(e.unknown and e.manual and not e.done, "check manual : inconnu")
-    assert(n.Guide.SetManual("legacy_toa", true) and o.gui == 1)
-    e = ev(n, "legacy_toa")
-    assert(e.done and e.manual and not e.unknown and n.db.guide.manual.legacy_toa == true)
-    assert(#o.toasts == 0, "pas de toast pour une case cochee")
-    -- un objectif dont l'API ne repond pas se coche aussi
-    n.State.level, n.State.profs = 6, nil
-    assert(st(ev(n, "learn_prof")) == "unknown")
-    assert(n.Guide.SetManual("learn_prof", true) and ev(n, "learn_prof").done)
-    -- memorise : un autre chargement avec la meme base
-    local again = fresh(n.db).n
-    setState(again, { level = 12 })
-    assert(ev(again, "legacy_toa").done, "memorise dans ns.db.guide.manual")
-    n.State.level = 12
-    assert(n.Guide.SetManual("legacy_toa", false) and st(ev(n, "legacy_toa")) == "unknown" and n.db.guide.manual.legacy_toa == nil)
-    assert(not n.Guide.SetManual("inconnu", true))
+    assert(e.unknown and e.manual and not e.done, "talent illisible : inconnu et masque")
+    assert(n.Guide.SetManual == nil, "SetManual supprime")
+    n.State.talents = { [1] = { rank = 1, max = 1, name = "thrill of adventure" } }
+    assert(st(ev(n, "legacy_toa")) == "done", "talent lu par son nom")
+    n.State.talents = { [1] = { rank = 0, max = 1, name = "Thrill of Adventure" } }
+    assert(st(ev(n, "legacy_toa")) == "todo", "talent non pris")
     assert(not findSecret(n.db, "db"))
   end)
 
@@ -1254,7 +1245,7 @@ local function suite(label)
     assert(h.level == nil and h.progress == 0 and h.tier == nil and h.zoneStatus == "neutre")
   end)
 
-  -- Fenetre Guide : un ns neuf, niveau 12 (objectif « legacy_toa » inconnu, a cocher a la main).
+  -- Fenetre Guide : un ns neuf, niveau 12 (objectif « legacy_toa » illisible, masque).
   local function gw()
     local o = fresh()
     local n = o.n
@@ -2392,6 +2383,7 @@ local function suite(label)
     isolated(function()
       local o = fresh()
       local n = o.n
+      n.db.guide.r6 = true -- rappel R6 deja fait : ce test ne compte que les toasts de R5
       n.State.zone, n.State.level = 1420, 9
       n.Rules.Evaluate()
       assert(rule(n, 5).state == "ok")
@@ -2420,18 +2412,25 @@ local function suite(label)
     end, rcleanup)
   end)
 
-  check("R6 Thrill of Adventure : inconnu, ok si coche dans le guide", function()
+  check("R6 Thrill of Adventure : lu par nom (vert/rouge), illisible = un seul rappel puis neutre, sans case", function()
     isolated(function()
-      local n = fresh().n
+      local o = fresh()
+      local n = o.n
+      n.State.level, n.State.talents = 12, nil
       n.Rules.Evaluate()
-      assert(rule(n, 6).state == "unknown")
-      n.db.guide.manual.legacy_toa = true
+      n.Rules.Evaluate()
+      assert(rule(n, 6).state == "unknown" and not rule(n, 6).reason:find("coche"), "neutre, sans case")
+      assert(count(o.rtoasts, "r6") == 1 and n.db.guide.r6 == true, "rappel unique, memorise")
+      n.State.talents = { [1] = { rank = 0, max = 1, name = "Thrill of Adventure" } }
+      n.Rules.Evaluate()
+      assert(rule(n, 6).state == "bad")
+      n.State.talents[1].rank = 1
       n.Rules.Evaluate()
       assert(rule(n, 6).state == "ok")
-    end)
+    end, rcleanup)
   end)
 
-  check("R7 Brassenoire : niveaux 23/24/32/33, quete nil, manuel, toast Ashenvale unique", function()
+  check("R7 Brassenoire : niveaux 23/24/32/33, quete nil, toast Ashenvale unique", function()
     isolated(function()
       local o = fresh()
       local n = o.n
@@ -2454,9 +2453,6 @@ local function suite(label)
       done = nil
       n.Rules.Evaluate()
       assert(rule(n, 7).state == "unknown", "quete illisible")
-      n.db.guide.manual.bfd_quest = true
-      n.Rules.Evaluate()
-      assert(rule(n, 7).state == "ok", "objectif coche a la main")
       n.State.level = nil
       n.Rules.Evaluate()
       assert(rule(n, 7).state == "unknown")
@@ -2469,6 +2465,7 @@ local function suite(label)
       local o = fresh()
       local n = o.n
       local sf
+      n.db.guide.r6 = true -- rappel R6 deja fait : ce test ne compte que les toasts de R8
       n.State.Knows = function() return sf end
       n.State.level, n.State.specGroups = 39, 1
       n.Rules.Evaluate()
@@ -3279,14 +3276,14 @@ local function suite(label)
     rules:ClearAllPoints(); rules:SetPoint("BOTTOM", UIParent, "BOTTOM", 5, 6)
     rules.scripts.OnDragStop(rules)
     n.db.scale, n.db.opacity = 1.4, 0.5
-    n.db.guide.manual.x, n.db.guide.done.y = true, true
+    n.db.guide.done.x, n.db.guide.done.y = true, true
     n.db.training.count = 7
     cmd("reset")
     local p, _, _, x, y = rules:GetPoint()
     assert(p == "TOP" and x == 0 and y == -20, "recentre a la place d'origine")
     assert(next(n.db.frames) == nil and n.db.scale == 1 and n.db.opacity == 0.9, "defauts")
     assert(rules.scale == 1, "echelle appliquee")
-    assert(n.db.guide.manual.x and n.db.guide.done.y and n.db.training.count == 7, "objectifs et stats intacts")
+    assert(n.db.guide.done.x and n.db.guide.done.y and n.db.training.count == 7, "objectifs et stats intacts")
     assert(mock.printed[#mock.printed]:find("remises"), "confirmation")
     restore()
   end)
@@ -6649,6 +6646,7 @@ local function suite(label)
     if not mock.noSecrets then
       mock.moneySecret = true
       local n2 = goldNs()
+      n2.db.guide.r6 = true -- rappel R6 deja fait
       n2.Toast = function() error("aucune annonce avec un argent secret") end
       n2.Earn.Track() mock.fire("PLAYER_MONEY")
       local r = n2.Earn.Next()

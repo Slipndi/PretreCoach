@@ -1,8 +1,7 @@
 -- Logique du guide, sans interface : objectifs du palier (Data/Objectives.lua), paliers, onglets de référence.
 -- Écoute STATE (hors combat, sinon à PLAYER_REGEN_ENABLED), réévalue, et émet GUIDE quand un objectif passe à fait
 -- ou que le palier change. Rien n'est annoncé à la première évaluation ni pour un objectif déjà fait (ns.db.guide.done).
--- État d'un objectif : done=true/false ; unknown=true si l'API ne répond pas (ou check "manual") : la case se coche
--- alors à la main (ns.db.guide.manual[id]). Seuls des booléens sont enregistrés.
+-- État d'un objectif : done=true/false ; unknown=true (et manual=true : masqué) si l'API ne répond pas.
 local _, ns = ...
 local S, State, Calc, D, L, Q = ns.S, ns.State, ns.Calc, ns.Data, ns.L, ns.Q
 
@@ -69,6 +68,12 @@ function CHECKS.talent(o)
   return #gap == 0
 end
 
+function CHECKS.talentName(o)
+  local r = State.TalentRankByName(o.arg)
+  if r == nil then return nil end
+  return r > 0
+end
+
 function CHECKS.spells()
   local p = Calc.PendingSpells(State.level, State.Knows)
   if p == nil then return nil end
@@ -119,8 +124,6 @@ function CHECKS.items(o)
   return total >= o.arg.count
 end
 
--- check "manual" : pas d'API connue, toujours inconnu.
-
 local function guideDB() return ns.db and ns.db.guide end
 
 local function evalOne(o)
@@ -128,9 +131,7 @@ local function evalOne(o)
   local r = check and check(o)
   local e = { id = o.id, text = o.text, priority = o.priority, go = o.go, prof = o.prof, check = o.check, arg = o.arg, why = o.why, from = o.from, done = r == true, unknown = false, manual = false }
   if r == nil then
-    local g = guideDB()
-    e.manual = true
-    if g and g.manual[o.id] then e.done = true else e.unknown = true end
+    e.manual, e.unknown = true, true -- illisible : masqué du guide (jamais de case à cocher)
   end
   return e
 end
@@ -612,19 +613,6 @@ local function update(announce)
   end
   was, lastTier, started = now, tier, true
   if changed then ns.Fire("GUIDE") end
-end
-
--- Coche (ou décoche) à la main un objectif dont l'état est inconnu. Rend faux si l'id est inconnu ou la base absente.
-function Guide.SetManual(id, value)
-  local g = guideDB()
-  if not g then return false end
-  local known
-  for _, o in ipairs(D.Objectives) do if o.id == id then known = true end end
-  if not known then return false end
-  g.manual[id] = value and true or nil
-  update(false)
-  ns.Fire("GUIDE")
-  return true
 end
 
 local waiting = false

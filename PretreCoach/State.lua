@@ -237,6 +237,15 @@ end)
 on("PLAYER_REGEN_ENABLED", function() if dirty then refresh() end end)
 
 -- true/false, ou nil si inconnu.
+-- Rang d'un talent retrouvé par son nom dans l'arbre C_Traits ; nil = arbre ou talent illisible (le nom est localisé).
+function State.TalentRankByName(name)
+  local t = State.talents
+  if type(t) ~= "table" then return nil end
+  for _, e in pairs(t) do
+    if type(e) == "table" and type(e.name) == "string" and type(e.rank) == "number" and e.name:lower() == name:lower() then return e.rank end
+  end
+end
+
 function State.QuestDone(id)
   local fn = (C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted) or IsQuestFlaggedCompleted -- repli Classic
   return (S.Get(fn, id))

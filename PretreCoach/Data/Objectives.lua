@@ -17,6 +17,8 @@ for _, b in ipairs(ns.Data.Professions[AID].bandages) do
 	if b.name:find("^Bandage") then bandages[#bandages + 1] = b.itemID end
 end
 
+ns.Data.ThrillName = "Thrill of Adventure" -- talent Legacy, retrouvé par son nom dans l'arbre C_Traits
+
 ns.Data.Objectives = {
 	-- 1-10
 	{ id = "wand_equip", from = 5, to = 9, text = "Équipe une baguette", check = "wand", priority = 1, go = "WAND" },
@@ -29,7 +31,7 @@ ns.Data.Objectives = {
 	{ id = "spirittap", from = 12, to = 16, text = "Connexion spirituelle 5/5", check = "talent", arg = "SPIRITTAP", priority = 2 },
 	{ id = "rank_comp_herb", from = 10, to = 19, text = "Rang Compagnon en Herboristerie", check = "profRank", arg = { line = HERB, max = 150 }, priority = 3, prof = HERB },
 	{ id = "rank_comp_alch", from = 10, to = 19, text = "Rang Compagnon en Alchimie", check = "profRank", arg = { line = ALCH, max = 150 }, priority = 3, prof = ALCH },
-	{ id = "legacy_toa", from = 10, to = 29, text = "Premier point Legacy : Thrill of Adventure", check = "manual" },
+	{ id = "legacy_toa", from = 10, to = 29, text = "Premier point Legacy : Thrill of Adventure", check = "talentName", arg = ns.Data.ThrillName },
 	{ id = "bandages", from = 10, to = 29, text = "Aie au moins 10 bandages sur toi", check = "items", arg = { count = 10, ids = bandages }, prof = AID },
 	{ id = "wand_sup", from = 13, to = 19, text = "Baguette magique supérieure", check = "wandItem", arg = 11288, go = "WAND" },
 	{ id = "rfc_staff", from = 13, to = 18, text = "Gouffre de Ragefeu : bâton de quête (+18 dégâts des sorts)", check = "manual" },
