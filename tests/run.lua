@@ -785,6 +785,21 @@ local function suite(label)
     assert(ids[1] == 1309595 and ids[2] == 1309633 and #ids == 2, "rangs SWD")
   end)
 
+  check("Spells : Penitence = talent 402174 (IsPlayerSpell), plus l'ID 47540", function()
+    if not IsPlayerSpell and not IsSpellKnown and not C_SpellBook then return end
+    for _, sp in ipairs(N.Data.Spells) do
+      if sp.key == "PENANCE" then assert(sp.talent and #sp.ranks == 1 and sp.ranks[1].id == 402174, "PENANCE") end
+    end
+    mock.known = { [402174] = true }
+    mock.fire("SPELLS_CHANGED")
+    assert(N.State.Knows("PENANCE") == 1, "talent pris = connu")
+    mock.known = {}
+    mock.fire("SPELLS_CHANGED")
+    assert(N.State.Knows("PENANCE") == 0, "talent absent = non connu")
+    mock.known = nil
+    mock.fire("SPELLS_CHANGED")
+  end)
+
   check("State : Knows ignore un rang sans nom (SWD), IsPlayerSpell qui plante", function()
     if not IsPlayerSpell and not IsSpellKnown and not C_SpellBook then return end
     local function has(list, key) for _, p in ipairs(list) do if p.key == key then return true end end end

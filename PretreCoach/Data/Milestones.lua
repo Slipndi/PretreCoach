@@ -13,7 +13,7 @@ ns.Data.Milestones = {
 	{ 15, 15, "Ruines de Lordaeron et Cavernes des lamentations (bâton de quête +5 dégâts des sorts)." },
 	{ 20, 20, "Racial : Sacrifice sombre. Protection contre la peur et Peste dévorante. Donjon d'Ombrecroc. Rang Expert (compétence 125)." },
 	{ 24, 32, "Profondeurs de Brassenoire : quête du Gravestone Scepter (baguette qui renforce Mot de l'ombre : Douleur)." },
-	{ 30, 30, "Esprit divin. Option Pénitence pour les donjons." },
+	{ 30, 30, "Esprit divin. Talent Pénitence (option soin pour les donjons)." },
 	{ 32, 32, "Mot de l'ombre : Mort." },
 	{ 35, 35, "Rang Artisan (compétence 200). Secourisme Artisan : quête Triage (Hammerfall, Hautes-terres d'Arathi, à vérifier)." },
 	{ 40, 40, "Respec Ombre (31 points) pour la Forme d'Ombre. Double spécialisation : une spé Ombre solo, une spé soin donjons." },

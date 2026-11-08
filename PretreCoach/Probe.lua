@@ -12,7 +12,7 @@ local SPELLS = {
   { 15473, "Forme d'Ombre" }, { 1309595, "Mot de l'ombre : Mort" }, { 6346, "Protection contre la peur" },
   { 2944, "Peste dévorante" }, { 14752, "Esprit divin" }, { 2652, "Toucher de faiblesse" },
   { 1277324, "Sacrifice sombre" }, { 20577, "Cannibalisme" }, { 5019, "Tir (baguette)" },
-  { 8122, "Cri psychique" }, { 15271, "Connexion spirituelle (buff)" }, { 47540, "Pénitence" },
+  { 8122, "Cri psychique" }, { 15271, "Connexion spirituelle (buff)" }, { 402174, "Pénitence (talent)" },
   { 1243, "Mot de pouvoir : Robustesse" }, { 2050, "Soins inférieurs" }, { 139, "Rénovation" },
 }
 

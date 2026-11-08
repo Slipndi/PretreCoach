@@ -142,7 +142,8 @@ ns.Data.Spells = {
   { key = "INNERFOCUS", name = "Focalisation intérieure", talent = true, racial = false,
     cooldown = 180, duration = nil, manaCost = false,
     ranks = { { id = 14751, level = 20 } } },
-  { key = "PENANCE", harmful = true, name = "Pénitence", talent = false, racial = false,
-    cooldown = nil, duration = nil, manaCost = true, verify = true, -- à vérifier : ID 47540 (Wrath) listé dans WoWForeverRot, existence sur Forever, niveau et recharge inconnus
-    ranks = { { id = 47540, level = nil, verify = true } } },
+  -- Pénitence est un TALENT sur Forever (nœud C_Traits, spellID 402174, sonde 10.1) ; le sort appris chez le maître est 1240720 (niveau 40)
+  { key = "PENANCE", harmful = true, name = "Pénitence", talent = true, racial = false,
+    cooldown = nil, duration = nil, manaCost = true, verify = true,
+    ranks = { { id = 402174, level = nil, verify = true } } },
 }
