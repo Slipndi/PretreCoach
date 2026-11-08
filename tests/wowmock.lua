@@ -289,6 +289,7 @@ local function qDefaults()
     [305] = { 4, "Priest Trainer", "H", 85, { [85] = { { 1, 2 } } } }, -- pas de bit maitre : ignore
     [306] = { 16, "Priest Trainer", nil, 85, { [85] = { { 1, 2 } } } }, -- hostile : ecarte
     [307] = { 16, "Junior Herbalism Trainer", "AH", 85, { [85] = { { 15, 25 } } } },
+    [309] = { 16, "Ma95|tre des premiers94psoins", "H", 1497, { [1497] = { { 16, 26 } } } }, -- subName frFR reel (espace insecable)
     [308] = { 16, "Priest Trainer", "H", 1497, { [1497] = { { -1, -1 } } } }, -- instance : pas de point
   }
 end

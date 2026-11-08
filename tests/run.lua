@@ -3340,7 +3340,7 @@ local function suite(label)
     local q = n.db.qindex
     assert(fired == 1 and q.ver == "1.0.11")
     same(q.trainers.PRIEST, 308, 375, 377) -- 376 Alliance, 305 sans bit maitre, 306 hostile : ecartes
-    same(q.trainers.ALCHEMY, 300); same(q.trainers.HERBALISM, 301, 307); same(q.trainers.FIRSTAID, 302); same(q.trainers.COOKING, 303)
+    same(q.trainers.ALCHEMY, 300); same(q.trainers.HERBALISM, 301, 307); same(q.trainers.FIRSTAID, 302, 309); same(q.trainers.COOKING, 303)
     same(q.auctioneers, 304)
   end)
 
@@ -3411,7 +3411,7 @@ local function suite(label)
     saved.qindex.fmt = nil -- ancien format
     local n2 = qboot(saved)
     assert(n2.Q.StartIndex() == true, "format different : reconstruit"); drain()
-    assert(n2.db.qindex.fmt == 2)
+    assert(n2.db.qindex.fmt == 3)
     local n3 = qboot(n2.db)
     mock.qver = nil -- version illisible : "?" n'est jamais reutilise
     assert(n3.Q.StartIndex() == true); drain()

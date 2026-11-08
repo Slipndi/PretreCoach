@@ -9,7 +9,7 @@ local CHUNK = 200 -- PNJ lus par tick
 -- role -> morceau du subName (anglais, minuscules). Les subName reels : « Priest Trainer », « First Aid Trainer »...
 -- Questie peut rendre le subName localise (client frFR) : morceaux anglais ET francais, sans majuscule accentuee.
 local ROLES = { PRIEST = { "priest", "prêtre", "pretre" }, ALCHEMY = { "alchemy", "alchimi" },
-  HERBALISM = { "herbalism", "herboris" }, FIRSTAID = { "first aid", "secouris" }, COOKING = { "cooking", "cuisin" } }
+  HERBALISM = { "herbalism", "herboris" }, FIRSTAID = { "first aid", "secouris", "premiers" }, COOKING = { "cooking", "cuisin" } }
 
 local lib, tried -- lib : nil = pas encore teste, false = absente ou contrat refuse ; tried : table testee en dernier
 function Q.Available()
@@ -103,7 +103,7 @@ local function dbVersion()
   return ok and v ~= nil and tostring(v) or "?" -- "?" : jamais reutilise comme cache
 end
 
-local FORMAT = 2 -- a incrementer quand la forme de qindex change (2 : subName francais reconnus)
+local FORMAT = 3 -- a incrementer quand la forme de qindex change (3 : « Maître des premiers soins » du client frFR)
 local TRIES, RETRY = 3, 30
 local tries, nearCache = 0, {}
 ns.Listen("QINDEX", function() nearCache = {} end)
