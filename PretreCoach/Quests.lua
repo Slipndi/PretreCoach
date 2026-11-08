@@ -11,6 +11,7 @@ local S, L, Q, State, QuestDB = ns.S, ns.L, ns.Q, ns.State, ns.QuestDB
 local Quests = {}
 ns.Quests = Quests
 
+local HARD_GAP = 2 -- une quête de niveau > niveau du joueur + 2 est trop dure : jamais proposée, ni en route (journal : en fin de liste)
 local GREY_GAP = 5 -- une quête de niveau <= niveau du joueur - 5 est grise : jamais proposée à prendre
 local REFRESH = 5 -- secondes entre deux relectures de la position
 local UNDEAD = 16 -- bit de requiredRaces des Morts-vivants ; un masque sans ce bit est réservé à une autre race
@@ -401,7 +402,7 @@ local function pickups(mapID, level, px, py, limit, inLog)
   if not here then return out end
   local list = {}
   for _, e in ipairs(here) do
-    if e.req <= level and e.lvl > level - GREY_GAP and not inLog[e.id] then
+    if e.req <= level and e.lvl > level - GREY_GAP and e.lvl <= level + HARD_GAP and not inLog[e.id] then
       list[#list + 1] = { e = e, d = px and math.sqrt((e.x - px) ^ 2 + (e.y - py) ^ 2) or 0 }
     end
   end
@@ -540,7 +541,7 @@ local function compute()
   end
   local list = journal()
   calibrate(list, level)
-  local inLog, units, tail, drops = {}, {}, {}, {}
+  local inLog, units, tail, drops, high = {}, {}, {}, {}, {}
   for _, j in ipairs(list) do
     inLog[j.id] = true
     local name = j.title or str(Q.Quest(j.id, "name")) or L.QUEST_ANON
@@ -553,13 +554,18 @@ local function compute()
       s = stop("progress", j.id, name, obj and L.QUEST_PROGRESS:format(name, obj) or name,
         ow and onpc or (not ow and (objectiveNpc(j.id) or firstNpc(j.id, "startedBy")) or nil), nil, ow)
     end
-    s.order = #units + #tail + 1
-    s.v = value(j.id, j.ql, level, true, j.done and 0 or objectivesLeft(j.id), 1, travel({ s }))
-    if s.v and not j.done and (s.here or s.v.grey) then drops[#drops + 1] = s end
-    if s.here then
-      units[#units + 1] = { stops = { s }, v = s.v, order = s.order }
+    s.order = #units + #tail + #high + 1
+    if not j.done and j.ql and j.ql > level + HARD_GAP then -- trop haute : ni arrêt, ni raison de changer de zone
+      s.tooHigh, s.text = j.ql, L.QUEST_HIGH:format(name, j.ql)
+      high[#high + 1] = s
     else
-      tail[#tail + 1] = s
+      s.v = value(j.id, j.ql, level, true, j.done and 0 or objectivesLeft(j.id), 1, travel({ s }))
+      if s.v and not j.done and (s.here or s.v.grey) then drops[#drops + 1] = s end
+      if s.here then
+        units[#units + 1] = { stops = { s }, v = s.v, order = s.order }
+      else
+        tail[#tail + 1] = s
+      end
     end
   end
   -- à prendre : avec, dans la zone, l'objectif et le rendu s'ils sont connus (même PNJ ou à côté : pickup -> progress -> turnin)
@@ -611,6 +617,7 @@ local function compute()
     return a.order < b.order
   end)
   for _, s in ipairs(tail) do route[#route + 1] = s end
+  for _, s in ipairs(high) do route[#route + 1] = s end -- trop hautes : tout à la fin
   for i, s in ipairs(route) do s.n = i end
   if drop then route.drop = { questID = drop.questID, name = drop.name,
     why = drop.v.grey and "grey" or drop.v.far and "far" or "low" } end
@@ -633,7 +640,7 @@ local best, bestSrc
 
 local function makeBest(r)
   local c = r[1]
-  if not c then return nil end
+  if not c or c.tooHigh then return nil end
   local parts = {}
   if #r > 1 then parts[#parts + 1] = L.QUEST_STEP:format(1, #r) end
   local zone = c.w and ns.Goto and ns.Goto.Zone(c.w)

@@ -5262,6 +5262,26 @@ local function suite(label)
     assert(n.Q.WhereNear(7002, 999, 50, 50) == nil, "autre carte : nil")
   end)
 
+  check("Quetes : trop haute pour le joueur (niveau de quete > niveau + 2) : jamais proposee, journal en fin de liste", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN(13)
+    n.db.qindex = {}
+    local function q(name, lvl) return { name = name, startedBy = { { 9001 } }, requiredLevel = 10, questLevel = lvl } end
+    mock.qquests = { [601] = q("Seize", 16), [602] = q("Quinze", 15), [603] = q("Haute", 16), [604] = q("Basse", 13) }
+    assert(n.Quests.StartIndex() == true)
+    for _ = 1, 5 do mock.flushTimers() end
+    mock.qlog = { { questID = 603, title = "Haute", objectives = LOUPS }, { questID = 604, title = "Basse", objectives = LOUPS } }
+    n.Quests.Refresh()
+    local r, ids = n.Quests.Route(), {}
+    for i, s in ipairs(r) do ids[s.questID] = i end
+    assert(ids[602] and not ids[601], "a prendre : 15 gardee, 16 ecartee au niveau 13")
+    assert(ids[603] == #r and r[#r].tooHigh == 16 and r[#r].text:find("trop haute", 1, true) and ids[604] < ids[603], "journal 16 : en fin de liste")
+    assert(n.Quests.Best().questID ~= 603, "jamais l'objectif du jour")
+    n.State.level = 14
+    n.Quests.Refresh()
+    assert(not n.Quests.Route()[#n.Quests.Route()].tooHigh, "niveau 14 : redevient normale")
+  end)
+
   check("Quetes : a prendre, les 20 plus proches sont evalues, les 6 plus rentables gardees", function()
     if not (C_QuestLog and C_Map and LibQuestieDB) then return end
     local n = questN()
@@ -5270,13 +5290,13 @@ local function suite(label)
     for i = 1, 8 do mock.qnpcs[9100 + i] = { 0, "", "H", 85, { [85] = { { 50 + i, 50 } } } } end
     mock.qnpcs[9200] = { 0, "", "H", 85, { [85] = { { 70, 50 } } } }
     for i = 1, 8 do mock.qquests[400 + i] = { name = "Proche" .. i, startedBy = { { 9100 + i } }, requiredLevel = 16, questLevel = 16 } end
-    mock.qquests[499] = { name = "Rentable", startedBy = { { 9200 } }, requiredLevel = 20, questLevel = 24 }
+    mock.qquests[499] = { name = "Rentable", startedBy = { { 9200 } }, requiredLevel = 20, questLevel = 22 }
     assert(n.Quests.StartIndex() == true)
     for _ = 1, 5 do mock.flushTimers() end
     n.Quests.Refresh()
     local found
     for _, s in ipairs(n.Quests.Route()) do if s.questID == 499 then found = true end end
-    assert(found, "la quete de niveau 24, a 20 unites, n'est pas eliminee par 8 quetes proches")
+    assert(found, "la quete de niveau 22, a 20 unites, n'est pas eliminee par 8 quetes proches")
   end)
   check("Quetes : la quete en cours la plus proche est choisie, texte des objectifs", function()
     if not (C_QuestLog and C_Map and LibQuestieDB) then return end
