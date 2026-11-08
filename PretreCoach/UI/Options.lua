@@ -86,6 +86,24 @@ local function cycle(parent, y, slot)
   return b
 end
 
+-- Choix des quêtes (ns.db.guide.focus) : chaque clic passe à la valeur suivante.
+local FOCI = { "gold", "balanced", "xp" }
+local function focusButton(parent, y)
+  local b = CreateFrame("Button", nil, parent)
+  b:SetSize(320, 20)
+  b:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, -y)
+  local fs = b:CreateFontString(nil, "OVERLAY", UI.font.text)
+  fs:SetPoint("LEFT", b, "LEFT")
+  local function cur() return L["FOCUS_" .. tostring(ns.db.guide.focus)] and ns.db.guide.focus or "gold" end
+  b.refresh = function() fs:SetText(L.OPT_FOCUS:format(L["FOCUS_" .. cur()])) end
+  b:SetScript("OnClick", function()
+    for i, k in ipairs(FOCI) do if k == cur() then ns.db.guide.focus = FOCI[i % #FOCI + 1] break end end
+    b.refresh()
+    if ns.Quests then ns.Quests.Refresh() end
+  end)
+  return b
+end
+
 local function showSet(key, apply)
   return function() return ns.db.show[key] ~= false end, function(v)
     ns.db.show[key] = v
@@ -112,6 +130,9 @@ local function build(parent, y)
   check("wandbar",L.OPT_WANDBAR, showSet("wandbar", function() if UI.RotationPanel then UI.RotationPanel.UpdateWand() end end))
   check("questpins", L.OPT_QUESTPINS, showSet("questpins", function() if UI.QuestPins then UI.QuestPins.Update() end end))
   check("herbpins", L.OPT_HERBPINS, showSet("herbpins", function() if UI.QuestPins then UI.QuestPins.Update() end end))
+  check("questreward", L.OPT_QUESTREWARD, showSet("questreward", function() if UI.QuestReward then UI.QuestReward.Update() end end))
+  c.focus = focusButton(parent, y)
+  y = y + 24
   check("minimap", L.OPT_MINIMAP, showSet("minimap", function() if ns.RefreshMinimap then ns.RefreshMinimap() end end))
   check("locked", L.OPT_LOCKED, function() return ns.db.locked end, function(v) ns.db.locked = v end)
   check("compact", L.OPT_COMPACT, function() return ns.db.guide.compact end, function(v)

@@ -5303,6 +5303,174 @@ local function suite(label)
       assert(#n2.Gather.Herbs(1420) == 0)
     end
   end)
+  -- Valeur des quetes : or et XP par minute, focus, quete a abandonner ; meilleure recompense (UI.QuestReward)
+  ------------------------------------------------------------------------
+  check("Valeur : estimation XP par niveau et penalite grise (80, 60, 40, 20, 10 %)", function()
+    local n = fresh().n
+    local xp, money = n.Quests.Estimate(10, 10)
+    assert(xp == 650 and money == 300, xp .. " / " .. money)
+    for gap, pct in pairs({ [5] = 1, [6] = 0.8, [7] = 0.6, [8] = 0.4, [9] = 0.2, [10] = 0.1, [15] = 0.1 }) do
+      assert(n.Quests.Estimate(10, 10 + gap) == math.floor(650 * pct + 0.5), "ecart " .. gap)
+    end
+    assert(select(2, n.Quests.Estimate(10, 20)) == 300, "l'argent n'est pas penalise")
+  end)
+
+  -- journal de quetes au PNJ 9001 (tout pres), `left` monstres restants chacune
+  local function valueLog(ids, left)
+    local log = {}
+    mock.qquests = mock.qquests or {}
+    for i, id in ipairs(ids) do
+      mock.qquests[id] = mock.qquests[id] or { name = "Q" .. id, startedBy = { { 9001 } }, objectives = { { { 9001, "Loup" } } } }
+      log[i] = { questID = id, title = mock.qquests[id].name,
+        objectives = { { text = "Loups", numFulfilled = 0, numRequired = left or 5, finished = false } } }
+    end
+    mock.qlog = log
+  end
+
+  check("Valeur : calibration en memoire par la mediane reel/estime du journal", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB and GetQuestLogRewardXP) then return end
+    local n = questN(20)
+    mock.qquests = {}
+    for _, id in ipairs({ 201, 202, 203 }) do mock.qquests[id] = { name = "Q" .. id, startedBy = { { 9001 } }, questLevel = 20 } end
+    valueLog({ 201, 202, 203 })
+    mock.qreward = { [201] = { 3300, 2400 }, [202] = { 3300, 2400 }, [203] = { 1650, 1200 } } -- estime : 1650 XP, 12 pa
+    n.Quests.Refresh()
+    n.Quests.Route()
+    local cx, cm = n.Quests.Calib()
+    assert(cx == 2 and cm == 2, cx .. " / " .. cm)
+    assert(n.Quests.Estimate(20, 20) == 3300, "estimation recalee")
+    assert(n.Quests.Best().detail:find("≈ 3300 XP", 1, true), n.Quests.Best().detail)
+    mock.qreward[201] = { mock.SECRET, mock.SECRET } -- secret : ignore
+    n.Quests.Refresh()
+    n.Quests.Route()
+    assert(n.Quests.Calib() == 1.5, "mediane de 2 et 1 : " .. n.Quests.Calib())
+    mock.qlog = nil
+    n.Quests.Refresh()
+    n.Quests.Route()
+    assert(n.Quests.Calib() == 1, "journal vide : pas de calibration")
+    assert(not findSecret(n.db, "db"))
+  end)
+
+  check("Valeur : le focus or ou XP choisit les quetes retenues (score par minute)", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB and GetQuestLogRewardXP) then return end
+    local n = questN(20)
+    mock.qquests, mock.qreward = {}, {}
+    local ids = {}
+    for i = 1, 13 do ids[i] = 200 + i mock.qreward[200 + i] = { 100, 3000 } end
+    mock.qreward[213] = { 6000, 0 } -- beaucoup d'XP, pas d'or
+    valueLog(ids)
+    local function has(id) for _, s in ipairs(n.Quests.Route()) do if s.questID == id then return s end end end
+    n.Quests.Refresh()
+    assert(#n.Quests.Route() == 12 and not has(213), "focus or (defaut) : la quete a XP sort des 12 arrets")
+    n.db.guide.focus = "xp"
+    n.Quests.Refresh()
+    local s = has(213)
+    assert(s and s.v.xp == 6000 and s.v.gold == 0, "focus XP : elle revient")
+    n.db.guide.focus = "balanced"
+    n.Quests.Refresh()
+    assert(has(213), "equilibre : 6000 XP valent plus que 30 pa")
+    n.db.guide.focus = nil
+    n.Quests.Refresh()
+    local rows = n.Quests.Rows()
+    assert(rows[1].sub:find("≈ 100 XP", 1, true) and rows[1].sub:find("/min", 1, true), rows[1].sub)
+  end)
+
+  check("Valeur : quete du journal a abandonner (grise, rapporte peu), conseil seulement", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN(30)
+    mock.qquests = {
+      [201] = { name = "Vieille", startedBy = { { 9001 } }, objectives = { { { 9001, "Loup" } } }, questLevel = 20 },
+      [202] = { name = "Bonne", startedBy = { { 9001 } }, objectives = { { { 9001, "Loup" } } }, questLevel = 30 },
+      [203] = { name = "Finie", startedBy = { { 9001 } }, questLevel = 15 },
+    }
+    valueLog({ 201, 202 })
+    mock.qlog[3] = { questID = 203, title = "Finie", complete = true } -- grise mais a rendre : jamais a abandonner
+    n.Quests.Refresh()
+    local rows = n.Quests.Rows()
+    assert(rows[#rows].text == "À abandonner : Vieille (grise)", rows[#rows].text)
+    assert(n.Quests.Route().drop.questID == 201)
+    mock.qquests[201].questLevel = 30
+    valueLog({ 201, 202 })
+    mock.qlog[1].objectives[1].numRequired = 60 -- 60 monstres pour la meme recompense
+    n.Quests.Refresh()
+    rows = n.Quests.Rows()
+    assert(rows[#rows].text == "À abandonner : Vieille (rapporte peu)", rows[#rows].text)
+    valueLog({ 201, 202 })
+    n.Quests.Refresh()
+    assert(n.Quests.Route().drop == nil and not n.Quests.Rows()[#n.Quests.Rows()].text:find("abandonner"), "rien a abandonner")
+    assert(#n.Quests.Route() == 2, "l'addon n'abandonne rien")
+  end)
+
+  check("Recompense : la recompense au choix qui vaut le plus d'or est marquee", function()
+    local n = fresh().n
+    local R = n.UI.QuestReward
+    mock.choices, mock.questID = { { 1001, 1 }, { 1002, 5 }, { 1003, 1 } }, 555
+    mock.ah = { [1001] = { 5000, 1 }, [1002] = { 2000, 1 } } -- 1002 x5 = 1 po
+    mock.sellPrice = { [1003] = 7000 }
+    local function done() mock.choices, mock.questID, mock.sellPrice, mock.inCombat = nil, nil, nil, false mock.ah = { [2589] = { 120, 3 } } end
+    if not GetNumQuestChoices then
+      R.Update()
+      done()
+      assert(R.Best() == nil and R.shown == nil, "API absente : rien")
+      return
+    end
+    R.Update()
+    local want = Auctionator and 2 or 3 -- sans Auctionator : prix marchand seul
+    assert(R.shown == want, "marquee : " .. tostring(R.shown))
+    assert(n.Quests.seen[555] == (want == 2 and 10000 or 7000), "valeur notee en memoire")
+    mock.ah = {}
+    R.Update()
+    assert(R.shown == 3, "sans prix HdV : prix marchand")
+    n.db.show.questreward = false
+    R.Update()
+    assert(R.shown == nil, "option decochee")
+    n.db.show.questreward = true
+    mock.choices = { { 1003, 1 } }
+    R.Update()
+    assert(R.shown == nil and n.Quests.seen[555] == 7000, "un seul choix : pas de marque, valeur notee")
+    mock.choices = { { 1001, 1 }, { 1003, 1 } }
+    mock.inCombat = true
+    R.Update()
+    assert(R.shown == nil, "rien en combat")
+    done()
+    R.Hide()
+    assert(not findSecret(n.db, "db") and n.db.questreward == nil and n.db.seen == nil)
+  end)
+
+  check("Valeur : focus dans les options, defauts, rien de secret ni de nouveau dans la base", function() isolated(function()
+    local n, restore = boot() -- isole : ADDON_LOADED n'atteint pas les ns des tests precedents
+    assert(n.db.guide.focus == "gold" and n.db.show.questreward == true, "defauts")
+    local before = {}
+    for k in pairs(n.db) do before[k] = true end
+    local c = controls(n)
+    assert(c.focus and c.questreward, "controles")
+    click(c.focus)
+    assert(n.db.guide.focus == "balanced")
+    click(c.focus)
+    click(c.focus)
+    assert(n.db.guide.focus == "gold", "cycle or -> equilibre -> XP -> or")
+    if C_QuestLog and C_Map and LibQuestieDB then
+      mock.pos, mock.mapID = { 0.5, 0.5 }, 1420
+      mock.qnpcs[9001] = { 0, "", "H", 85, { [85] = { { 52, 50 } } } }
+      n.State.level, n.State.mapID = 20, 1420
+      mock.qquests = { [201] = { name = "Q", startedBy = { { 9001 } }, questLevel = 20 } }
+      valueLog({ 201 })
+      mock.qreward = { [201] = { mock.SECRET, mock.SECRET } }
+      n.Quests.Refresh()
+      local r = n.Quests.Route()
+      assert(r[1] and r[1].v and r[1].v.xp == 1650 and not findSecret(r, "route"), "secret : estimation")
+      mock.inCombat = true
+      mock.qlog = nil
+      n.Quests.Refresh()
+      assert(n.Quests.Route() == r, "en combat : le dernier resultat")
+      mock.inCombat = false
+    end
+    assert(not findSecret(n.db, "db"))
+    for k in pairs(n.db) do assert(before[k], "cle ajoutee a la base : " .. tostring(k)) end
+    mock.qinit()
+    mock.qreward, mock.pos = nil, nil
+    restore()
+  end) end)
 end
 
 suite("presentes")

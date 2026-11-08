@@ -117,6 +117,7 @@ function mock.reset()
   mock.registered, mock.opened = nil, nil
   mock.waypoint, mock.superTracked, mock.canWaypoint, mock.areas, mock.mapKids, mock.mapNames = nil, nil, nil, nil, nil, nil
   mock.worldMap, mock.hooked, mock.grouped = nil, nil, nil
+  mock.qreward, mock.choices, mock.questID = nil, nil, nil
   if WorldMapFrame then WorldMapFrame.shown = false end
   if mock.qinit then mock.qinit() end
   mock.recipeInfo, mock.schematics, mock.tsNotReady = nil, nil, nil
@@ -396,6 +397,17 @@ function hooksecurefunc(obj, name, fn)
 end
 function IsInGroup() return mock.grouped == true end
 
+-- Recompenses : mock.qreward = { [questID] = { xp, cuivre } } (valeurs mock.SECRET possibles) ; mock.choices = { { itemID, quantite } }
+-- pour la fenetre de quete ouverte (mock.questID) ; QuestInfoRewardsFrame.RewardButtons = boutons Blizzard
+function GetQuestLogRewardXP(id) local r = (mock.qreward or {})[id] return r and r[1] end
+function GetQuestLogRewardMoney(id) local r = (mock.qreward or {})[id] return r and r[2] end
+function GetNumQuestChoices() return #(mock.choices or {}) end
+function GetQuestItemLink(kind, i) local c = kind == "choice" and (mock.choices or {})[i] return c and ("|cffffffff|Hitem:" .. c[1] .. "::|h[Objet]|h|r") or nil end
+function GetQuestItemInfo(kind, i) local c = kind == "choice" and (mock.choices or {})[i] if c then return "Objet", 1, c[2] or 1, 1, true, c[1] end end
+function GetQuestID() return mock.questID end
+QuestInfoRewardsFrame = { RewardButtons = {} }
+for i = 1, 6 do QuestInfoRewardsFrame.RewardButtons[i] = newFrame() end
+
 -- mock.waypoint = dernier repere pose ; mock.superTracked = dernier appel de suivi ; mock.canWaypoint = false : carte refusee
 UiMapPoint = { CreateFromCoordinates = function(mapID, x, y) return { mapID = mapID, x = x, y = y } end }
 C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) mock.superTracked = v end }
@@ -408,6 +420,7 @@ C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServi
 GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 UiMapPoint C_SuperTrack WorldMapFrame hooksecurefunc Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
 EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator GetItemIcon UnitXP UnitXPMax RegisterUnitWatch UnitInRange
+GetQuestLogRewardXP GetQuestLogRewardMoney GetNumQuestChoices GetQuestItemLink GetQuestItemInfo GetQuestID QuestInfoRewardsFrame
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end

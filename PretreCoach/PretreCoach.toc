@@ -50,6 +50,7 @@ UI\Minimap.lua
 UI\MinimapMenu.lua
 UI\GuideWindow.lua
 UI\QuestPins.lua
+UI\QuestReward.lua
 UI\RotationPanel.lua
 UI\RulesBar.lua
 UI\ProgressBar.lua

@@ -16,6 +16,8 @@ local FORBIDDEN = {
   "CraftRecipe", "C_TradeSkillUI.Craft", "OpenTradeSkill", "PostAuction", "PlaceAuctionBid", "C_AuctionHouse.PostItem",
   "C_AuctionHouse.PostCommodity", "C_AuctionHouse.PlaceBid", "C_AuctionHouse.StartCommoditiesPurchase",
   "C_AuctionHouse.ConfirmCommoditiesPurchase", "BuyMerchantItem", "PickupContainerItem", "C_Container.PickupContainerItem",
+  -- quetes : l'addon conseille (meilleure recompense, quete a abandonner), le joueur choisit
+  "GetQuestReward", "AcceptQuest", "CompleteQuest", "AbandonQuest", "SetAbandonQuest",
 }
 local PREFIX_OK = { SecureHandler = true } -- SecureHandlerBaseTemplate etc. : pas de borne droite
 

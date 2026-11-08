@@ -3,6 +3,7 @@
 -- QuestieDB (ns.Q) donne les lieux ; sans lui : journal seul, sans lieu. Rien n'est enregistré (cache en mémoire).
 -- Ordre : plus proche voisin depuis le joueur (une quête à rendre dans la zone d'abord), puis 2-opt borné ; une quête à prendre
 -- passe toujours avant son objectif puis son rendu. Ce qui est sur une autre carte ou sans lieu passe après (rendre, en cours, prendre).
+-- Choix des quêtes retenues (au plus MAX_STOPS arrêts) : score = (or + poids x XP en or) / minutes, voir « Valeur » ci-dessous.
 -- Quests.Pins(uiMapID) : repères à dessiner sur la carte du monde (UI/QuestPins.lua).
 local _, ns = ...
 local S, L, Q, State = ns.S, ns.L, ns.Q, ns.State
@@ -17,9 +18,18 @@ local RANK = { turnin = 1, progress = 2, pickup = 3 } -- ordre des arrêts hors 
 local PHASE = { pickup = 1, progress = 2, turnin = 3 } -- ordre imposé pour une même quête
 local CHUNK = 200 -- quêtes lues par tick pour l'index
 local MAX_STOPS, MAX_PICKUPS, TWO_OPT, MAX_PINS = 12, 6, 200, 60
--- Étiquettes Blizzard de quêtes de groupe, donjon ou raid (QuestTagType) : écartées à prendre quand le joueur est seul.
--- shortcut: la clé Questie "questTag" n'est pas confirmée en jeu ; absente, rien n'est écarté.
-local GROUP_TAGS = { [1] = true, [62] = true, [81] = true, [85] = true, [88] = true, [89] = true }
+-- Valeur d'une quête (inspirée de RestedXP/Zygor) : score = (or + poids x XP convertie en or) x chaîne / minutes.
+-- shortcut: constantes à la louche (Classic, à pied), à recaler sur des mesures en jeu.
+local SPEED = 7 -- yards par seconde à pied
+local STOP_SECS = 10 -- par prise ou rendu (dialogue)
+local OBJ_SECS = 20 -- par monstre à tuer ou objet à ramasser
+local OBJ_DEFAULT = 6 -- objectifs supposés quand le journal ne les donne pas (quête pas encore prise)
+local FAR_YD, AWAY_YD = 200, 2000 -- trajet supposé : dans la zone sans distance lisible, sur une autre carte
+local FOCUS = { gold = 0.5, balanced = 1, xp = 3 } -- poids de l'XP convertie selon ns.db.guide.focus (défaut "gold")
+local CHAIN = 0.25 -- +25 % par quête débloquée (childQuests, nextQuestInChain, breadcrumbForQuestId), au plus +50 %
+local GREY_PCT = { 0.8, 0.6, 0.4, 0.2, 0.1 } -- XP d'une quête grise, joueur >= niveau de quête + 6, +7, ... (règle Classic)
+local DROP = 0.25 -- quête du journal à abandonner : score < DROP x meilleur score hors rendus
+-- Pas de filtre de quêtes de groupe : QuestieDB n'a pas de questTag, et inGroupWith/questFlags ne le disent pas sûrement.
 
 -- startedBy / finishedBy = { { npcIDs }, { objectIDs } } : premier PNJ.
 local function firstNpc(id, key)
@@ -47,8 +57,10 @@ end
 local function objectiveNpc(id) return objectiveNpcs(id)[1] end
 
 local function str(v) return type(v) == "string" and not S.IsSecret(v) and v ~= "" and v or nil end
+local function num(v) return type(v) == "number" and not S.IsSecret(v) and v or nil end
+local function posLevel(v) v = num(v) return v and v > 0 and v or nil end
 
--- Quêtes du journal (hors en-têtes) : { id, title, done }.
+-- Quêtes du journal (hors en-têtes) : { id, title, done, ql }.
 local function journal()
   local out = {}
   local n = S.Get(C_QuestLog and C_QuestLog.GetNumQuestLogEntries)
@@ -56,10 +68,128 @@ local function journal()
   for i = 1, n do
     local info = S.Get(C_QuestLog.GetInfo, i)
     if type(info) == "table" and info.isHeader ~= true and type(info.questID) == "number" then
-      out[#out + 1] = { id = info.questID, title = str(info.title), done = S.Get(C_QuestLog.IsComplete, info.questID) == true }
+      out[#out + 1] = { id = info.questID, title = str(info.title), done = S.Get(C_QuestLog.IsComplete, info.questID) == true,
+        ql = posLevel(info.level) or posLevel(Q.Quest(info.questID, "questLevel")) }
     end
   end
   return out
+end
+
+------------------------------------------------------------------------
+-- Valeur : XP, or, temps
+------------------------------------------------------------------------
+-- shortcut: XP et argent d'une quête de niveau L, droites lissées sur des quêtes Classic (~650 XP et 3 pa au niveau 10,
+-- ~5600 XP et 1 po au 60), recalées par la médiane réel/estimé des quêtes du journal ; à remplacer si une base les donne.
+local function rawXP(ql) return math.max(80, 100 * ql - 350) end
+local function rawMoney(ql) return 3 * ql * ql end
+local calib = { xp = 1, money = 1 } -- mémoire seulement, jamais dans la base
+
+local function greyPct(ql, level)
+  local gap = level - ql - 5
+  if gap < 1 then return 1 end
+  return GREY_PCT[math.min(gap, #GREY_PCT)]
+end
+
+-- XP (pénalité grise comprise) et argent estimés d'une quête de niveau ql pour un joueur de niveau level, calibrés.
+function Quests.Estimate(ql, level)
+  return math.floor(rawXP(ql) * greyPct(ql, level) * calib.xp + 0.5), math.floor(rawMoney(ql) * calib.money + 0.5)
+end
+function Quests.Calib() return calib.xp, calib.money end
+
+-- 1 XP vaut, en cuivre, ce qu'une quête du niveau du joueur paie par point d'XP : ~0,5 pc au niveau 10, ~1,9 pc au 60.
+local function xpCopper(level) return rawMoney(level) / rawXP(level) end
+
+-- Récompense réelle d'une quête du journal ; nil si l'API manque ou si la valeur est secrète.
+local function realReward(id)
+  return num(S.Get(GetQuestLogRewardXP, id)), num(S.Get(GetQuestLogRewardMoney, id))
+end
+
+local function median(t)
+  if #t == 0 then return nil end
+  table.sort(t)
+  local m = math.floor((#t + 1) / 2)
+  return #t % 2 == 1 and t[m] or (t[m] + t[m + 1]) / 2
+end
+
+local function calibrate(list, level)
+  local rx, rm = {}, {}
+  for _, j in ipairs(list) do
+    if j.ql then
+      local xp, money = realReward(j.id)
+      if xp and xp > 0 then rx[#rx + 1] = xp / (rawXP(j.ql) * greyPct(j.ql, level)) end
+      if money and money > 0 then rm[#rm + 1] = money / rawMoney(j.ql) end
+    end
+  end
+  local function clamp(v) return v and math.max(0.25, math.min(4, v)) or 1 end
+  calib.xp, calib.money = clamp(median(rx)), clamp(median(rm))
+end
+
+-- Valeur en cuivre d'un objet (ID ou lien) : prix HdV pas trop ancien (comme Sell/Gold), sinon prix marchand ; nil si illisible.
+function Quests.ItemValue(item)
+  local id = type(item) == "number" and item or (type(item) == "string" and tonumber(item:match("item:(%d+)")))
+  if not id then return nil end
+  local p = ns.AH and ns.AH.Price(id)
+  local age = p and ns.AH.Age(id)
+  if p and p > 0 and not (age and ns.Sell and age > ns.Sell.OLD_DAYS) then return p end
+  local r = { S.GetAll((C_Item and C_Item.GetItemInfo) or GetItemInfo, id) }
+  return r[1] == "lisible" and num(r[12]) or nil
+end
+-- questID -> valeur de la meilleure récompense au choix, vue dans la session (UI/QuestReward.lua). Mémoire seulement.
+-- shortcut: une quête dont la fenêtre n'a pas été vue compte sans objet ; à compléter si une API lit les choix par questID.
+Quests.seen = {}
+
+local function focusWeight()
+  local g = ns.db and ns.db.guide
+  return FOCUS[g and g.focus] or FOCUS.gold
+end
+
+local function chainBonus(id)
+  local n = 0
+  local kids = Q.Quest(id, "childQuests")
+  if type(kids) == "table" then n = n + #kids end
+  for _, k in ipairs({ "nextQuestInChain", "breadcrumbForQuestId" }) do -- une quête d'accroche mène à une autre
+    local v = Q.Quest(id, k)
+    if type(v) == "number" and v > 0 then n = n + 1 end
+  end
+  return 1 + math.min(0.5, CHAIN * n)
+end
+
+-- Objectifs restants (monstres + objets) d'une quête du journal ; OBJ_DEFAULT si illisibles.
+local function objectivesLeft(id)
+  local objs = S.Get(C_QuestLog and C_QuestLog.GetQuestObjectives, id)
+  local n, seen = 0, false
+  for _, o in ipairs(type(objs) == "table" and objs or {}) do
+    local need = type(o) == "table" and num(o.numRequired)
+    if need then
+      seen = true
+      if o.finished ~= true then n = n + math.max(0, need - (num(o.numFulfilled) or 0)) end
+    end
+  end
+  return seen and n or OBJ_DEFAULT
+end
+
+-- { xp, gold, rate (cuivre/min), score, grey, far } ; nil si rien n'est connu (ni récompense réelle, ni niveau de quête).
+local function value(id, ql, level, inLog, objs, nStops, travelYd)
+  local xp, money
+  if inLog then xp, money = realReward(id) end
+  if ql then
+    local ex, em = Quests.Estimate(ql, level)
+    xp, money = xp or ex, money or em
+  end
+  if not (xp or money) then return nil end
+  xp, money = xp or 0, money or 0
+  local gold = money + (Quests.seen[id] or 0)
+  local move = travelYd / SPEED
+  local mins = math.max(0.5, (move + objs * OBJ_SECS + nStops * STOP_SECS) / 60)
+  return { xp = xp, gold = gold, rate = gold / mins, grey = ql ~= nil and greyPct(ql, level) < 1, far = move > mins * 30,
+    score = (gold + focusWeight() * xp * xpCopper(level)) * chainBonus(id) / mins }
+end
+
+-- « ≈ 650 XP · 3 pa (≈ 1 pa/min) »
+local function valueText(v)
+  if not v then return nil end
+  local m = ns.Prof and ns.Prof.Money or tostring
+  return L.QUEST_VALUE:format(math.floor(v.xp + 0.5), m(math.floor(v.gold + 0.5)), m(math.floor(v.rate + 0.5)))
 end
 
 -- Premier objectif non fini : « 3/8 Loups tués ».
@@ -83,11 +213,6 @@ local function playerPos(mapID)
   if type(p) ~= "table" then return nil end
   local ok, x, y = pcall(p.GetXY, p)
   if ok and type(x) == "number" and type(y) == "number" and not S.IsSecret(x) and not S.IsSecret(y) then return x * 100, y * 100 end
-end
-
-local function grouped()
-  local ok, v = pcall(function() return IsInGroup and IsInGroup() end)
-  return ok and v == true
 end
 
 -- Quêtes à prendre, par carte : { [uiMapID] = { { id, npc, x, y, req, lvl } } }. Mémoire seulement, bâti par tranches.
@@ -150,11 +275,11 @@ local function open(id)
 end
 
 -- Quêtes à prendre de la carte : { { id, npc, x, y, req, lvl, name } }, les plus proches d'abord, au plus `limit`.
--- Filtres : niveau atteint, pas grise, pas dans le journal, pas faite, prérequis, pas de groupe/donjon si seul.
+-- Filtres : niveau atteint, pas grise, pas dans le journal, pas faite, prérequis.
 local function pickups(mapID, level, px, py, limit, inLog)
   local out, here = {}, byMap and mapID and byMap[mapID]
   if not here then return out end
-  local list, solo = {}, not grouped()
+  local list = {}
   for _, e in ipairs(here) do
     if e.req <= level and e.lvl > level - GREY_GAP and not inLog[e.id] then
       list[#list + 1] = { e = e, d = px and math.sqrt((e.x - px) ^ 2 + (e.y - py) ^ 2) or 0 }
@@ -165,8 +290,7 @@ local function pickups(mapID, level, px, py, limit, inLog)
     if #out >= limit then break end
     local e = it.e
     local name = str(Q.Quest(e.id, "name"))
-    local tag = Q.Quest(e.id, "questTag")
-    if name and not (solo and GROUP_TAGS[tag]) and State.QuestDone(e.id) ~= true and open(e.id) then
+    if name and State.QuestDone(e.id) ~= true and open(e.id) then
       out[#out + 1] = { id = e.id, npc = e.npc, x = e.x, y = e.y, req = e.req, lvl = e.lvl, name = name }
     end
   end
@@ -249,15 +373,6 @@ function Quests.Order(stops, px, py, plain)
   return out
 end
 
--- Valeur d'une quête : XP de récompense si QuestieDB l'expose ("rewardXP"), sinon niveau de quête proche du joueur.
-local function bonus(id, level)
-  local xp = Q.Quest(id, "rewardXP")
-  if type(xp) == "number" and xp > 0 then return math.min(20, xp / 50) end
-  local ql = Q.Quest(id, "questLevel")
-  if type(ql) == "number" and ql > 0 then return math.max(0, 10 - math.abs(ql - level)) end
-  return 0
-end
-
 local function compute()
   local level, mapID = State.level, State.mapID
   if type(level) ~= "number" then return {} end
@@ -281,8 +396,22 @@ local function compute()
     end
     return s
   end
-  local inLog, units, tail = {}, {}, {}
-  for _, j in ipairs(journal()) do
+  -- trajet (yards) depuis le joueur puis d'arrêt en arrêt
+  local function travel(stops)
+    local t, x, y = 0, px, py
+    for _, s in ipairs(stops) do
+      if not s.here then t = t + AWAY_YD
+      elseif yards and x and s.x then
+        t = t + math.sqrt(((s.x - x) * yards[1] / 100) ^ 2 + ((s.y - y) * yards[2] / 100) ^ 2)
+        x, y = s.x, s.y
+      else t = t + FAR_YD end
+    end
+    return t
+  end
+  local list = journal()
+  calibrate(list, level)
+  local inLog, units, tail, drops = {}, {}, {}, {}
+  for _, j in ipairs(list) do
     inLog[j.id] = true
     local name = j.title or str(Q.Quest(j.id, "name")) or L.QUEST_ANON
     local s
@@ -293,8 +422,10 @@ local function compute()
       s = stop("progress", j.id, name, obj and L.QUEST_PROGRESS:format(name, obj) or name, objectiveNpc(j.id) or firstNpc(j.id, "startedBy"))
     end
     s.order = #units + #tail + 1
+    s.v = value(j.id, j.ql, level, true, j.done and 0 or objectivesLeft(j.id), 1, travel({ s }))
+    if s.v and not j.done and (s.here or s.v.grey) then drops[#drops + 1] = s end
     if s.here then
-      units[#units + 1] = { stops = { s }, value = (j.done and 100 or 50) + bonus(j.id, level), order = s.order }
+      units[#units + 1] = { stops = { s }, v = s.v, order = s.order }
     else
       tail[#tail + 1] = s
     end
@@ -303,17 +434,30 @@ local function compute()
   for _, e in ipairs(pickups(mapID, level, px, py, MAX_PICKUPS, inLog)) do
     local p = stop("pickup", e.id, e.name, L.QUEST_PICKUP:format(e.name), e.npc, e.req)
     if p.here then
-      local u = { stops = { p }, value = bonus(e.id, level), order = 1000 + #units }
+      local u = { stops = { p }, order = 1000 + #units }
       local o = objectiveNpc(e.id)
       local f = firstNpc(e.id, "finishedBy")
       local po = o and stop("progress", e.id, e.name, e.name, o)
       local pf = f and stop("turnin", e.id, e.name, L.QUEST_TURNIN:format(e.name), f)
       if po and po.here then po.virtual = true u.stops[#u.stops + 1] = po end
       if pf and pf.here then pf.virtual = true u.stops[#u.stops + 1] = pf end
+      local qo = Q.Quest(e.id, "objectives")
+      -- shortcut: niveau de quête inconnu = celui du joueur
+      p.v = value(e.id, e.lvl > 0 and e.lvl or level, level, false, type(qo) == "table" and next(qo) and OBJ_DEFAULT or 0, 2, travel(u.stops))
+      u.v = p.v
       units[#units + 1] = u
     end
   end
-  table.sort(units, function(a, b) if a.value ~= b.value then return a.value > b.value end return a.order < b.order end)
+  -- par score/minute ; une quête du journal sans valeur connue garde sa place en tête (ordre du journal)
+  local function score(u) return u.v and u.v.score or math.huge end
+  table.sort(units, function(a, b) if score(a) ~= score(b) then return score(a) > score(b) end return a.order < b.order end)
+  -- à abandonner (conseil seulement) : grise, ou dans la zone et loin derrière la meilleure quête hors rendus
+  local ref = 0
+  for _, u in ipairs(units) do if u.v and u.stops[1].kind ~= "turnin" then ref = math.max(ref, u.v.score) end end
+  local drop
+  for _, s in ipairs(drops) do
+    if (s.v.grey or s.v.score < DROP * ref) and (not drop or s.v.score < drop.v.score) then drop = s end
+  end
   local located, n = {}, 0
   for _, u in ipairs(units) do
     if n + #u.stops <= MAX_STOPS then
@@ -328,6 +472,8 @@ local function compute()
   end)
   for _, s in ipairs(tail) do route[#route + 1] = s end
   for i, s in ipairs(route) do s.n = i end
+  if drop then route.drop = { questID = drop.questID, name = drop.name,
+    why = drop.v.grey and "grey" or drop.v.far and "far" or "low" } end
   return route
 end
 
@@ -354,6 +500,7 @@ local function makeBest(r)
   if zone then parts[#parts + 1] = zone end
   if c.yards then parts[#parts + 1] = L.QUEST_DIST:format(math.max(10, math.floor(c.yards / 10 + 0.5) * 10)) end
   if c.kind == "pickup" and c.extra and c.extra > 0 then parts[#parts + 1] = L.GUIDE_QLEVEL:format(c.extra) end
+  parts[#parts + 1] = valueText(c.v)
   return { questID = c.questID, name = c.name, kind = c.kind, text = c.text,
     detail = #parts > 0 and table.concat(parts, " · ") or nil, go = c.go }
 end
@@ -365,14 +512,20 @@ function Quests.Best()
   return best
 end
 
--- Lignes de l'onglet « Itinéraire » : { text, sub, go, highlight }.
+-- Lignes de l'onglet « Itinéraire » : { text, sub, go, highlight } ; la valeur sur le premier arrêt de chaque quête,
+-- puis la quête à abandonner s'il y en a une (conseil : l'addon n'abandonne rien).
 local MARK = { pickup = "|cffffd100!|r", turnin = "|cffffd100?|r", progress = "•" }
 function Quests.Rows()
-  local out = {}
-  for i, s in ipairs(Quests.Route()) do
+  local out, seen, r = {}, {}, Quests.Route()
+  for i, s in ipairs(r) do
+    local subs = {}
+    if s.yards then subs[1] = L.QUEST_DIST:format(math.max(10, math.floor(s.yards / 10 + 0.5) * 10)) end
+    if not seen[s.questID] then subs[#subs + 1] = valueText(s.v) end
+    seen[s.questID] = true
     out[i] = { text = ("%d. %s %s"):format(i, MARK[s.kind], s.text), go = s.go, highlight = i == 1,
-      sub = s.yards and L.QUEST_DIST:format(math.max(10, math.floor(s.yards / 10 + 0.5) * 10)) or nil }
+      sub = #subs > 0 and table.concat(subs, " · ") or nil }
   end
+  if r.drop then out[#out + 1] = { text = L.QUEST_DROP:format(r.drop.name, L["QUEST_DROP_" .. r.drop.why]), highlight = false } end
   return out
 end
 
@@ -432,7 +585,7 @@ local function sigOf(b, r)
   if not b then return "" end
   local ids = {}
   for i, s in ipairs(r) do ids[i] = s.questID .. s.kind end
-  return b.questID .. "|" .. b.text .. "|" .. tostring(b.detail) .. "|" .. table.concat(ids, ",")
+  return b.questID .. "|" .. b.text .. "|" .. tostring(b.detail) .. "|" .. table.concat(ids, ",") .. "|" .. tostring(r.drop and r.drop.questID)
 end
 
 -- Relit et prévient l'interface (GUIDE) si le choix ou l'itinéraire a changé ; QPINS : les repères de carte sont à relire.
