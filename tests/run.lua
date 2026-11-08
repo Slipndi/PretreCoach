@@ -3525,44 +3525,48 @@ local function suite(label)
     for _, q in ipairs(n.Data.KeyQuests) do
       assert(type(q.id) == "number" and q.from <= q.to and type(q.why) == "string" and q.source:find(":%d+"), "donnee : " .. tostring(q.id))
     end
+    for _, q in ipairs(n.Data.KeyQuests) do assert(q.id ~= 5658, "5658 absente de Forever") end
+    -- quete de test (fictive) : la logique de tranche et de prerequis ne depend pas d'une vraie quete
+    local TQ = { id = 99658, from = 10, to = 19, why = "quete test, Toucher de faiblesse", source = "test:1" }
+    table.insert(n.Data.KeyQuests, TQ)
     local done, unk = {}, { [8888] = true }
     local orig = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted
     if C_QuestLog then C_QuestLog.IsQuestFlaggedCompleted = function(id) if not unk[id] then return done[id] == true end end end
     local ok, err = pcall(function()
-      mock.qquests = { [5658] = { name = "Toucher", startedBy = { { 375 } }, requiredLevel = 10 },
+      mock.qquests = { [99658] = { name = "Toucher", startedBy = { { 375 } }, requiredLevel = 10 },
         [6921] = { name = "Ruines", startedBy = { { 308 } }, requiredLevel = 21 } }
       setState(n, { level = 12 })
-      assert(st(ev(n, "kq5658")) == "todo" and ev(n, "kq5658").priority == 3, "dans la tranche")
+      assert(st(ev(n, "kq99658")) == "todo" and ev(n, "kq99658").priority == 3, "dans la tranche")
       if LibQuestieDB then
-        assert(ev(n, "kq5658").go == "Q5658" and ev(n, "kq5658").text:find("Toucher", 1, true) and ev(n, "kq5658").text:find("faiblesse", 1, true))
+        assert(ev(n, "kq99658").go == "Q99658" and ev(n, "kq99658").text:find("Toucher", 1, true) and ev(n, "kq99658").text:find("faiblesse", 1, true))
       else
-        assert(ev(n, "kq5658").go == nil and ev(n, "kq5658").text == n.Data.KeyQuests[3].why, "sans Questie : why seul, pas de Ou aller")
+        assert(ev(n, "kq99658").go == nil and ev(n, "kq99658").text == TQ.why, "sans Questie : why seul, pas de Ou aller")
       end
       assert(ev(n, "kq906") == nil, "hors tranche")
       assert((ev(n, "kq451") == nil) == (C_QuestLog ~= nil), "prerequis (450) pas fait masque, inconnu propose")
       setState(n, { level = 9 })
-      assert(ev(n, "kq5658") == nil, "avant la tranche")
+      assert(ev(n, "kq99658") == nil, "avant la tranche")
       setState(n, { level = 20 })
-      assert(ev(n, "kq5658") == nil, "apres la tranche")
+      assert(ev(n, "kq99658") == nil, "apres la tranche")
       setState(n, { level = 12 })
       if C_QuestLog then
         done[450] = true
         assert(st(ev(n, "kq451")) == "todo", "prerequis fait")
-        done[5658] = true
-        assert(st(ev(n, "kq5658")) == "done", "fait : l'onglet Maintenant la retire comme les autres")
-        done[5658] = nil
+        done[99658] = true
+        assert(st(ev(n, "kq99658")) == "done", "fait : l'onglet Maintenant la retire comme les autres")
+        done[99658] = nil
       end
       if LibQuestieDB then
-        mock.qquests[5658].requiredLevel = 14
-        assert(ev(n, "kq5658") == nil, "niveau requis Questie pas atteint")
-        mock.qquests[5658].requiredLevel, mock.qquests[5658].preQuestGroup = 10, { 9999 }
-        assert(ev(n, "kq5658") == nil, "prerequis de groupe pas fait")
-        mock.qquests[5658].preQuestGroup = { 8888 }
-        assert(st(ev(n, "kq5658")) == "todo", "prerequis inconnu : on propose")
-        mock.qquests[5658].preQuestGroup, mock.qquests[5658].preQuestSingle = nil, { 9999, 9998 }
-        assert(ev(n, "kq5658") == nil, "aucun prerequis alternatif fait")
+        mock.qquests[99658].requiredLevel = 14
+        assert(ev(n, "kq99658") == nil, "niveau requis Questie pas atteint")
+        mock.qquests[99658].requiredLevel, mock.qquests[99658].preQuestGroup = 10, { 9999 }
+        assert(ev(n, "kq99658") == nil, "prerequis de groupe pas fait")
+        mock.qquests[99658].preQuestGroup = { 8888 }
+        assert(st(ev(n, "kq99658")) == "todo", "prerequis inconnu : on propose")
+        mock.qquests[99658].preQuestGroup, mock.qquests[99658].preQuestSingle = nil, { 9999, 9998 }
+        assert(ev(n, "kq99658") == nil, "aucun prerequis alternatif fait")
         done[9998] = true
-        assert(st(ev(n, "kq5658")) == "todo", "un prerequis alternatif suffit")
+        assert(st(ev(n, "kq99658")) == "todo", "un prerequis alternatif suffit")
         setState(n, { level = 26 })
         local e = ev(n, "kq6921")
         assert(e and e.go == "Q6921")
@@ -3571,6 +3575,7 @@ local function suite(label)
     end)
     if C_QuestLog then C_QuestLog.IsQuestFlaggedCompleted = orig end
     mock.qquests = nil
+    for k = #n.Data.KeyQuests, 1, -1 do if n.Data.KeyQuests[k] == TQ then table.remove(n.Data.KeyQuests, k) end end
     assert(ok, err)
     if LibQuestieDB then
       -- sans Questie : les donnees seules
@@ -3578,11 +3583,15 @@ local function suite(label)
       _G.LibQuestieDB = nil
       local ok2, err2 = pcall(function()
         local m = fresh().n
+        table.insert(m.Data.KeyQuests, TQ)
         setState(m, { level = 12 })
-        assert(not m.Q.Available() and st(ev(m, "kq5658")) == "todo" and ev(m, "kq5658").go == nil)
+        assert(not m.Q.Available() and st(ev(m, "kq99658")) == "todo" and ev(m, "kq99658").go == nil)
         assert(ev(m, "kq451") == nil, "prerequis `after` des donnees")
       end)
       _G.LibQuestieDB = lib
+      for _, D in ipairs({ n.Data, (fresh().n).Data }) do
+        for k = #D.KeyQuests, 1, -1 do if D.KeyQuests[k] == TQ then table.remove(D.KeyQuests, k) end end
+      end
       assert(ok2, err2)
     end
   end)
@@ -3924,7 +3933,7 @@ local function suite(label)
     setState(n, { level = 12, profs = { [182] = { rank = 60, max = 75 }, [171] = { rank = 10, max = 75 } } })
     local goals = n.Guide.Goals()
     assert(#goals == 4 and goals[1].kind == "xp" and goals[2].line == 182 and goals[3].line == 171 and goals[4].kind == "gold", "XP, Herboristerie, Alchimie, Or")
-    assert(goals[1].e and not goals[1].e.prof, "XP : objectif sans metier")
+    assert(not (goals[1].e and goals[1].e.prof), "XP : jamais un objectif de metier")
     for i = 2, 3 do assert(goals[i].kind == "prof" and goals[i].e and goals[i].e.prof == goals[i].line, "objectif du metier") end
     assert(goals[2].label == "Herboristerie" and goals[3].label == "Alchimie")
     for _, g in ipairs(goals) do assert(g.line ~= 129, "pas de Secourisme : metier non appris") end
@@ -4863,6 +4872,7 @@ local function suite(label)
     local n = goldNs({ [182] = { rank = 60, max = 75 } })
     local before = {}
     for k in pairs(n.db) do before[k] = true end
+    before.pace = true -- rythme d'XP de la rangee XP (Guide.Goals), pas de l'or
     mock.money, mock.time = 1000, 0
     mock.ah = { [765] = { 30, 1 } }
     n.Gold.Best() n.Gold.Rows() n.Gold.SessionText() n.Guide.Goals()
