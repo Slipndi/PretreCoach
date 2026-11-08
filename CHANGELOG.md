@@ -1,3 +1,7 @@
+# PretreCoach 0.9.1
+
+- Métiers : les recettes à apprendre viennent maintenant de ce que ton maître affiche comme disponible (relevé à ta visite), plus d'une liste écrite d'avance qui pouvait citer une recette absente chez le maître.
+
 # PretreCoach 0.9.0
 
 Première diffusion publique.
