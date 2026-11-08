@@ -16,10 +16,10 @@ L'addon lit et affiche, il n'agit jamais à la place du joueur : aucun lancement
 
 ## Dépendances optionnelles
 
-- **QuestieDB** (la base de données seule, `LibQuestieDB`) : positions des maîtres et des PNJ de ville, quêtes de la zone, itinéraire optimisé et repères sur la carte du monde (« ! » à prendre, « ? » à rendre, point d'objectif, anneau numéroté sur l'itinéraire). L'addon Questie lui-même n'est plus nécessaire.
+- **Questie** (ou sa base seule, `LibQuestieDB`) : positions des maîtres et des PNJ de ville, quêtes de la zone, itinéraire optimisé et repères sur la carte du monde (« ! » à prendre, « ? » à rendre, point d'objectif, anneau numéroté sur l'itinéraire).
 - **Auctionator** : prix pour les conseils de métiers et de vente.
 
-Sans elles, l'addon fonctionne seul (conseils plus pauvres).
+Aussi lus s'ils sont présents : **QuestDB** et **What's Training**. Sans eux, l'addon fonctionne seul (conseils plus pauvres).
 
 ## Installation
 
@@ -28,7 +28,7 @@ Sans elles, l'addon fonctionne seul (conseils plus pauvres).
 1. Dans WowUp, choisir le client **WoW Forever**.
 2. « Install from URL », puis coller `https://github.com/Slipndi/PretreCoach`.
 
-Nécessite une release publiée sur GitHub (le zip de l'addon y est joint automatiquement).
+Nécessite une release GitHub (zip `PretreCoach-<version>.zip`, dossier `PretreCoach/` à la racine). WowUp propose ensuite les mises à jour tout seul. Zip local : `powershell -File build-release.ps1` (sortie dans `dist/`).
 
 ### Voie B : git clone
 
