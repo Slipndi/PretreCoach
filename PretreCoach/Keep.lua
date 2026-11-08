@@ -1,5 +1,5 @@
 -- « Garder ou vendre » : verdict par ressource de craft (herbes, fioles, tissus : composants de Data/ProfPlan) et par consommable utile.
--- Verdicts : garder pour monter le metier, garder pour jouer, crafter pour vendre, vendre (HdV recente sinon marchand), prix inconnu.
+-- Verdicts : garder pour monter le metier (horizon 50 points, recettes du plan et recettes apprises), garder pour jouer, crafter pour vendre, vendre (HdV recente sinon marchand), prix inconnu.
 -- Lecture et conseil seulement : aucun clic, achat, vente ni craft. Rien n'est ecrit dans PretreCoachDB.
 local _, ns = ...
 local L, S, D, State = ns.L, ns.S, ns.Data, ns.State
@@ -9,15 +9,18 @@ ns.Keep = Keep
 
 -- Toutes les constantes ici (cuivre sauf mention).
 local K = {
-  -- shortcut: valeur d'un point de metier selon ns.db.guide.focus ; « xp » = toujours garder pour monter. A regler apres usage reel.
-  POINT = { gold = 50, balanced = 300, xp = math.huge },
   -- shortcut: les marchands n'exposent pas leur prix d'achat ; on le prend a 4x le prix de vente (ratio Classic usuel).
   BUY_RATIO = 4,
+  AH_CUT = 0.05, -- commission HdV : racheter coute le prix HdV majore de ce taux
   -- Stock de potions/bandages a garder pour jouer, selon le focus ; le surplus repasse en vente. 0 = pas de stock.
   PLAY = { gold = 0, balanced = 5, xp = 20 },
   BAGS = { 0, 1, 2, 3, 4 },
   MAX_ROWS = 8, -- rangees de l'onglet Vente
   SKILL_MAX = 300,
+  HORIZON = 50, -- points de metier regardes devant le rang actuel
+  SOON = 5, -- le rang suivant compte s'il s'ouvre dans au plus ce nombre de niveaux
+  -- shortcut: fabrications comptees pour une recette apprise orange/jaune (divisees par numSkillUps) ; a regler apres usage reel.
+  LEARNED_CRAFTS = 5,
 }
 Keep.K = K
 
@@ -26,7 +29,7 @@ local function money(c) return ns.Prof.Money(c) end
 
 local function focus()
   local f = ns.db and ns.db.guide and ns.db.guide.focus
-  return K.POINT[f] and f or "gold"
+  return K.PLAY[f] and f or "gold"
 end
 
 local function count(id)
@@ -77,23 +80,69 @@ local function uses(id)
   return out
 end
 
--- Besoin pour monter : composants des crafts restants entre le rang et le plafond du rang (p.max), recettes orange/jaune
--- (ou pas encore lues : comme Prof.Craftable). Rend besoin, points gagnes, ligne principale et rang vise.
-local function skillNeed(us)
-  local need, pts, bestLine, bestN, target = 0, 0, nil, 0, 0
-  for _, u in ipairs(us) do
-    local rank, cap, st = num(u.p.rank) or 0, math.min(num(u.p.max) or 0, K.SKILL_MAX), u.st
-    local lo, hi = math.max(rank, st.from), math.min(st.to, cap)
-    local e = knownRecipe(u.line, st.recipe)
-    local useful = not e or e.color == "orange" or e.color == "yellow"
-    if rank < cap and hi > lo and useful then
-      local n = math.ceil(st.crafts * (hi - lo) / (st.to - st.from)) * u.c.n
-      need, pts = need + n, pts + (hi - lo)
-      if n > bestN then bestN, bestLine = n, u.line end
-      target = math.max(target, hi)
+-- Plafond de l'horizon : rang + HORIZON, au-dela du plafond du rang (pmax) seulement si le rang suivant s'ouvre bientot.
+-- Rend limite, nom du rang suivant (celui qui s'ouvre apres pmax).
+local function horizon(line, rank, pmax)
+  local limit, nextName = pmax, nil
+  local ranks = D.Professions and D.Professions[line] and D.Professions[line].ranks
+  for _, r in ipairs(ranks or {}) do
+    if r.max > pmax then
+      nextName = r.name
+      if (num(State.level) or 0) + K.SOON >= r.minLevel then limit = r.max end
+      break
     end
   end
-  return need, pts, bestLine, target
+  return math.min(limit, rank + K.HORIZON, K.SKILL_MAX), nextName
+end
+
+-- Recettes apprises (index lu fenetre ouverte, ns.db.reagents) qui utilisent cet objet, pour les metiers du joueur.
+local function learnedUses(id)
+  local out, profs = {}, type(State.profs) == "table" and State.profs or {}
+  local list = ns.db and type(ns.db.reagents) == "table" and ns.db.reagents[id]
+  for _, e in ipairs(type(list) == "table" and list or {}) do
+    if profs[e.line] and (e.color == "orange" or e.color == "yellow") then out[#out + 1] = e end
+  end
+  return out
+end
+
+-- Besoin pour monter : composants des crafts du plan entre le rang et l'horizon (recettes orange/jaune, ou pas encore lues :
+-- comme Prof.Craftable), plus les recettes apprises hors plan. Rend { need, line, from, target, after, nextName, learned }.
+local function skillNeed(us, lr)
+  local r = { need = 0, after = 0 }
+  local bestN = 0
+  for _, u in ipairs(us) do
+    local rank, pmax, st = num(u.p.rank) or 0, math.min(num(u.p.max) or 0, K.SKILL_MAX), u.st
+    local limit, nextName = horizon(u.line, rank, pmax)
+    local lo, hi = math.max(rank, st.from), math.min(st.to, limit)
+    local e = knownRecipe(u.line, st.recipe)
+    local useful = not e or e.color == "orange" or e.color == "yellow"
+    if pmax > 0 and rank < limit and hi > lo and useful then
+      local span = st.to - st.from
+      local n = math.ceil(st.crafts * (hi - lo) / span) * u.c.n
+      r.need = r.need + n
+      r.after = r.after + math.min(n, math.ceil(st.crafts * math.max(0, hi - math.max(lo, pmax)) / span) * u.c.n)
+      if n > bestN then bestN, r.line, r.from, r.nextName = n, u.line, rank, nextName end
+      r.target = math.max(r.target or 0, hi)
+    end
+  end
+  for _, e in ipairs(lr) do
+    local covered = false
+    for _, u in ipairs(us) do if u.line == e.line and u.st.recipe == e.name then covered = true end end
+    if not covered then
+      r.need = r.need + math.ceil(K.LEARNED_CRAFTS / math.max(num(e.ups) or 1, 1)) * (num(e.n) or 1)
+      r.learned = r.learned or e.name or "?"
+      r.line = r.line or e.line
+    end
+  end
+  return r
+end
+
+-- Cout d'une unite a racheter : HdV recente + commission, sinon achat marchand estime (composant vendu par un marchand).
+local function rebuyUnit(id, us)
+  local ah = ns.Gold.Fresh(id)
+  if ah then return math.ceil(ah * (1 + K.AH_CUT)) end
+  local m = merchant(id)
+  for _, u in ipairs(m and us or {}) do if u.c.vendor then return m * K.BUY_RATIO end end
 end
 
 -- Meilleure marge par unite de ressource en fabriquant une recette CONNUE puis en vendant le produit.
@@ -130,29 +179,30 @@ local function isPlay(id)
   return r[1] == "lisible" and num(r[7]) == 0 and num(r[8]) == 1 -- consommable, potion
 end
 
--- Verdict { id, have, keep, why = "skill"|"play", label, target, rest, restKind = "sell"|"craft"|"unknown", sell, sellSrc,
--- craft, craftName } ; nil si l'objet n'est ni une ressource de craft ni un consommable utile, ou si le compte est illisible.
+-- Verdict { id, have, keep, why = "skill"|"play", label, from, target, after, nextName, learned, rebuy, rest,
+-- restKind = "sell"|"craft"|"unknown", sell, sellSrc, craft, craftName, kind } ; nil si l'objet n'est ni une ressource de
+-- craft ni un consommable utile, ou si le compte est illisible. Le besoin pour monter est TOUJOURS garde (le racheter couterait
+-- plus que la vente), quel que soit le focus ; seul le surplus est vendu ou crafte.
 function Keep.Verdict(id, have)
   have = have or count(id)
   if not (num(id) and have and have > 0) then return nil end
-  local us = uses(id)
-  local play = #us == 0 and isPlay(id)
-  if #us == 0 and not play then return nil end
-  local f = focus()
+  local us, lr = uses(id), learnedUses(id)
+  local play = #us == 0 and #lr == 0 and isPlay(id)
+  if #us == 0 and #lr == 0 and not play then return nil end
   local sell, src = sellValue(id)
   local craft, craftName = craftValue(us, id)
   local v = { id = id, have = have, keep = 0, sell = sell, sellSrc = src, craft = craft, craftName = craftName }
   if play then
-    v.keep, v.why = math.min(have, K.PLAY[f]), "play"
+    v.keep, v.why = math.min(have, K.PLAY[focus()]), "play"
   else
-    local need, pts, line, target = skillNeed(us)
-    if need > 0 then
-      -- valeur d'une unite gardee = points de metier qu'elle rapporte ; garder si elle bat la vente et le craft-pour-vendre
-      local perUnit = pts / need * K.POINT[f]
-      if perUnit >= math.max(sell or 0, craft or 0) then
-        v.keep, v.why, v.target = math.min(have, need), "skill", target
-        v.label = D.Professions[line] and D.Professions[line].name or tostring(line)
-      end
+    local r = skillNeed(us, lr)
+    if r.need > 0 then
+      v.keep, v.why = math.min(have, r.need), "skill"
+      v.from, v.target, v.nextName, v.learned = r.from, r.target, r.nextName, r.learned
+      v.after = math.min(r.after, v.keep)
+      v.label = D.Professions[r.line] and D.Professions[r.line].name or tostring(r.line)
+      local u = rebuyUnit(id, us)
+      v.rebuy = u and u * v.keep
     end
   end
   v.rest = have - v.keep
@@ -162,27 +212,36 @@ function Keep.Verdict(id, have)
     else v.restKind = "unknown" end
   end
   if v.keep == 0 and not v.restKind then return nil end
+  v.kind = v.keep > 0 and "keep" or v.restKind
   return v
 end
 
--- Ligne de conseil (bulle, rangees).
-function Keep.Text(v)
-  local parts = {}
+-- Bulle : tete (verdict GARDER / CRAFTER / VENDRE + raison), detail (sort du reste du stock) ou nil.
+function Keep.Lines(v)
+  local head, detail
+  local at = v.sellSrc == "ah" and L.KEEP_AT_AH or L.KEEP_AT_MERCHANT
   if v.keep > 0 then
-    parts[1] = v.why == "play" and L.KEEP_PLAY:format(v.keep) or L.KEEP_KEEP:format(v.keep, v.label, v.target)
-  end
-  if v.rest > 0 then
-    local more = v.keep > 0
-    if v.restKind == "craft" then
-      parts[#parts + 1] = (more and L.KEEP_REST_CRAFT or L.KEEP_CRAFT):format(v.craftName, money(v.craft))
-    elseif v.restKind == "sell" then
-      parts[#parts + 1] = more and L.KEEP_REST_SELL:format(v.rest)
-        or (v.sellSrc == "ah" and L.KEEP_SELL_AH or L.KEEP_SELL_MERCHANT):format(money(v.sell))
-    else
-      parts[#parts + 1] = L.KEEP_UNKNOWN
+    if v.why == "play" then head = L.KEEP_H_PLAY:format(v.keep)
+    elseif v.target and v.from then
+      head = L.KEEP_H_KEEP:format(v.keep, v.label, v.from, v.target)
+      if v.after > 0 and v.nextName then head = head .. L.KEEP_H_AFTER:format(v.after, v.nextName) end
+    else head = L.KEEP_H_LEARNED:format(v.keep, v.label, v.learned or "?") end
+    if v.rebuy then head = head .. L.KEEP_H_REBUY:format(money(v.rebuy)) end
+    if v.rest > 0 then
+      if v.restKind == "craft" then detail = L.KEEP_D_CRAFT:format(v.rest, v.craftName, money(v.craft))
+      elseif v.restKind == "sell" then detail = L.KEEP_D_SELL:format(v.rest, at, money(v.sell))
+      else detail = L.KEEP_D_UNKNOWN:format(v.rest) end
     end
-  end
-  return table.concat(parts, "  ·  ")
+  elseif v.restKind == "craft" then head = L.KEEP_H_CRAFT:format(v.craftName, money(v.craft))
+  elseif v.restKind == "sell" then head = L.KEEP_H_SELL:format(at, money(v.sell))
+  else head = L.KEEP_H_UNKNOWN end
+  return head, detail
+end
+
+-- Ligne de conseil unique (rangees).
+function Keep.Text(v)
+  local head, detail = Keep.Lines(v)
+  return detail and (head .. "  ·  " .. detail) or head
 end
 
 -- Enjeu pour le tri : valeur de ce qui est en jeu (meilleure valeur connue x quantite).
@@ -249,11 +308,16 @@ end
 ------------------------------------------------------------------------
 -- Bulle d'info des objets : une ligne ajoutee (lecture seule), jamais en combat, sous pcall.
 ------------------------------------------------------------------------
+local COLORS = { keep = { 0.4, 1, 0.4 }, sell = { 1, 0.82, 0 }, craft = { 0.4, 0.7, 1 }, unknown = { 0.7, 0.6, 1 } }
 local function tipLine(tip, id)
   if tip ~= GameTooltip or InCombatLockdown() then return end
   if not (ns.db and ns.db.show and ns.db.show.keeptip ~= false) then return end
-  local ok, text = pcall(function() local v = Keep.Verdict(id) return v and (L.KEEP_TAG .. Keep.Text(v)) end)
-  if ok and text then return pcall(tip.AddLine, tip, text, 0.7, 0.6, 1, true) end
+  local ok, v, head, detail = pcall(function() local x = Keep.Verdict(id) if x then return x, Keep.Lines(x) end end)
+  if not (ok and v) then return end
+  local c = COLORS[v.kind] or COLORS.unknown
+  pcall(tip.AddLine, tip, L.KEEP_TAG .. head, c[1], c[2], c[3], true)
+  if detail then pcall(tip.AddLine, tip, detail, 0.8, 0.8, 0.8, true) end
+  return true
 end
 
 local function hook()

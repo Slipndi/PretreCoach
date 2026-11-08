@@ -140,6 +140,33 @@ Prof.Get = Get
 
 local toasted = {}
 
+-- Index { itemID -> { { line, recipeID, name, color, ups, n } } } des composants des recettes apprises orange/jaune, garde en
+-- base (nombres et noms lisibles seulement) pour servir fenetre fermee. Reconstruit par metier a chaque lecture.
+function Prof.IndexReagents(line, cands)
+  if not ns.db then return end
+  local idx = {}
+  for id, list in pairs(ns.db.reagents or {}) do
+    local keep = {}
+    for _, e in ipairs(list) do if e.line ~= line then keep[#keep + 1] = e end end
+    if #keep > 0 then idx[id] = keep end
+  end
+  for _, e in ipairs(cands) do
+    local sch = (e.color == "orange" or e.color == "yellow") and S.Get(C_TradeSkillUI.GetRecipeSchematic, e.recipeID, false)
+    for _, slot in ipairs(type(sch) == "table" and type(sch.reagentSlotSchematics) == "table" and sch.reagentSlotSchematics or {}) do
+      local q = type(slot) == "table" and num(field(slot, "quantityRequired"))
+      for _, r in ipairs(q and type(slot.reagents) == "table" and slot.reagents or {}) do
+        local id = num(field(r, "itemID"))
+        if id then
+          idx[id] = idx[id] or {}
+          idx[id][#idx[id] + 1] = { line = line, recipeID = e.recipeID, name = type(e.name) == "string" and e.name or nil,
+            color = e.color, ups = e.skillUps, n = q }
+        end
+      end
+    end
+  end
+  if next(idx) or ns.db.reagents then ns.db.reagents = idx end
+end
+
 function Prof.Read()
   local T = C_TradeSkillUI
   if not T or InCombatLockdown() or S.Get(T.IsTradeSkillReady) ~= true then return end
@@ -158,6 +185,7 @@ function Prof.Read()
       end
     end
   end
+  pcall(Prof.IndexReagents, line, cands)
   local list = {}
   for _, e in ipairs(cands) do if best > 2 or CRANK[e.color] <= 2 then list[#list + 1] = e end end -- vertes : repli seulement
   table.sort(list, sortPre)

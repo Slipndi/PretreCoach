@@ -2893,7 +2893,7 @@ local function suite(label)
     local function keys(t) local k = {} for x in pairs(t) do k[#k + 1] = tostring(x) end table.sort(k) return table.concat(k, ",") end
     n.db.guide.focus, n.db.show.keeptip = "gold", true -- reglages de depart : le reste ne doit rien ajouter
     local before = keys(n.db) .. "|" .. keys(n.db.show)
-    local function prof(rank, max) setState(n, { level = 12, profs = { [171] = { rank = rank, max = max } } }) end
+    local function prof(rank, max) setState(n, { level = 1, profs = { [171] = { rank = rank, max = max } } }) end
     local function focus(f) n.db.guide.focus = f end
     prof(50, 75)
     mock.items, mock.ah, mock.sellPrice = {}, {}, {}
@@ -2905,35 +2905,35 @@ local function suite(label)
     focus("gold")
     local v = K.Verdict(2447, 40)
     assert(v.keep == 26 and v.rest == 14 and v.target == 75 and v.restKind == "sell", "garder 26, surplus 14")
-    assert(text(2447, 40) == "Garder 26 (Alchimie → 75)  ·  vendre le reste 14", text(2447, 40))
+    assert(text(2447, 40) == "GARDER 26 · Alchimie 50→75  ·  vendre le reste (14) au marchand : 10" .. MI.c .. " l'unité", text(2447, 40))
     assert(K.Verdict(2447, 20).keep == 20 and K.Verdict(2447, 20).rest == 0, "tout garder sous le besoin")
     -- plafond atteint : plus rien a garder, on vend
     prof(75, 75)
-    assert(K.Verdict(2447, 40).keep == 0 and find(text(2447, 40), "Vendre au marchand : 10" .. MI.c), text(2447, 40))
+    assert(K.Verdict(2447, 40).keep == 0 and find(text(2447, 40), "VENDRE · au marchand : 10" .. MI.c), text(2447, 40))
     prof(50, 75)
     -- prix inconnu : Soleillette (8838) n'est pas utile avant le rang 225
-    assert(text(8838, 4) == "prix inconnu, scanne l'HdV", text(8838, 4))
+    assert(text(8838, 4) == "PRIX INCONNU · scanne l'HdV", text(8838, 4))
     -- objet sans rapport, ou compte nul
     assert(K.Verdict(100, 5) == nil and K.Verdict(2447, 0) == nil)
     -- potions et bandages : stock de jeu selon le focus
     mock.itemClass, mock.itemSub = { [118] = 0 }, { [118] = 1 }
     mock.sellPrice[118] = 30
     focus("gold")
-    assert(K.Verdict(118, 30).keep == 0 and find(text(118, 30), "Vendre au marchand"), "or : tout vendre")
+    assert(K.Verdict(118, 30).keep == 0 and find(text(118, 30), "VENDRE · au marchand"), "or : potions vendues")
     focus("xp")
-    assert(text(118, 30) == "Garder 20 (à utiliser en jeu)  ·  vendre le reste 10", text(118, 30))
+    assert(find(text(118, 30), "GARDER 20 · à utiliser en jeu  ·  vendre le reste (10) au marchand"), text(118, 30))
     focus("balanced")
     assert(K.Verdict(1251, 12).keep == 5, "bandage : stock equilibre")
     if Auctionator then
-      -- HdV : Feuillargent (765) 10 c a l'HdV contre 50 c le point de metier : on vend
+      -- HdV : Feuillargent (765) 1000 c ; besoin 5 (50 -> 55) GARDE quel que soit le focus, le rachat est affiche, le reste est vendu
       mock.ah[765] = { 1000, 1 }
+      for _, f in ipairs({ "gold", "balanced", "xp" }) do
+        focus(f)
+        assert(text(765, 8) == "GARDER 5 · Alchimie 50→55 · racheter ≈ " .. n.Prof.Money(5250) .. "  ·  vendre le reste (3) à l'HdV : "
+          .. n.Prof.Money(1000) .. " l'unité", f .. " : " .. text(765, 8))
+      end
       focus("gold")
-      assert(text(765, 8) == "Vendre à l'HdV : " .. n.Prof.Money(1000) .. " l'unité", text(765, 8))
-      -- focus xp : on garde pour monter (5 fabrications), on vend le reste ; balanced (300) vend encore
-      focus("xp")
-      assert(text(765, 8) == "Garder 5 (Alchimie → 55)  ·  vendre le reste 3", text(765, 8))
-      focus("balanced")
-      assert(K.Verdict(765, 8).keep == 0, "equilibre : 300 < 1000")
+      assert(K.Verdict(765, 4).rest == 0 and K.Verdict(765, 4).keep == 4 and K.Verdict(765, 4).kind == "keep", "sous le besoin : tout garde")
       -- vieux prix (> 7 jours) : marchand
       mock.ah[765] = { 1000, 10 }
       mock.sellPrice[765] = 7
@@ -2945,11 +2945,12 @@ local function suite(label)
       mock.sellPrice[3371] = 5
       n.Prof.Advice[171] = { list = { { name = "Élixir de défense mineure", color = "orange", value = 5000 } } }
       v = K.Verdict(765, 8)
-      assert(v.restKind == "craft" and v.craft == 4880 and v.rest == 8 and v.keep == 0, "crafter : " .. tostring(v.craft))
-      assert(text(765, 8) == "Crafter Élixir de défense mineure : +" .. n.Prof.Money(4880) .. " par unité", text(765, 8))
+      assert(v.restKind == "craft" and v.craft == 4880 and v.rest == 3 and v.keep == 5, "crafter : " .. tostring(v.craft))
+      assert(find(text(765, 8), "vendre le reste") == nil and find(text(765, 8), "crafter le reste (3) : Élixir de défense mineure, +" .. n.Prof.Money(4880) .. " par unité"), text(765, 8))
+      assert(text(765, 4) ~= nil and K.Verdict(765, 8).kind == "keep")
       -- un composant sans prix : pas de craft, on vend
       mock.ah[2447], mock.sellPrice[2447], mock.sellPrice[3371] = nil, nil, nil
-      assert(K.Verdict(765, 8).restKind == "sell", "composant sans prix : pas de marge inventee")
+      assert(K.Verdict(765, 8).restKind ~= "craft", "composant sans prix : pas de marge inventee")
       mock.ah[2447], mock.sellPrice[2447], mock.sellPrice[3371] = { 100, 1 }, 10, 5
       mock.sellPrice[2449] = 10
       -- Sell ne propose pas la ressource a crafter, ni la part gardee d'une pile ; la ligne Or propose le craft
@@ -2964,9 +2965,9 @@ local function suite(label)
         assert(seen[2449] and seen[2449].count == 8, "pile de 30 : 22 gardes, 8 proposes")
         local rows = n.Sell.Rows()
         local all = rows[#rows - 1].text .. rows[#rows].text
-        assert(find(all, "Garder 22 (Alchimie → 75)") and find(all, "Crafter Élixir"), "rangees Garder / Crafter : " .. all)
+        assert(find(all, "GARDER 22 · Alchimie 50→75") and find(all, "crafter le reste (3) : Élixir"), "rangees Garder / Crafter : " .. all)
         local c = n.Gold.Candidates()[1]
-        assert(c.kind == "craft" and find(c.text, "Fabrique Élixir de défense mineure avec tes 8 "), c.text)
+        assert(c.kind == "craft" and find(c.text, "Fabrique Élixir de défense mineure avec tes 3 "), c.text)
         mock.items[2449], mock.bagInfo = 20, { it(2449, 20) }
         n.Sell.Scan()
         for _, l in ipairs(n.Sell.Lines) do assert(l.itemID ~= 2449, "pile entierement gardee") end
@@ -2981,11 +2982,11 @@ local function suite(label)
       GameTooltip.lines = nil
       mock.tipItem = "|cffffffff|Hitem:" .. id .. "::::::::12:|h[x]|h|r"
       if mock.tipPost then mock.tipPost(GameTooltip, { id = id }) else GameTooltip.hooks.OnTooltipSetItem(GameTooltip) end
-      return GameTooltip.lines and GameTooltip.lines[#GameTooltip.lines]
+      return GameTooltip.lines and table.concat(GameTooltip.lines, " / ")
     end
     local line = tip(2447)
     if not GetItemCount then assert(line == nil, "compte illisible : aucune ligne") mock.items = nil return end
-    assert(line and find(line, "PretreCoach : Garder 26 (Alchimie → 75)"), tostring(line))
+    assert(line and find(line, "PretreCoach : GARDER 26 · Alchimie 50→75"), tostring(line))
     assert(tip(100) == nil, "objet sans conseil : aucune ligne")
     n.db.show.keeptip = false
     assert(tip(2447) == nil, "option decochee : aucune ligne")
@@ -3000,12 +3001,69 @@ local function suite(label)
       TooltipDataProcessor = nil
       local o2 = fresh()
       mock.tipPost = nil
-      setState(o2.n, { level = 12, profs = { [171] = { rank = 50, max = 75 } } })
+      setState(o2.n, { level = 1, profs = { [171] = { rank = 50, max = 75 } } })
       o2.n.db.guide.focus = "gold"
-      assert(find(tip(2447) or "", "Garder 26"), "repli OnTooltipSetItem")
+      assert(find(tip(2447) or "", "GARDER 26"), "repli OnTooltipSetItem")
       TooltipDataProcessor = keep
     end
     mock.items = nil
+  end)
+
+  check("Garder ou vendre v2 : horizon au-dela du plafond, rachat, recette apprise hors plan, bulle formatee", function()
+    local o = fresh()
+    local n = o.n
+    n.db.guide.focus, n.db.show.keeptip = "gold", true
+    mock.items, mock.ah, mock.sellPrice = {}, {}, { [2447] = 10, [3371] = 5 }
+    local K = n.Keep
+    local function find(s, sub) return s:find(sub, 1, true) end
+    -- rang 64/75, niveau 12 : le rang Compagnon est ouvert (niveau 10) donc l'horizon (64 + 50) passe le plafond 75
+    setState(n, { level = 12, profs = { [171] = { rank = 64, max = 75 } } })
+    local v = K.Verdict(2447, 200)
+    assert(v.keep > 0 and v.target == 90 and v.after > 0 and v.nextName == "Compagnon", "horizon : " .. tostring(v.target) .. "/" .. tostring(v.after))
+    local head = K.Lines(v)
+    assert(find(head, "GARDER " .. v.keep .. " · Alchimie 64→90 (dont " .. v.after .. " après le rang Compagnon)"), head)
+    -- rang pas encore accessible (niveau 1) : plafond 75 seulement
+    setState(n, { level = 1, profs = { [171] = { rank = 64, max = 75 } } })
+    assert(K.Verdict(2447, 200).target == 75 and K.Verdict(2447, 200).after == 0, "rang suivant lointain : plafond du rang")
+    -- focus or : on garde quand meme ; rachat HdV + 5 % affiche
+    setState(n, { level = 12, profs = { [171] = { rank = 64, max = 75 } } })
+    if Auctionator then
+      mock.ah[2447] = { 100, 1 }
+      v = K.Verdict(2447, 5)
+      assert(v.kind == "keep" and v.keep == 5 and v.rebuy == 105 * 5, "focus or garde : " .. tostring(v.rebuy))
+      assert(find(K.Text(v), "racheter ≈ " .. n.Prof.Money(525)), K.Text(v))
+    end
+    -- recette apprise hors plan (index lu fenetre ouverte) : Soleillette (8838) n'est pas dans le plan avant 225
+    if not C_TradeSkillUI then return end -- API de metier absente : rien a lire
+    mock.tsNotReady = nil
+    mock.recipes = 1
+    mock.recipeInfo = { [101] = { name = "Potion X", relativeDifficulty = 0, numSkillUps = 1 } }
+    mock.schematics = { [101] = { reagentSlotSchematics = { { quantityRequired = 3, reagents = { { itemID = 8838 } } } } } }
+    mock.sellPrice[8838] = 50
+    assert(K.Verdict(8838, 20).restKind == "sell" and K.Verdict(8838, 20).keep == 0, "avant lecture : vendre")
+    n.Prof.Read()
+    local e = n.db.reagents and n.db.reagents[8838] and n.db.reagents[8838][1]
+    assert(e.n == 3 and e.name == "Potion X" and e.color == "orange" and e.line, "index en base")
+    v = K.Verdict(8838, 20)
+    assert(v.keep == 15 and v.rest == 5 and v.restKind == "sell" and v.kind == "keep", "recette orange : 5 fabrications x 3")
+    local h2, d2 = K.Lines(v)
+    assert(find(h2, "GARDER 15 · Alchimie, recette Potion X") and find(d2, "vendre le reste (5) au marchand : "), h2 .. " / " .. tostring(d2))
+    -- recette devenue verte : l'index est reconstruit, plus rien a garder
+    mock.recipeInfo[101].relativeDifficulty = 2
+    n.Prof.Read()
+    assert(K.Verdict(8838, 20).keep == 0, "recette verte : plus de besoin")
+    mock.recipeInfo[101].relativeDifficulty = 0
+    n.Prof.Read()
+    -- bulle : verdict en tete, detail en seconde ligne
+    mock.items = { [8838] = 20 }
+    GameTooltip.lines = nil
+    mock.tipItem = "|cffffffff|Hitem:8838::::::::12:|h[x]|h|r"
+    if mock.tipPost then mock.tipPost(GameTooltip, { id = 8838 }) elseif GameTooltip.hooks and GameTooltip.hooks.OnTooltipSetItem then GameTooltip.hooks.OnTooltipSetItem(GameTooltip) end
+    if GetItemCount and GameTooltip.lines then
+      assert(#GameTooltip.lines == 2 and find(GameTooltip.lines[1], "PretreCoach : GARDER 15") and find(GameTooltip.lines[2], "vendre le reste (5)"), table.concat(GameTooltip.lines, " / "))
+    end
+    assert(not findSecret(n.db, "db"), "rien de secret en base")
+    mock.recipes, mock.recipeInfo, mock.schematics, mock.items = nil, nil, nil, nil
   end)
 
   ------------------------------------------------------------------------
