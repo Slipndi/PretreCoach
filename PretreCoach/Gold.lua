@@ -22,6 +22,7 @@ local function fresh(id)
   if age and age > ns.Sell.OLD_DAYS then return nil end
   return p
 end
+Gold.Fresh = fresh
 
 local function sell(out)
   for _, l in ipairs(ns.Sell.Lines) do -- deja triees par gain decroissant
@@ -60,7 +61,16 @@ local function zoneLabel(id)
   return ns.Goto.Zone({ uiMapID = id }) or (z and z[3]) or tostring(id)
 end
 
+-- Boucle d'herbes de la carte (Gather) ; valeur = ce que rapporte un tour. Sinon : meilleure herbe de Data/ProfPlan.
 local function gather(out)
+  local lp = ns.Gather and ns.Gather.Loop(State.mapID)
+  if lp then
+    local s = lp.stops[1]
+    out[#out + 1] = { kind = "gather", value = lp.total,
+      text = L.GOLD_LOOP:format(#lp.stops, table.concat(lp.names, ", "), money(math.floor(lp.perHour))),
+      go = { mapID = lp.mapID, x = s.x, y = s.y, text = L.GOLD_LOOP_GO:format(s.herb.name) } }
+    return
+  end
   local p = type(State.profs) == "table" and State.profs[182]
   local plan = D.ProfPlan and D.ProfPlan[182]
   if not (p and plan) then return end
@@ -132,13 +142,18 @@ function Gold.SessionText()
   return L.GOLD_SESSION_RATE:format(signed(net), (perHour < 0 and "-" or "") .. money(math.abs(perHour)))
 end
 
--- Lignes d'affichage pour l'onglet Or : top 5 des actions, puis la session.
+-- Lignes d'affichage pour l'onglet Or : top 5 des actions, les herbes de la zone, puis la session.
 function Gold.Rows()
   local rows, c = {}, Gold.Candidates()
-  for i, a in ipairs(c) do rows[i] = { text = a.text, highlight = i == 1 } end
+  for i, a in ipairs(c) do rows[i] = { text = a.text, highlight = i == 1, go = a.go } end
   if #c == 0 then
     local b = Gold.Best()
     rows[1] = { text = b.text, sub = b.detail, highlight = false }
+  end
+  local ok, herbs = pcall(function() return ns.Gather and ns.Gather.Herbs(State.mapID) or {} end)
+  for _, h in ipairs(ok and herbs or {}) do
+    rows[#rows + 1] = { icon = ns.Gather.Icon(h.itemID), highlight = false, sub = h.skillup and L.GATHER_SKILLUP or nil,
+      text = L.GOLD_HERB_ROW:format(h.name, h.price and money(h.price) or L.GOLD_HERB_NOPRICE, #h.nodes) }
   end
   local s = Gold.SessionText()
   if s then rows[#rows + 1] = { text = s, highlight = false } end

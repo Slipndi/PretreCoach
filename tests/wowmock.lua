@@ -85,6 +85,7 @@ end
 function FRAME.GetAttribute(self, k) return self.attrs[k] end
 function FRAME.SetMinMaxValues(self, a, b) self.min, self.max = a, b end
 function FRAME.SetAlpha(self, a) self.alpha = a end
+function FRAME.AddLine(self, t) self.lines = self.lines or {} self.lines[#self.lines + 1] = t end -- bulles : GameTooltip.lines
 function RegisterUnitWatch(f) f.watched = true end
 UIParent, Minimap, GameTooltip = newFrame(), newFrame(), newFrame()
 function GetCursorPosition() return 0, 0 end
@@ -119,7 +120,7 @@ function mock.reset()
   if WorldMapFrame then WorldMapFrame.shown = false end
   if mock.qinit then mock.qinit() end
   mock.recipeInfo, mock.schematics, mock.tsNotReady = nil, nil, nil
-  mock.bagInfo, mock.itemClass, mock.itemSub, mock.itemInfo = nil, nil, nil, nil
+  mock.bagInfo, mock.itemClass, mock.itemSub, mock.itemInfo, mock.icons = nil, nil, nil, nil, nil
   mock.pos, mock.recipes, mock.bag, mock.addons, mock.sellPrice, mock.sub, mock.ejSelected = nil, nil, nil, nil, nil, nil, nil
 end
 
@@ -224,6 +225,8 @@ C_QuestLog = { IsQuestFlaggedCompleted = function(id) return (mock.qdone or {})[
   GetInfo = function(i) local q = (mock.qlog or {})[i] return q and { questID = q.questID, title = q.title, isHeader = q.isHeader == true } or nil end,
   IsComplete = function(id) for _, q in ipairs(mock.qlog or {}) do if q.questID == id then return q.complete == true end end end,
   GetQuestObjectives = function(id) for _, q in ipairs(mock.qlog or {}) do if q.questID == id then return q.objectives or {} end end return {} end }
+-- mock.icons sert aussi a GetItemIcon (ancienne API, repli)
+function GetItemIcon(id) return (mock.icons or {})[id] end
 -- mock.items = { [itemID] = nombre porte }
 function GetItemCount(id) return (mock.items or {})[id] or 0 end
 -- 11287 = baguette (classe 2, sous-classe 19) ; les autres IDs : un objet quelconque
@@ -287,7 +290,7 @@ local function qDefaults()
 end
 function mock.qinit()
   mock.qnpcs, mock.qver, mock.qboom, mock.qreads, mock.ah, mock.ahBoom = qDefaults(), "1.0.11", nil, 0, { [2589] = { 120, 3 } }, nil
-  mock.qquests = nil
+  mock.qquests, mock.qitems, mock.qobjects = nil, nil, nil
   mock.qlog, mock.qdone, mock.mapID = nil, nil, nil
 end
 mock.qinit()
@@ -303,6 +306,9 @@ LibQuestieDB = {
   RequireContract = function(v) if v <= 4 then return true end return false, "trop recent" end,
   Enum = { npcFlags = { TRAINER = 16, AUCTIONEER = 4096 }, zoneIDs = { UNDERCITY = 1497, ORGRIMMAR = 1637, THUNDER_BLUFF = 1638 } },
   Npc = { Get = qGet, GetAllIds = function() return qIds() end },
+  -- mock.qitems = { [itemID] = { name, objectDrops } } ; mock.qobjects = { [objectID] = { name, spawns } }
+  Item = { Get = function(id, key) if mock.qboom then error("boom") end local i = (mock.qitems or {})[id] return i and i[key] end },
+  Object = { Get = function(id, key) if mock.qboom then error("boom") end local o = (mock.qobjects or {})[id] return o and o[key] end },
   -- mock.qquests = { [id] = { name, startedBy, finishedBy, objectives, requiredLevel, questLevel, requiredRaces, preQuestSingle, preQuestGroup } } en plus de 6561
   Quest = { GetAllIds = function() local t = { 6561 } for id in pairs(mock.qquests or {}) do t[#t + 1] = id end table.sort(t) return t end,
     Get = function(id, key) if mock.qboom then error("boom") end
@@ -401,7 +407,7 @@ C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 UiMapPoint C_SuperTrack WorldMapFrame hooksecurefunc Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
-EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator UnitXP UnitXPMax RegisterUnitWatch UnitInRange
+EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator GetItemIcon UnitXP UnitXPMax RegisterUnitWatch UnitInRange
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end

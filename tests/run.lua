@@ -4723,8 +4723,11 @@ local function suite(label)
     n.Goto.For = function() return { text = "ton maître d'herboristerie (Questie conseillé pour le localiser)" } end
     local t = n.Prof.Steps(182).todo[1].text
     assert(t:find("Martha Alliestar", 1, true) and not t:find("Questie", 1, true), "sans coordonnees : pas de lieu invente")
+    local keep = n.Goto
     n.Goto = nil
-    assert(n.Prof.Steps(182).todo[1].kind == "rank", "Goto absent")
+    local kind = n.Prof.Steps(182).todo[1].kind
+    n.Goto = keep -- ce ns reste branche aux evenements : sans Goto, un rendu ulterieur du guide planterait
+    assert(kind == "rank", "Goto absent")
   end)
 
   -- Indicateur de tir de baguette (Wand.lua + barre du RotationPanel)
@@ -5140,6 +5143,165 @@ local function suite(label)
     local shown = n.UI.QuestPins.shown
     _G.LibQuestieDB = lib
     assert(shown == 0, "sans base : aucun repere")
+  end)
+
+  ------------------------------------------------------------------------
+  -- Cueillette : noeuds d'herbes (QuestieDB Item/Object), boucle rentable, reperes de carte
+  ------------------------------------------------------------------------
+  -- Tirisfal (area 85 -> carte 1420) : 30 Feuillargent en ligne y = 50, 1 Mage royal, 2 Pacifique, 1 Terrestrine, 1 Algue (rang 85).
+  local function herbN(rank, line)
+    mock.qitems = { [765] = { name = "Feuillargent", objectDrops = { 1617 } }, [785] = { name = "Mage royal", objectDrops = { 1621 } },
+      [2447] = { name = "Pacifique", objectDrops = { 1618 } }, [2449] = { name = "Terrestrine", objectDrops = { 1619 } },
+      [3820] = { name = "Algue", objectDrops = { 1620 } }, [8831] = { name = "Inconnue" } }
+    local pts = { { -1, -1 } }
+    for i = 1, line or 30 do pts[#pts + 1] = { i * 3 % 100, 50 + math.floor(i * 3 / 100) } end
+    mock.qobjects = { [1617] = { spawns = { [85] = pts, [1497] = { { 5, 5 } } } }, [1618] = { spawns = { [85] = { { 10, 10 }, { 20, 20 } } } },
+      [1619] = { spawns = { [85] = { { 80, 80 } } } }, [1621] = { spawns = { [85] = { { 90, 10 } } } }, [1620] = { spawns = { [85] = { { 50, 52 } } } } }
+    mock.ah = { [765] = { 30, 1 }, [785] = { 20, 1 }, [2447] = { 10, 1 }, [2449] = { 5, 1 }, [3820] = { 900, 1 } }
+    mock.itemInfo = { [765] = { "Feuillargent", 1, 1, 0 }, [785] = { "Mage royal", 1, 1, 0 }, [2447] = { "Pacifique", 1, 1, 0 },
+      [2449] = { "Terrestrine", 1, 1, 0 }, [3820] = { "Algue", 1, 1, 0 } }
+    mock.pos, mock.mapID, mock.icons = { 0.5, 0.5 }, 1420, { [765] = 1234 }
+    local n = fresh().n
+    setState(n, { level = 20, mapID = 1420, zone = 1420, profs = { [182] = { rank = rank or 60, max = 75 } } })
+    return n
+  end
+  local function built(n) n.Gather.StartIndex() for _ = 1, 30 do mock.flushTimers() end return n end
+
+  check("Cueillette : herbes de la carte filtrees par rang, couleur, bonus de rang", function()
+    if not (LibQuestieDB and C_Map) then return end
+    local n = built(herbN(60))
+    local h = n.Gather.Herbs(1420)
+    local ids = {}
+    for i, e in ipairs(h) do ids[i] = e.itemID end
+    assert(table.concat(ids, ",") == "765,785,2447,2449", "rang 60, tri par valeur : " .. table.concat(ids, ","))
+    assert(h[1].name == "Feuillargent" and h[1].price == 30 and h[1].value == 45 and #h[1].nodes == 30, "instance (-1) ecartee")
+    assert(h[4].color == "yellow" and h[4].skillup and h[3].color == "green" and not h[3].skillup, "couleurs Classic")
+    assert(n.Gather.Color(20, 1) == "orange" and n.Gather.Color(200, 100) == "grey")
+    assert(#n.Gather.Herbs(1458) == 1, "autre carte : son propre noeud")
+    n.State.profs[182].rank = 100
+    assert(n.Gather.Herbs(1420)[1].itemID == 3820 and n.Gather.Herbs(1420)[1].skillup, "rang 100 : Algue debloquee, orange")
+    mock.ah[2447] = nil
+    mock.itemInfo[2447] = nil
+    mock.sellPrice = { [2447] = 4 }
+    for _, e in ipairs(n.Gather.Herbs(1420)) do if e.itemID == 2447 then assert(e.price == 4, "sans prix HdV : prix marchand") end end
+    n.State.profs = { [171] = { rank = 50, max = 75 } }
+    assert(#n.Gather.Herbs(1420) == 0, "sans Herboristerie : rien")
+    mock.sellPrice = nil
+  end)
+
+  check("Cueillette : index par paquets, jamais en combat, en memoire seulement", function()
+    if not (LibQuestieDB and C_Map and C_Timer) then return end
+    local n = herbN(60)
+    local before = {}
+    for k in pairs(n.db) do before[k] = true end
+    mock.inCombat = true
+    assert(n.Gather.StartIndex() == true and n.Gather.StartIndex() == false, "un seul index a la fois")
+    for _ = 1, 30 do mock.flushTimers() end
+    assert(#n.Gather.Herbs(1420) == 0, "en combat : en pause")
+    mock.inCombat = false
+    mock.fire("PLAYER_REGEN_ENABLED")
+    for k in pairs(n.db) do before[k] = true end -- les autres modules ecrivent a la fin du combat (pace...)
+    assert(#n.Gather.Herbs(1420) == 0, "un paquet ne suffit pas")
+    for _ = 1, 30 do mock.flushTimers() end
+    assert(#n.Gather.Herbs(1420) == 4, "repris apres le combat")
+    n.Gather.Loop(1420) n.Gather.Pins(1420)
+    assert(not findSecret(n.db, "db"))
+    for k in pairs(n.db) do assert(before[k], "cle ajoutee a la base : " .. tostring(k)) end
+  end)
+
+  check("Cueillette : boucle plus proche voisin, bornee, or par heure, candidat Or", function()
+    if not (LibQuestieDB and C_Map and Auctionator) then return end
+    local n = built(herbN(60))
+    local lp = n.Gather.Loop(1420)
+    assert(#lp.stops == 15 and lp.stops[1].x == 51 and lp.stops[1].y == 50 and lp.stops[15].n == 15, "15 arrets, le plus proche d'abord")
+    for i = 2, #lp.stops do
+      local a, b = lp.stops[i - 1], lp.stops[i]
+      assert(math.abs(a.x - b.x) == 3, "voisin le plus proche : " .. a.x .. " -> " .. b.x)
+    end
+    assert(table.concat(lp.names, ", ") == "Feuillargent, Mage royal, Pacifique", "3 herbes au plus : " .. table.concat(lp.names, ", "))
+    assert(lp.total == 15 * 45 and lp.perHour == 45 * n.Gather.NODES_PER_HOUR, "or/heure : " .. lp.perHour)
+    local b = n.Gold.Best()
+    assert(b.kind == "gather" and b.text == "Boucle d'herbes : 15 points (Feuillargent, Mage royal, Pacifique) ≈ " .. n.Prof.Money(5400) .. "/h", b.text)
+    local d = n.Goto.For(b.go)
+    assert(d.mapID == 1420 and d.x == 51 and d.y == 50 and d.text:find("Feuillargent, premier point", 1, true), "go : premier noeud")
+    mock.pos = false -- position illisible : depart au centre
+    assert(n.Gather.Loop(1420).stops[1].x == 51)
+  end)
+
+  check("Cueillette : onglet Or, une rangee par herbe avec prix et noeuds", function()
+    if not (LibQuestieDB and C_Map and Auctionator) then return end
+    local n = built(herbN(60))
+    local rows, hit = n.Gold.Rows(), {}
+    for _, r in ipairs(rows) do hit[r.text] = r end
+    local f = hit["Feuillargent : " .. n.Prof.Money(30) .. " · 30 nœuds"]
+    assert(f and f.icon == 1234 and rows[1].go, "rangee Feuillargent, icone ; candidat avec Repere")
+    local t = hit["Terrestrine : " .. n.Prof.Money(5) .. " · 1 nœuds"]
+    assert(t and t.sub == "donne encore des points d'Herboristerie", "bonus de rang signale")
+    assert(not hit["Algue : " .. n.Prof.Money(900) .. " · 1 nœuds"], "rang trop bas : pas de rangee")
+  end)
+
+  check("Cueillette : reperes d'herbes sur la carte (option, borne, clic, bulle)", function()
+    if not (LibQuestieDB and C_Map and Auctionator) then return end
+    local n = built(herbN(60))
+    local P = n.UI.QuestPins
+    mock.worldMap = 1420
+    WorldMapFrame:Show()
+    P.Update()
+    assert(P.herbShown == 34, "noeuds de la carte a ton rang : " .. tostring(P.herbShown))
+    local first = P.herbs[1]
+    assert(first.data.n == 1 and first.ring.shown and first.width == 12 and first.icon.tex == 1234, "boucle en tete, numerotee, petite icone")
+    assert(not P.herbs[16].ring.shown, "hors boucle : sans anneau")
+    GameTooltip.lines = nil
+    first.scripts.OnEnter(first)
+    assert(GameTooltip.lines and GameTooltip.lines[1] == "Feuillargent" and GameTooltip.lines[2] == "≈ " .. n.Prof.Money(30) .. " pièce", "bulle : nom + prix")
+    mock.waypoint = nil
+    first.scripts.OnClick(first)
+    assert(mock.waypoint and mock.waypoint.mapID == 1420 and mock.waypoint.x == 0.51, "clic : repere")
+    n.db.show.herbpins = false
+    P.Update()
+    assert(P.herbShown == 0 and not first.shown, "option decochee")
+    n.db.show.herbpins = true
+    mock.inCombat = true
+    P.Update()
+    assert(P.herbShown == 0, "combat : rien ne bouge")
+    mock.inCombat = false
+    -- borne : 120 Feuillargent
+    n = built(herbN(60, 120))
+    P = n.UI.QuestPins
+    mock.worldMap = 1420
+    WorldMapFrame:Show()
+    P.Update()
+    assert(P.herbShown == 80 and #P.herbs == 80, "pool de 80 : " .. tostring(P.herbShown))
+    assert(not findSecret(n.db, "db"))
+  end)
+
+  check("Cueillette : case des options", function()
+    local n, restore = boot()
+    local c, db = controls(n), n.db
+    assert(c.herbpins and db.show.herbpins == true, "cochee par defaut")
+    click(c.herbpins)
+    assert(db.show.herbpins == false, "decochee")
+    restore()
+  end)
+
+  check("Cueillette : sans LibQuestieDB, rien (ni noeud, ni boucle, ni erreur)", function()
+    local lib = _G.LibQuestieDB
+    _G.LibQuestieDB = nil
+    local n = herbN(60)
+    local ok = n.Gather.StartIndex() == false and #n.Gather.Herbs(1420) == 0 and n.Gather.Loop(1420) == nil and #n.Gather.Pins(1420) == 0
+    local b = n.Gold.Best()
+    _G.LibQuestieDB = lib
+    assert(ok, "listes vides")
+    assert(b.kind ~= "gather" or not b.text:find("Boucle", 1, true), "pas de boucle")
+    if lib then
+      local keep = lib.Item
+      lib.Item = nil
+      local n2 = herbN(60)
+      assert(n2.Q.Item(765, "name") == nil and n2.Gather.StartIndex() == true, "Item absent : nil sans erreur")
+      for _ = 1, 30 do mock.flushTimers() end
+      lib.Item = keep
+      assert(#n2.Gather.Herbs(1420) == 0)
+    end
   end)
 end
 

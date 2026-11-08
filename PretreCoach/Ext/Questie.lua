@@ -23,12 +23,14 @@ function Q.Available()
 end
 
 local function read(entity, id, key)
-  if not Q.Available() then return nil end
+  if not Q.Available() or type(lib[entity]) ~= "table" then return nil end -- Item/Object : pas exiges par le contrat teste
   local ok, v = pcall(lib[entity].Get, id, key)
   if ok then return v end
 end
 function Q.Quest(id, key) return read("Quest", id, key) end
 function Q.Npc(id, key) return read("Npc", id, key) end
+function Q.Item(id, key) return read("Item", id, key) end -- name, objectDrops...
+function Q.Object(id, key) return read("Object", id, key) end -- name, spawns = { [areaID] = { { x, y } } } (0-100)
 -- Tous les ID de quêtes (nil si le contrat ne l'expose pas) : pour l'index de Quests.lua.
 function Q.QuestIds()
   if not Q.Available() or type(lib.Quest.GetAllIds) ~= "function" then return nil end

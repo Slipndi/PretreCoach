@@ -1,14 +1,15 @@
 -- Repères de quêtes sur la carte du monde (WorldMapFrame), à la place de ceux de l'addon Questie : affichage seul (Règle 0).
 -- « ! » à prendre, « ? » à rendre, un point pour un objectif en cours ; un anneau doré numéroté sur les arrêts de l'itinéraire.
--- Cadres simples (aucun gabarit sécurisé), pool de MAX repères réutilisés, rien créé en combat. Clic gauche = repère utilisateur
+-- Seconde source : nœuds d'herbes de la carte (ns.Gather), plus petits, ceux de la boucle numérotés.
+-- Cadres simples (aucun gabarit sécurisé), pools de MAX + HMAX repères réutilisés, rien créé en combat. Clic gauche = repère utilisateur
 -- (Goto.Place, clic du joueur seulement). Tout sous pcall. Pas de repères sur la minicarte.
 local _, ns = ...
 local UI, L = ns.UI, ns.L
 
-local P = { pins = {} }
+local P = { pins = {}, herbs = {} }
 UI.QuestPins = P
 
-local MAX = 60
+local MAX, HMAX = 60, 80
 local ICON = { -- atlas puis texture de repli (à vérifier en jeu)
   pickup = { "QuestNormal", "Interface\\GossipFrame\\AvailableQuestIcon" },
   turnin = { "QuestTurnin", "Interface\\GossipFrame\\ActiveQuestIcon" },
@@ -38,6 +39,13 @@ local function tip(pin)
     if not d then return end
     GameTooltip:SetOwner(pin, "ANCHOR_RIGHT")
     GameTooltip:AddLine(d.name, 1, 1, 1)
+    if d.kind == "herb" then
+      if d.price then GameTooltip:AddLine(L.HPIN_PRICE:format(ns.Prof.Money(d.price)), 1, 0.82, 0) end
+      if d.skillup then GameTooltip:AddLine(L.GATHER_SKILLUP, 0.4, 1, 0.4) end
+      if d.n then GameTooltip:AddLine(L.HPIN_STEP:format(d.n), 0.8, 0.8, 0.85) end
+      GameTooltip:Show()
+      return
+    end
     local line = L["QPIN_" .. d.kind]
     if type(d.level) == "number" and d.level > 0 then line = line .. ", " .. L.QPIN_LEVEL:format(d.level) end
     GameTooltip:AddLine(line, 1, 0.82, 0)
@@ -46,10 +54,10 @@ local function tip(pin)
   end)
 end
 
-local function newPin(child)
+local function newPin(child, level)
   local b = CreateFrame("Button", nil, child)
   b:SetSize(18, 18)
-  pcall(function() b:SetFrameLevel((child:GetFrameLevel() or 1) + 50) end)
+  pcall(function() b:SetFrameLevel((child:GetFrameLevel() or 1) + level) end)
   b:RegisterForClicks("LeftButtonUp")
   b.ring = b:CreateTexture(nil, "BACKGROUND")
   b.ring:SetTexture("Interface\\Buttons\\UI-ActionButton-Border")
@@ -70,37 +78,56 @@ local function newPin(child)
   return b
 end
 
+-- Dessine list dans pool (au plus max repères) ; rend le nombre affiché.
+local function draw(pool, list, max, child, w, h, level)
+  local shown = 0
+  for _, d in ipairs(list) do
+    if shown >= max then break end
+    shown = shown + 1
+    local pin = pool[shown]
+    if not pin then pin = newPin(child, level) pool[shown] = pin end
+    local herb = d.kind == "herb"
+    local key = herb and d.itemID or d.kind
+    if pin.kind ~= key then
+      pin.kind = key
+      local s = herb and 12 or ICON[d.kind] and 18 or 8
+      pin:SetSize(math.max(s, 12), math.max(s, 12))
+      pin.icon:SetSize(s, s)
+      pin.ring:SetSize(herb and 28 or 42, herb and 28 or 42)
+      if herb then
+        pin.icon:SetVertexColor(1, 1, 1)
+        pin.icon:SetTexture(ns.Gather.Icon(d.itemID))
+      else
+        setIcon(pin.icon, d.kind)
+      end
+    end
+    pin.data = d
+    pin.ring:SetShown(d.n ~= nil)
+    pin.num:SetText(d.n and tostring(d.n) or "")
+    pin:ClearAllPoints()
+    pin:SetPoint("CENTER", child, "TOPLEFT", d.x / 100 * w, -d.y / 100 * h)
+    pin:Show()
+  end
+  for i = shown + 1, #pool do pool[i]:Hide() pool[i].data = nil end
+  return shown
+end
+
 local function refresh()
   if InCombatLockdown() then return end -- pas de création de cadre en combat : les repères gardent leur état
   local wm = _G.WorldMapFrame
   local child = wm and wm.ScrollContainer and wm.ScrollContainer.Child
-  local shown = 0
-  local on = ((ns.db and ns.db.show) or {}).questpins ~= false
-  if on and child and wm:IsShown() and ns.Quests then
-    local mapID, w, h = wm:GetMapID(), child:GetWidth(), child:GetHeight()
+  local show = (ns.db and ns.db.show) or {}
+  local quests, herbs, w, h = {}, {}, 0, 0
+  if child and wm:IsShown() then
+    local mapID = wm:GetMapID()
+    w, h = child:GetWidth(), child:GetHeight()
     if type(mapID) == "number" and type(w) == "number" and type(h) == "number" and w > 0 and h > 0 then
-      for _, d in ipairs(ns.Quests.Pins(mapID)) do
-        if shown >= MAX then break end
-        shown = shown + 1
-        local pin = P.pins[shown]
-        if not pin then pin = newPin(child) P.pins[shown] = pin end
-        if pin.kind ~= d.kind then
-          pin.kind = d.kind
-          local s = ICON[d.kind] and 18 or 8
-          pin.icon:SetSize(s, s)
-          setIcon(pin.icon, d.kind)
-        end
-        pin.data = d
-        pin.ring:SetShown(d.n ~= nil)
-        pin.num:SetText(d.n and tostring(d.n) or "")
-        pin:ClearAllPoints()
-        pin:SetPoint("CENTER", child, "TOPLEFT", d.x / 100 * w, -d.y / 100 * h)
-        pin:Show()
-      end
+      if show.questpins ~= false and ns.Quests then quests = ns.Quests.Pins(mapID) end
+      if show.herbpins ~= false and ns.Gather then herbs = ns.Gather.Pins(mapID) end
     end
   end
-  P.shown = shown
-  for i = shown + 1, #P.pins do P.pins[i]:Hide() P.pins[i].data = nil end
+  P.shown = draw(P.pins, quests, MAX, child, w, h, 50)
+  P.herbShown = draw(P.herbs, herbs, HMAX, child, w, h, 40) -- sous les quêtes
 end
 
 local function poll(_, elapsed)

@@ -70,7 +70,7 @@ end
 
 -- Valeurs par défaut des réglages : complétées sans jamais écraser ce que le joueur a déjà.
 ns.DEFAULTS = {
-  show = { guide = true, rotation = true, rules = true, toasts = true, minimap = true, progress = true, heal = true, cons = true, craft = true, mana = true, wandbar = true, gold = true, questpins = true },
+  show = { guide = true, rotation = true, rules = true, toasts = true, minimap = true, progress = true, heal = true, cons = true, craft = true, mana = true, wandbar = true, gold = true, questpins = true, herbpins = true },
   pace = { levels = {} },
   heal = { spells = { ["1"] = "LESSERHEAL", ["2"] = "RENEW", ["shift-1"] = "PWS" } }, -- sort de chaque bouton de souris (cles de Data/Spells)
   guide = { manual = {}, done = {}, tab = "now", compact = false },

@@ -17,6 +17,7 @@ Data\Milestones.lua
 Data\Gear.lua
 Data\Professions.lua
 Data\ProfPlan.lua
+Data\Herbs.lua
 Data\Spells.lua
 Data\Talents.lua
 Data\Objectives.lua
@@ -40,6 +41,7 @@ Talents.lua
 Professions.lua
 Sell.lua
 Gold.lua
+Gather.lua
 Pace.lua
 Consumables.lua
 UI\Style.lua
