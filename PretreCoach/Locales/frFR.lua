@@ -3,7 +3,16 @@ local _, ns = ...
 
 ns.L = {
   PREFIX = "|cffb084ffPrêtre Coach|r",
-  HELP = "Commandes : /coach (options), guide, compact, bilan, progress, conso, craft, mana, gold, pretre, alchimie, herbo, secourisme, lock, unlock, reset, probe, here, debug",
+  HELP = "Commandes : /coach (options), guide, compact, bilan, progress, conso, craft, mana, gold, objectif <po>, pretre, alchimie, herbo, secourisme, lock, unlock, reset, probe, here, debug",
+  EARN_ACT = { quetes = "Quêtes", cueillette = "Cueillette (valeur des herbes)", marchand = "Ventes au marchand", hdv = "Hôtel des ventes et courrier",
+    butin = "Butin", depenses = "Dépenses (maître, réparations, achats)", autre = "Autre" },
+  EARN_TEXT = "Tes chiffres : quêtes ≈ %s/h, cueillette ≈ %s/h",
+  EARN_NONE = "Tes chiffres : pas encore assez de mesure (10 min de quêtes ou de cueillette).",
+  EARN_GOAL_SET = "Objectif d'or : %s. %s",
+  EARN_GOAL_CLEAR = "Objectif d'or effacé.",
+  EARN_GOAL_BAD = "Objectif : donne un nombre de pièces d'or, par exemple /coach objectif 100 (sans nombre : efface).",
+  EARN_GOAL_ETA = "Il te manque %s, environ %s à ton meilleur rythme mesuré.",
+  EARN_GOAL_NOETA = "Il te manque %s (pas encore de mesure de ton or par heure).",
   LOCK_ON = "Cadres verrouillés.",
   LOCK_OFF = "Cadres déverrouillés.",
   RESET_DONE = "Positions, taille et opacité remises par défaut.",

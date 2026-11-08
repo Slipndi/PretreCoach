@@ -47,6 +47,7 @@ Gold.lua
 Keep.lua
 Gather.lua
 Farm.lua
+Earnings.lua
 Pace.lua
 Consumables.lua
 UI\Style.lua

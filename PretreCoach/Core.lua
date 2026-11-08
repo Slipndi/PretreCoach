@@ -151,6 +151,7 @@ local commands = {
   herbo = function() ns.FindTrainer("HERBALISM") end,
   secourisme = function() ns.FindTrainer("FIRSTAID") end,
   craft = function() if ns.ToggleCraft then ns.ToggleCraft() end end,
+  objectif = function(arg) if ns.Earn then ns.Earn.SetGoal(arg) end end, -- /coach objectif <po> ; sans nombre : efface
   debug = function()
     ns.db.debug = not ns.db.debug
     ns.Print(ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)
@@ -165,14 +166,15 @@ function ns.FindTrainer(role)
 end
 
 -- Point d'entrée unique des commandes (slash et menu de la minicarte) ; faux si la commande est inconnue.
-function ns.RunCommand(name)
+function ns.RunCommand(name, arg)
   local fn = commands[name]
   if not fn then return false end
-  fn()
+  fn(arg)
   return true
 end
 
 SLASH_PRETRECOACH1 = "/coach"
 SlashCmdList.PRETRECOACH = function(msg)
-  if not ns.RunCommand((msg or ""):lower():match("^%s*(%S*)")) then ns.Print(L.HELP) end
+  local name, rest = (msg or ""):match("^%s*(%S*)%s*(.-)%s*$")
+  if not ns.RunCommand(name:lower(), rest) then ns.Print(L.HELP) end
 end

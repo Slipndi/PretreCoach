@@ -112,7 +112,7 @@ function Gather.Herbs(mapID)
       local name, merchant = itemInfo(item)
       local price = (ns.Gold and ns.Gold.Fresh(item)) or merchant -- HdV, sinon marchand
       local c = Gather.Color(rank, req)
-      out[#out + 1] = { itemID = item, name = name, req = req, price = price, value = price and price * YIELD, nodes = nodes,
+      out[#out + 1] = { itemID = item, name = name, req = req, price = price, value = price and price * (ns.Earn and ns.Earn.Yield() or YIELD), nodes = nodes,
         color = c, skillup = c == "orange" or c == "yellow" }
     end
   end
@@ -149,7 +149,7 @@ function Gather.Loop(mapID)
     total = total + s.herb.value
     px, py = s.x, s.y
   end
-  return { mapID = mapID, stops = stops, names = names, total = total, perHour = total / #stops * NODES_PER_HOUR }
+  return { mapID = mapID, stops = stops, names = names, total = total, perHour = total / #stops * (ns.Earn and ns.Earn.NodesPerHour() or NODES_PER_HOUR) }
 end
 
 -- Reperes de la carte : noeuds de la boucle d'abord (numerotes), puis les autres, au plus PIN_MAX.

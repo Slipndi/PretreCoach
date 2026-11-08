@@ -6039,6 +6039,175 @@ local function suite(label)
     mock.moneySecret, mock.money = nil, nil
     assert(not findSecret(n.db, "db"))
   end)
+
+  ------------------------------------------------------------------------
+  -- Or mesure par activite (Earnings.lua)
+  local function earnN()
+    mock.money, mock.moneySecret, mock.qlog, mock.items, mock.time = 100, nil, nil, nil, 1000
+    local n = fresh().n
+    mock.fire("PLAYER_MONEY") -- premiere lecture : reference, rien a compter
+    mock.fire("BAG_UPDATE_DELAYED")
+    return n
+  end
+  local function gain(d) mock.money = mock.money + d mock.fire("PLAYER_MONEY") end
+  local function act(n, a) local s = n.db.earn and n.db.earn.act[a] return s and s.c or 0 end
+
+  check("Earn : chaque variation d'argent va dans l'activite du contexte", function()
+    local n = earnN()
+    mock.fire("MERCHANT_SHOW") gain(50) gain(-30) mock.fire("MERCHANT_CLOSED")
+    assert(act(n, "marchand") == 50 and act(n, "depenses") == 30, "marchand/depenses")
+    mock.fire("MAIL_SHOW") gain(7) mock.fire("MAIL_CLOSED")
+    mock.fire("AUCTION_HOUSE_SHOW") gain(3) mock.fire("AUCTION_HOUSE_CLOSED")
+    assert(act(n, "hdv") == 10, "courrier + HdV : " .. act(n, "hdv"))
+    mock.fire("QUEST_TURNED_IN") mock.time = 1001 gain(200)
+    assert(act(n, "quetes") == 200, "quete rendue")
+    mock.time = 1004 gain(5)
+    assert(act(n, "quetes") == 200 and act(n, "autre") == 5, "hors fenetre de 2 s : autre")
+    mock.fire("LOOT_OPENED") gain(9) mock.fire("LOOT_CLOSED")
+    assert(act(n, "butin") == 9, "butin")
+    gain(-4) -- maitre, reparation : une perte est une depense
+    assert(act(n, "depenses") == 34, "depenses")
+    assert(not findSecret(n.db, "db"))
+  end)
+
+  check("Earn : valeur secrete ignoree, rien de secret en db, format inconnu reparti de zero", function()
+    local n = earnN()
+    mock.moneySecret = true
+    mock.fire("PLAYER_MONEY") mock.fire("MERCHANT_SHOW") mock.fire("PLAYER_MONEY")
+    mock.moneySecret = nil
+    mock.money = 160 mock.fire("PLAYER_MONEY") -- compte depuis la derniere valeur lisible (100)
+    assert(act(n, "marchand") == 60, "delta depuis la derniere lecture : " .. act(n, "marchand"))
+    assert(not findSecret(n.db, "db") and n.Earn.Goal() == nil)
+    n.db.earn = { v = 0, act = { quetes = { c = 99, s = 99 } } }
+    gain(1)
+    assert(n.db.earn.v == 1 and act(n, "quetes") == 0, "ancien format : reparti de zero")
+    n.db.earn.act.bidon = { c = 1, s = 1 }
+    gain(1)
+    assert(n.db.earn.act.bidon == nil, "activite inconnue : retiree")
+  end)
+
+  check("Earn : temps actif des quetes (journal en cours + mouvement ou combat) et de la cueillette", function()
+    local n = earnN()
+    n.Earn.Tick()
+    mock.time = 1005 n.Earn.Tick()
+    assert((n.db.earn.act.quetes or { s = 0 }).s == 0, "sans quete en cours : pas de temps")
+    if not C_QuestLog then return end
+    mock.qlog = { { questID = 1, title = "Q", level = 5, complete = false } }
+    mock.time = 1010 n.Earn.Tick() -- journal relu, mais le joueur est immobile
+    mock.time = 1015 n.Earn.Tick()
+    assert((n.db.earn.act.quetes or { s = 0 }).s == 0, "immobile hors combat : pas de temps")
+    mock.setCombat(true) mock.time = 1020 n.Earn.Tick() mock.setCombat(false)
+    assert(n.db.earn.act.quetes.s == 5, "combat : 5 s")
+    mock.qlog[1].complete = true
+    mock.time = 1025 n.Earn.Tick() mock.setCombat(true) mock.time = 1030 n.Earn.Tick() mock.setCombat(false)
+    assert(n.db.earn.act.quetes.s == 5, "quete terminee : plus de temps (journal relu hors combat)")
+    mock.time = 1100 n.Earn.Tick() -- pause de 70 s : ne compte pas
+    assert(n.db.earn.act.quetes.s == 5)
+  end)
+
+  check("Earn : rendement et noeuds par heure mesures, seuil d'echantillon, hors marchand et courrier", function()
+    local n = earnN()
+    if not GetItemCount then -- passe « absentes » : rien n'est lisible, rien n'est compte, sans erreur
+      mock.fire("LOOT_OPENED") mock.fire("BAG_UPDATE_DELAYED") mock.fire("LOOT_CLOSED")
+      assert(n.Earn.Yield() == nil and n.db.earn.nodes == 0)
+      return
+    end
+    mock.sellPrice, mock.itemInfo, mock.ah = 4, nil, {}
+    local function node(k) -- un noeud : butin, herbes dans les sacs, 30 s de trajet (3 ticks)
+      mock.fire("LOOT_OPENED")
+      mock.items = { [2447] = (mock.items and mock.items[2447] or 0) + k }
+      mock.fire("BAG_UPDATE_DELAYED") mock.fire("BAG_UPDATE_DELAYED")
+      mock.fire("LOOT_CLOSED")
+      for _ = 1, 3 do mock.time = mock.time + 10 n.Earn.Tick() end
+    end
+    for i = 1, 14 do node(i % 2 + 1) end
+    assert(n.db.earn.nodes == 14 and n.Earn.Yield() == nil and n.Earn.NodesPerHour() == nil, "14 noeuds : pas assez")
+    node(2) node(1)
+    local e = n.db.earn
+    assert(e.nodes == 16 and e.herbs == 24, "noeuds/herbes : " .. e.nodes .. "/" .. e.herbs)
+    assert(math.abs(n.Earn.Yield() - 1.5) < 1e-9, "rendement")
+    local nph = n.Earn.NodesPerHour()
+    assert(nph and nph > 100 and nph < 150, "noeuds/h : " .. tostring(nph))
+    if C_Item then assert(e.act.cueillette.c == 24 * 4, "valeur des herbes : " .. e.act.cueillette.c) end
+    -- achat chez le marchand, courrier, ou herbe ramassee longtemps apres le butin : ne comptent pas
+    mock.fire("MERCHANT_SHOW") mock.items[2447] = mock.items[2447] + 5 mock.fire("BAG_UPDATE_DELAYED") mock.fire("MERCHANT_CLOSED")
+    mock.fire("MAIL_SHOW") mock.items[2447] = mock.items[2447] + 5 mock.fire("BAG_UPDATE_DELAYED") mock.fire("MAIL_CLOSED")
+    mock.time = mock.time + 60 mock.items[2447] = mock.items[2447] + 5 mock.fire("BAG_UPDATE_DELAYED")
+    mock.items[2447] = mock.items[2447] - 8 mock.fire("BAG_UPDATE_DELAYED") -- vente : une baisse ne compte pas
+    assert(e.nodes == 16 and e.herbs == 24, "hors butin : inchange")
+    -- en combat : differe, sans erreur
+    mock.setCombat(true) mock.fire("LOOT_OPENED") mock.items[2447] = mock.items[2447] + 2 mock.fire("BAG_UPDATE_DELAYED")
+    assert(e.nodes == 16, "en combat : rien tout de suite")
+    mock.setCombat(false) mock.fire("PLAYER_REGEN_ENABLED") mock.fire("LOOT_CLOSED")
+    assert(e.nodes == 17 and e.herbs == 26, "repris apres le combat")
+    assert(not findSecret(n.db, "db"))
+  end)
+
+  check("Earn : Gather utilise la mesure quand elle existe, sinon les constantes", function()
+    if not (LibQuestieDB and C_Map and Auctionator) then return end
+    local n = built(herbN(60))
+    assert(n.Gather.Loop(1420).perHour == 45 * n.Gather.NODES_PER_HOUR, "sans mesure : constantes")
+    n.db.earn = { v = 1, act = { cueillette = { c = 0, s = 3600 } }, herbs = 60, nodes = 30 } -- rendement 2, 30 noeuds/h
+    assert(n.Earn.Yield() == 2 and n.Earn.NodesPerHour() == 30)
+    local lp = n.Gather.Loop(1420)
+    assert(n.Gather.Herbs(1420)[1].value == 60 and lp.total == 15 * 60 and lp.perHour == 60 * 30, "mesure : " .. lp.perHour)
+  end)
+
+  check("Earn : PerHour, Rows, Text", function()
+    local n = earnN()
+    assert(n.Earn.PerHour("quetes") == nil and #n.Earn.Rows() == 0 and n.Earn.Text():find("pas encore", 1, true))
+    n.db.earn = { v = 1, act = { quetes = { c = 100000, s = 3600 }, cueillette = { c = 50000, s = 1800 }, marchand = { c = 70, s = 0 },
+      butin = { c = 5, s = 599 } }, herbs = 0, nodes = 0 }
+    assert(n.Earn.PerHour("quetes") == 100000 and n.Earn.PerHour("cueillette") == 100000, "or/h")
+    assert(n.Earn.PerHour("butin") == nil and n.Earn.PerHour("marchand") == nil and n.Earn.PerHour("inconnue") == nil, "moins de 10 min : nil")
+    local rows = n.Earn.Rows()
+    assert(#rows == 4 and rows[1].activity == "quetes" and rows[1].perHour == 100000 and rows[1].total == 100000 and rows[1].secs == 3600
+      and rows[2].activity == "cueillette" and rows[4].activity == "butin" and rows[4].perHour == nil, "lignes")
+    assert(n.Earn.Text() == "Tes chiffres : quêtes ≈ " .. n.Prof.Money(100000) .. "/h, cueillette ≈ " .. n.Prof.Money(100000) .. "/h", n.Earn.Text())
+    n.db.earn.act.cueillette.s = 100
+    assert(n.Earn.Text():find("cueillette ≈ …", 1, true), "cueillette pas mesuree")
+  end)
+
+  check("Earn : /coach objectif, effacement, reste a gagner et duree estimee", function()
+    local N = ns
+    local d = N.db
+    local np = #mock.printed
+    suiteSlash("objectif 100")
+    assert(d.goldGoal == 1000000, "100 po : " .. tostring(d.goldGoal))
+    suiteSlash("OBJECTIF 1,5")
+    assert(d.goldGoal == 15000, "1,5 po")
+    suiteSlash("objectif abc")
+    assert(d.goldGoal == 15000 and #mock.printed >= np + 3, "texte invalide : inchange, message")
+    suiteSlash("objectif 100")
+    mock.money = 400000
+    local g = N.Earn.Goal()
+    assert(g.goal == 1000000 and g.have == 400000 and g.missing == 600000 and g.eta == nil, "sans mesure : pas de duree")
+    d.earn = { v = 1, act = { quetes = { c = 300000, s = 3600 }, cueillette = { c = 100000, s = 3600 } }, herbs = 0, nodes = 0 }
+    g = N.Earn.Goal()
+    assert(g.eta == 7200, "meilleur or/h (300000) : " .. tostring(g.eta))
+    mock.money = 2000000
+    g = N.Earn.Goal()
+    assert(g.missing == 0 and g.eta == 0, "objectif atteint")
+    mock.moneySecret = true
+    g = N.Earn.Goal()
+    assert(g.have == nil and g.missing == nil and g.eta == nil, "argent illisible")
+    mock.moneySecret = nil
+    suiteSlash("objectif")
+    assert(d.goldGoal == nil and N.Earn.Goal() == nil, "efface")
+    assert(N.RunCommand("objectif") and N.RunCommand("help"), "commandes existantes intactes")
+    assert(not findSecret(d, "db"))
+    d.earn = nil
+  end)
+
+  check("Earn : rien ne casse en combat", function()
+    local n = earnN()
+    mock.setCombat(true)
+    mock.fire("PLAYER_MONEY") mock.fire("BAG_UPDATE_DELAYED") mock.fire("LOOT_OPENED") mock.fire("LOOT_CLOSED") n.Earn.Tick()
+    gain(10)
+    mock.setCombat(false)
+    mock.fire("PLAYER_REGEN_ENABLED")
+    assert(act(n, "autre") == 10 and not findSecret(n.db, "db"))
+  end)
 end
 
 suite("presentes")
