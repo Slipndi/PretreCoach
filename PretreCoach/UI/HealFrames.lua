@@ -1,6 +1,6 @@
 -- Cadres de groupe pour soigner : le joueur et party1..4, 1 clic = 1 sort choisi par le joueur.
 -- EXCEPTION ENCADREE a la Regle 0 (decision du 2026-11-07) : ce fichier est le SEUL a porter des motifs securises
--- (SecureUnitButtonTemplate, SetAttribute, RegisterUnitWatch), comme Clique, HealBot ou Grid. Voir CLAUDE.md.
+-- (SecureUnitButtonTemplate, SetAttribute, RegisterUnitWatch), comme Clique, HealBot ou Grid. Voir Docs/PROMPT_ADDON_PRETRE_COACH.md, section 0.
 --  - Les attributs ne sont poses qu'hors combat (sinon differes a PLAYER_REGEN_ENABLED) : type = "spell", spell = nom du
 --    sort choisi par le joueur pour ce bouton de souris, unit = l'unite du cadre. Aucune macro, aucun lancement sans clic.
 --  - Le sort de chaque bouton est un reglage fixe : il ne change jamais tout seul, ni selon l'etat du jeu.

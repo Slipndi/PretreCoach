@@ -1,5 +1,5 @@
 -- Icone « Craft » dans la carte du guide : un petit bouton a droite de la rangee Alchimie / Secourisme.
--- Exception de conformite approuvee (voir CLAUDE.md, Regle 0) : ce fichier seul lance le SORT DU METIER (type1="spell"),
+-- Exception de conformite approuvee (voir Docs/PROMPT_ADDON_PRETRE_COACH.md, section 0) : ce fichier seul lance le SORT DU METIER (type1="spell"),
 -- ce qui ouvre la fenetre de metier. L'addon y preselectionne la recette (navigation d'UI) ; le joueur clique lui-meme
 -- sur « Creer ». Aucune fabrication automatique : CraftRecipe, C_TradeSkillUI.Craft et macrotext restent interdits.
 -- Creation, attributs, SetPoint, Show/Hide : hors combat seulement ; en combat on attend PLAYER_REGEN_ENABLED.

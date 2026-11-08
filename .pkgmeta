@@ -13,3 +13,7 @@ ignore:
   - .github
   - CLAUDE.md
   - .claude
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown

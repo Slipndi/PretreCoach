@@ -1,5 +1,5 @@
 -- Barre Consommables : 5 boutons d'objet (nourriture, eau, potion de soins, potion de mana, bandage).
--- Exception de conformite approuvee (voir CLAUDE.md, Regle 0) : seul fichier autorise a utiliser un bouton securise.
+-- Exception de conformite approuvee (voir Docs/PROMPT_ADDON_PRETRE_COACH.md, section 0) : seul fichier autorise a utiliser un bouton securise.
 -- Le joueur clique lui-meme ; rien ne se declenche seul. Les attributs ne changent JAMAIS en combat :
 -- l'objet voulu est calcule a chaque rendu, et applique des que le combat est fini (PLAYER_REGEN_ENABLED).
 local ADDON, ns = ...
