@@ -1,3 +1,7 @@
+# PretreCoach 0.9.3
+
+- Métiers : « achète des fioles » n'apparaît que s'il en manque, avec la quantité manquante.
+
 # PretreCoach 0.9.2
 
 - Quêtes clés : retrait de « Toucher de faiblesse » (5658), qui n'existe pas sur Forever.
