@@ -20,6 +20,7 @@ local PHASE = { pickup = 1, progress = 2, turnin = 3 } -- ordre imposé pour une
 local CHUNK = 200 -- quêtes lues par tick pour l'index
 local MAX_STOPS, MAX_PICKUPS, TWO_OPT, MAX_PINS = 12, 6, 200, 60
 local POOL = 20 -- quêtes à prendre évaluées (les plus proches) avant de garder les MAX_PICKUPS de meilleur score
+local MAX_ZONES, ZONE_PICKS, ZONE_CLOSE = 3, 3, 0.8 -- zones suivantes, quêtes à prendre par zone, « valeur proche » = >= 80 % de la meilleure
 local NEAR_TURNIN = 1.5 -- un rendu n'ouvre la route que s'il est à moins de 1,5 x la distance de l'arrêt le plus proche
 -- Valeur d'une quête (inspirée de RestedXP/Zygor) : score = (or + poids x XP convertie en or) x chaîne / minutes.
 -- shortcut: constantes à la louche (Classic, à pied), à recaler sur des mesures en jeu.
@@ -616,7 +617,41 @@ local function compute()
     if RANK[a.kind] ~= RANK[b.kind] then return RANK[a.kind] < RANK[b.kind] end
     return a.order < b.order
   end)
-  for _, s in ipairs(tail) do route[#route + 1] = s end
+  -- zones suivantes : une zone n'est retenue que si elle a une quête ou un rendu qui vaut le trajet (ni grise, ni < DROP x meilleur)
+  local zones, zlist, placed = {}, {}, {}
+  for _, s in ipairs(tail) do
+    if s.mapID and s.mapID ~= mapID and not (s.v and (s.v.grey or s.v.score < DROP * ref)) then
+      local z = zones[s.mapID]
+      if not z then z = { id = s.mapID, stops = {}, value = 0 } zones[s.mapID] = z zlist[#zlist + 1] = z end
+      z.stops[#z.stops + 1] = s
+      z.value = z.value + (s.v and s.v.score or 1)
+    end
+  end
+  local path = {}
+  for i, p in ipairs(ns.Data.ZonePath or {}) do path[p[1]] = path[p[1]] or i end
+  local at = mapID
+  for _ = 1, MAX_ZONES do
+    local top = 0
+    for _, z in ipairs(zlist) do top = math.max(top, z.value) end
+    local bi, bd -- à valeur proche, la zone voisine sur le parcours conseillé ; sinon l'ordre du journal
+    for i, z in ipairs(zlist) do
+      if z.value >= top * ZONE_CLOSE then
+        local d = path[at] and path[z.id] and math.abs(path[at] - path[z.id]) or math.huge
+        if not bd or d < bd then bi, bd = i, d end
+      end
+    end
+    if not bi then break end
+    local z = table.remove(zlist, bi)
+    at = z.id
+    for _, e in ipairs(pickups(z.id, level, nil, nil, ZONE_PICKS, inLog)) do
+      z.stops[#z.stops + 1] = stop("pickup", e.id, e.name, L.QUEST_PICKUP:format(e.name), e.npc, e.req)
+    end
+    local first = z.stops[1]
+    local ordered = Quests.Order(z.stops, first.x, first.y)
+    ordered[1].zoneHead = true
+    for _, s in ipairs(ordered) do route[#route + 1] = s placed[s] = true end
+  end
+  for _, s in ipairs(tail) do if not placed[s] then route[#route + 1] = s end end
   for _, s in ipairs(high) do route[#route + 1] = s end -- trop hautes : tout à la fin
   for i, s in ipairs(route) do s.n = i end
   if drop then route.drop = { questID = drop.questID, name = drop.name,
@@ -669,7 +704,9 @@ function Quests.Rows()
     if s.yards then subs[1] = L.QUEST_DIST:format(math.max(10, math.floor(s.yards / 10 + 0.5) * 10)) end
     if not seen[s.questID] then subs[#subs + 1] = valueText(s.v) end
     seen[s.questID] = true
-    out[i] = { text = ("%d. %s %s"):format(i, MARK[s.kind], s.text), go = s.go, highlight = i == 1,
+    local zone = s.zoneHead and i > 1 and s.w and ns.Goto and ns.Goto.Zone(s.w)
+    if zone then out[#out + 1] = { text = L.QUEST_NEXT:format(zone), highlight = false } end
+    out[#out + 1] = { text = ("%d. %s %s"):format(i, MARK[s.kind], s.text), go = s.go, highlight = i == 1,
       sub = #subs > 0 and table.concat(subs, " · ") or nil }
   end
   if r.drop then out[#out + 1] = { text = L.QUEST_DROP:format(r.drop.name, L["QUEST_DROP_" .. r.drop.why]), highlight = false } end

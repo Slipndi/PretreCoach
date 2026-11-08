@@ -5282,6 +5282,36 @@ local function suite(label)
     assert(not n.Quests.Route()[#n.Quests.Route()].tooHigh, "niveau 14 : redevient normale")
   end)
 
+  check("Itineraire : plusieurs zones (la plus rentable d'abord, zone grise ou rendu faible ecartes, en-tete Ensuite)", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN()
+    mock.areas = { [85] = "Tirisfal", [1497] = "Fossoyeuse", [1637] = "Orgrimmar", [1638] = "Pitons" }
+    mock.mapKids = { [946] = { { mapID = 1420, name = "Tirisfal" }, { mapID = 1458, name = "Fossoyeuse" }, { mapID = 1411, name = "Orgrimmar" }, { mapID = 1412, name = "Pitons" } } }
+    mock.qnpcs[9301] = { 0, "", "H", 1497, { [1497] = { { 50, 50 } } } }
+    mock.qnpcs[9302] = { 0, "", "H", 1497, { [1497] = { { 60, 60 } } } }
+    mock.qnpcs[9303] = { 0, "", "H", 1637, { [1637] = { { 40, 40 } } } }
+    mock.qnpcs[9304] = { 0, "", "H", 1638, { [1638] = { { 30, 30 } } } }
+    local function q(name, npc, lvl, fin) return { name = name, startedBy = { { 9001 } }, finishedBy = fin and { { npc } } or nil,
+      objectives = { { { npc, "Loup" } } }, questLevel = lvl } end
+    mock.qquests = { [700] = q("Ici", 9001, 20), [701] = q("A1", 9301, 20), [702] = q("A2", 9302, 20), [703] = q("B", 9303, 20),
+      [704] = q("Grise", 9304, 10, true) }
+    -- B d'abord dans le journal, mais A vaut deux quetes ; C : rendu d'une quete grise, ne justifie pas le trajet
+    mock.qlog = { { questID = 703, title = "B", objectives = LOUPS }, { questID = 704, title = "Grise", complete = true },
+      { questID = 701, title = "A1", objectives = LOUPS }, { questID = 702, title = "A2", objectives = LOUPS },
+      { questID = 700, title = "Ici", objectives = LOUPS } }
+    n.Quests.Refresh()
+    local r, pos = n.Quests.Route(), {}
+    for i, s in ipairs(r) do pos[s.questID] = i end
+    assert(r[1].questID == 700, "la zone courante d'abord")
+    assert(pos[701] < pos[703] and pos[702] < pos[703] and pos[701] <= 3 and pos[702] <= 3, "zone A (2 quetes) avant B")
+    assert(pos[704] == #r, "rendu faible hors zone : en fin de liste, sans zone")
+    assert(r[pos[703]].mapID == 1411 and r[pos[703]].zoneHead == true and (r[pos[701]].zoneHead or r[pos[702]].zoneHead), "en-tetes de zone")
+    local heads = 0
+    for _, row in ipairs(n.Quests.Rows()) do if row.text:find("^Ensuite : ") then heads = heads + 1 end end
+    assert(heads == 2, "2 en-tetes (A, B), pas de zone C : " .. heads)
+    mock.areas, mock.mapKids = nil, nil
+  end)
+
   check("Quetes : a prendre, les 20 plus proches sont evalues, les 6 plus rentables gardees", function()
     if not (C_QuestLog and C_Map and LibQuestieDB) then return end
     local n = questN()

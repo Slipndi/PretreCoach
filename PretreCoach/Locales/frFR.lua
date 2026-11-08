@@ -153,6 +153,7 @@ ns.L = {
   QUEST_DIST = "à ~%d m",
   QUEST_STEP = "arrêt %d/%d",
   QUEST_HIGH = "%s : trop haute pour l'instant (niveau %d)",
+  QUEST_NEXT = "Ensuite : %s",
   QUEST_VALUE = "≈ %d XP%s · %s (≈ %s/min)",
   QUEST_DROP = "À abandonner : %s (%s)",
   QUEST_DROP_grey = "grise",
