@@ -1,3 +1,7 @@
+# PretreCoach 0.9.5
+
+- Itinéraire : dans une grotte, un bâtiment ou une instance, la zone où tu es est bien reconnue (ses quêtes restent en tête).
+
 # PretreCoach 0.9.4
 
 - Itinéraire : les objectifs « ramasser un objet » mènent au lieu de l'objet, au point le plus proche de toi.
