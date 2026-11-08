@@ -5897,6 +5897,79 @@ local function suite(label)
     mock.ah, mock.sellPrice = { [2589] = { 120, 3 } }, nil
     assert(n.Quests.seen == nil, "Quests.seen supprime")
   end)
+
+  ------------------------------------------------------------------------
+  -- Pistes de farm (Farm.lua)
+  ------------------------------------------------------------------------
+  local function farmN(level)
+    mock.qitems = { [2589] = { name = "Lin", npcDrops = { 9101, 9102, 9103, 9104 } }, [7067] = { name = "Terre", npcDrops = { 9105 } },
+      [4306] = { name = "Soie" } }
+    mock.qnpcs[9101] = { 0, nil, nil, 85, { [85] = { { 20, 20 }, { 22, 24 }, { 25, 21 }, { -1, -1 }, { 80, 80 } } }, "Loup", 10, 12 }
+    mock.qnpcs[9102] = { 0, nil, "H", 85, { [85] = { { 50, 50 }, { 51, 50 }, { 52, 50 }, { 53, 50 }, { 54, 50 }, { 55, 50 } } }, "Garde", 10, 10 }
+    mock.qnpcs[9103] = { 0, nil, nil, 85, { [85] = { { 50, 50 }, { 51, 50 }, { 52, 50 }, { 53, 50 }, { 54, 50 }, { 55, 50 } } }, "Ogre", 30, 32 }
+    mock.qnpcs[9104] = { 0, nil, "A", 85, { [85] = { { 21, 22 } } }, "Sanglier" } -- niveaux inconnus
+    mock.qnpcs[9105] = { 0, nil, nil, 85, { [85] = { { 60, 60 } } }, "Elementaire", 11, 11 }
+    mock.ah = { [2589] = { 120, 1 } }
+    mock.mapID = 1420
+    local n = fresh().n
+    setState(n, { level = level or 12, mapID = 1420, zone = 1420 })
+    return n
+  end
+  local function farmBuilt(n) n.Farm.StartIndex() for _ = 1, 30 do mock.flushTimers() end return n end
+
+  check("Farm : filtre niveau, faction et instance, case dense, score, prix inconnu", function()
+    if not (LibQuestieDB and C_Map) then return end
+    local n = farmBuilt(farmN(12))
+    local r = n.Farm.Rows(1420)
+    assert(#r == 2 and r[1].itemID == 2589 and r[2].itemID == 7067, "Lin d'abord (score), puis Terre sans prix")
+    assert(r[1].density == 4 and r[1].score == 480 and r[1].price == 120, "densite x prix : " .. r[1].density .. " / " .. r[1].score)
+    assert(#r[1].creatures == 2 and r[1].creatures[1].name == "Loup" and r[1].creatures[1].points == 3, "garde amical et ogre ecartes")
+    assert(r[1].levelKnown == false and r[2].levelKnown == true, "niveau inconnu signale")
+    assert(r[1].go.mapID == 1420 and r[1].go.x == 22 and r[1].go.y == 21.75, "centre de la case : " .. r[1].go.x .. "," .. r[1].go.y)
+    assert(r[1].text:find("Loup", 1, true) and r[1].text:find("niv 10-12", 1, true), r[1].text)
+    assert(r[2].price == nil and r[2].score == 0 and r[2].text:find("prix inconnu, scanne l'HdV", 1, true), r[2].text)
+    assert(n.Farm.Best(1420).itemID == 2589 and #n.Farm.Rows(1458) == 0, "autre carte : rien")
+    n.State.level = 31
+    local hi = n.Farm.Rows(1420)
+    assert(hi[1].itemID == 2589 and hi[1].creatures[1].name == "Ogre" and hi[1].density == 6, "niveau 31 : l'ogre, pas le loup")
+  end)
+
+  check("Farm : index par paquets, jamais en combat, en memoire seulement", function()
+    if not (LibQuestieDB and C_Map and C_Timer) then return end
+    local n = farmN(12)
+    local before = {}
+    for k in pairs(n.db) do before[k] = true end
+    mock.inCombat = true
+    assert(n.Farm.StartIndex() == true and n.Farm.StartIndex() == false, "un seul index a la fois")
+    for _ = 1, 30 do mock.flushTimers() end
+    assert(#n.Farm.Rows(1420) == 0, "en combat : en pause")
+    mock.inCombat = false
+    mock.fire("PLAYER_REGEN_ENABLED")
+    for k in pairs(n.db) do before[k] = true end
+    assert(#n.Farm.Rows(1420) == 0, "un paquet ne suffit pas")
+    for _ = 1, 30 do mock.flushTimers() end
+    assert(#n.Farm.Rows(1420) == 2, "repris apres le combat")
+    assert(not findSecret(n.db, "db"))
+    for k in pairs(n.db) do assert(before[k], "cle ajoutee a la base : " .. tostring(k)) end
+  end)
+
+  check("Farm : sans LibQuestieDB, rien (ni piste, ni erreur)", function()
+    local lib = _G.LibQuestieDB
+    _G.LibQuestieDB = nil
+    local n = farmN(12)
+    local ok = n.Farm.StartIndex() == false and #n.Farm.Rows(1420) == 0 and n.Farm.Best(1420) == nil
+    _G.LibQuestieDB = lib
+    assert(ok, "listes vides")
+    if lib then
+      local keep = lib.Item
+      lib.Item = nil
+      local n2 = farmN(12)
+      assert(n2.Farm.StartIndex() == true)
+      for _ = 1, 30 do mock.flushTimers() end
+      lib.Item = keep
+      assert(#n2.Farm.Rows(1420) == 0)
+    end
+  end)
 end
 
 suite("presentes")

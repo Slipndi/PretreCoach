@@ -23,6 +23,7 @@ Data\Talents.lua
 Data\Objectives.lua
 Data\KeyQuests.lua
 Data\Undead.lua
+Data\TradeGoods.lua
 Secrets.lua
 Core.lua
 Ext\Questie.lua
@@ -44,6 +45,7 @@ Sell.lua
 Gold.lua
 Keep.lua
 Gather.lua
+Farm.lua
 Pace.lua
 Consumables.lua
 UI\Style.lua
