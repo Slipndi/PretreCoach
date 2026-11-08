@@ -4791,14 +4791,90 @@ local function suite(label)
       assert(W.FailCount() == 2 and #z == 2, "2 echecs : toujours la zone par defaut")
       failAt(104.5 + 0.9)
       z = W.Zones()
-      assert(W.FailCount() == 3 and #z == 1 and near(z[1][1], 0.4 - 0.1 / 1.5) and near(z[1][2], 0.6 + 0.1 / 1.5), "zone apprise")
+      -- regle changee volontairement : deux bords (jamais un intervalle traversant), plafond 0,6 mais pas sous la zone par defaut
+      -- (a 1,5 s la zone par defaut fait deja 0,67 : les echecs observes ne l'elargissent pas)
+      assert(W.FailCount() == 3 and #z == 2 and near(z[1][2], 1 / 3) and near(z[2][1], 2 / 3), "zone apprise = defaut plafonnee")
       mock.time = 104.5 + 0.1
-      assert(not W.State().red, "phase 0,07 : hors zone apprise")
+      assert(W.State().red, "phase 0,07 : juste apres le tir, rouge")
       mock.time = 104.5 + 0.75
-      assert(W.State().red, "phase 0,5 : dans la zone")
+      assert(not W.State().red, "phase 0,5 : vert (plus d'intervalle traversant)")
       for i = 1, 25 do mock.fire("UNIT_SPELLCAST_FAILED_QUIET", "player", "c", SMITE_ID) end
       assert(W.FailCount() == 20, "20 phases gardees")
     end)
+  end)
+
+  -- baguette a 2 s : zone par defaut 0,25 de chaque cote (total 0,5), plafond 0,6
+  local function wandBoot2(fn)
+    local keep = PretreCoachDB
+    isolated(function()
+      local n = panel()
+      for i = 0, 3 do shoot(100 + i * 2) end
+      fn(n.Wand)
+    end, function() PretreCoachDB = keep end)
+  end
+  local function redWidth(z) local s = 0 for _, x in ipairs(z) do s = s + x[2] - x[1] end return s end
+
+  check("Baguette : echecs a 0,05 / 0,5 / 0,9 : rouge <= 0,6 et deux bords separes", function()
+    wandBoot2(function(W)
+      failAt(106 + 0.1) failAt(106 + 1) failAt(106 + 1.8)
+      local z = W.Zones()
+      assert(W.FailCount() == 3 and #z == 2, "3 echecs retenus, 2 bords")
+      assert(redWidth(z) <= 0.6 + 1e-6 and redWidth(z) >= 0.5 - 1e-6, "largeur " .. redWidth(z))
+      assert(z[1][1] == 0 and z[2][2] == 1 and z[1][2] < z[2][1], "aucun intervalle ne traverse la barre")
+      mock.time = 106 + 1 -- phase 0,5 : le milieu reste vert
+      assert(not W.State().red, "milieu vert")
+    end)
+  end)
+
+  check("Baguette : echec ancien oublie, echec loin du tir ignore", function()
+    wandBoot2(function(W)
+      failAt(106 + 0.1) failAt(106 + 0.2) failAt(106 + 0.3)
+      assert(W.FailCount() == 3)
+      mock.time = 106 + 61
+      assert(W.FailCount() == 0 and #W.Zones(2) == 2 and near(W.Zones(2)[1][2], 0.25), "echecs perimes oublies")
+    end)
+    local keep = PretreCoachDB
+    isolated(function() -- baguette a 3 s : fenetre 1,2 s = 0,4 de phase
+      local n = panel()
+      for i = 0, 3 do shoot(100 + i * 3) end
+      failAt(109 + 1.5) -- phase 0,5 : trop loin d'un tir
+      assert(n.Wand.FailCount() == 0, "echec loin du tir ignore")
+      failAt(109 + 0.3)
+      assert(n.Wand.FailCount() == 1, "echec pres du tir retenu")
+    end, function() PretreCoachDB = keep end)
+  end)
+
+  check("Baguette : vitesse changee sans lecture : 4 ecarts rejetes coherents deviennent la base", function()
+    local keep = PretreCoachDB
+    isolated(function()
+      local n = panel()
+      for _, t in ipairs({ 100, 101.5, 103, 104.5 }) do shoot(t) end
+      assert(near(n.Wand.Speed(), 1.5))
+      for i = 1, 5 do shoot(104.5 + 2 * i) end
+      assert(near(n.Wand.Speed(), 2.0), "vitesse " .. tostring(n.Wand.Speed()))
+    end, function() PretreCoachDB = keep end)
+  end)
+
+  check("Baguette : ecarts 1,5 / 1,5 / 2,6 / 1,5 : vitesse 1,5 ; vitesse de reference changee > 15 % : reset", function()
+    local keep = PretreCoachDB
+    isolated(function()
+      local n = panel()
+      for _, t in ipairs({ 100, 101.5, 103, 105.6, 107.1 }) do shoot(t) end
+      assert(near(n.Wand.Speed(), 1.5), "vitesse " .. tostring(n.Wand.Speed()))
+    end, function() PretreCoachDB = keep end)
+    isolated(function()
+      local n = panel()
+      mock.rangedSpeed = 1.5 -- reference lisible : 2,6 s rejete des le premier
+      for _, t in ipairs({ 100, 102.6, 105.2, 107.8 }) do shoot(t) end
+      assert(near(n.Wand.Speed(), 1.5), "ecarts hors +-25 % ignores, repli UnitRangedDamage")
+      for i = 1, 3 do shoot(107.8 + 1.5 * i) end
+      failAt(112.3) failAt(112.4) failAt(112.5)
+      assert(n.Wand.FailCount() == 3 and near(n.Wand.Speed(), 1.5))
+      mock.rangedSpeed = 1.8 -- +20 % : tout est vide
+      shoot(114.3)
+      assert(n.Wand.FailCount() == 0 and near(n.Wand.Speed(), 1.8), "reset : echecs vides, vitesse = nouvelle reference")
+      mock.rangedSpeed = nil
+    end, function() PretreCoachDB = keep end)
   end)
 
   check("Baguette : barre visible pendant le tir, cachee apres (2 x vitesse, fin de combat)", function()
