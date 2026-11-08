@@ -4701,7 +4701,7 @@ local function suite(label)
     bags(n)
     local b = n.Gold.Best()
     assert(b.kind == "sell" and b.value == 19800, "vente : " .. tostring(b.kind) .. " " .. tostring(b.value))
-    assert(b.text == "Vends 20 Baguette 101 à l'HdV (≈ " .. n.Prof.Money(20000) .. ")", b.text)
+    assert(b.text == "Vends 20 Baguette 101 à l'HdV de Fossoyeuse : ≈ " .. n.Prof.Money(20000) .. " (prix de départ conseillé " .. n.Prof.Money(999) .. " l'unité, durée 12 h)", b.text)
     local c = n.Gold.Candidates()
     assert(#c == 3 and c[1].kind == "sell" and c[2].kind == "craft" and c[3].kind == "gather", "tri par cuivre/min : vente, craft, cueillette")
     mock.ah[101] = { 1000, 10 } -- prix trop ancien : la vente n'est plus proposee
@@ -4714,7 +4714,7 @@ local function suite(label)
     local n = goldNs({ [171] = { rank = 50, max = 75 } })
     adviceWith(n, 45)
     local b = n.Gold.Best()
-    assert(b.kind == "craft" and b.value == 45 and b.text == "Fabrique Potion X : marge ≈ " .. n.Prof.Money(45) .. "", b.text)
+    assert(b.kind == "craft" and b.value == 45 and b.text == "Fabrique 5 Potion X : marge ≈ " .. n.Prof.Money(225) .. " en ≈ 1 min", b.text)
     adviceWith(n, -5)
     assert(n.Gold.Best().kind == "tip", "marge negative : pas de conseil de craft")
   end)
@@ -4725,10 +4725,10 @@ local function suite(label)
     mock.ah = { [765] = { 30, 1 }, [2447] = { 10, 1 }, [2449] = { 5, 1 }, [3820] = { 900, 1 } } -- 3820 : herbe d'un rang trop haut
     n.State.zone, n.State.mapID = 1420, 1420
     local b = n.Gold.Best()
-    assert(b.kind == "gather" and b.text == "Cueille Feuillargent ici : ≈ " .. n.Prof.Money(30) .. " pièce à l'HdV", b.text)
+    assert(b.kind == "gather" and b.text == "Cueille 20 Feuillargent ici : ≈ 7 min, ≈ " .. n.Prof.Money(600) .. " à l'HdV", b.text)
     n.State.zone, n.State.mapID = 1424, 1424
     b = n.Gold.Best()
-    assert(b.kind == "gather" and b.text:find("^Cueille Feuillargent %(") and b.text:find(n.Prof.Money(30), 1, true) and not b.text:find("ici", 1, true), b.text)
+    assert(b.kind == "gather" and b.text:find("^Cueille 20 Feuillargent %(") and b.text:find(n.Prof.Money(600), 1, true) and not b.text:find("ici", 1, true), b.text)
     n.State.profs = { [171] = { rank = 50, max = 75 } }
     assert(n.Gold.Best().kind == "tip", "sans Herboristerie : pas de cueillette")
   end)
@@ -4813,12 +4813,13 @@ local function suite(label)
     n.ToggleGuide()
     local idx
     for i, k in ipairs({ "now", "next", "talents", "spells", "dungeons", "zones", "profs", "undead", "sell", "gold", "route" }) do if k == "gold" then idx = i end end
-    assert(G.win.tabs[idx].label.text == "Or", "onglet Or a cote de Vente")
+    assert(G.win.tabs[idx].label.text == "Devenir riche", "onglet renomme, a cote de Vente")
     G.win.tabs[idx].scripts.OnClick(G.win.tabs[idx])
-    assert(n.db.guide.tab == "gold" and G.used == 4, "3 actions puis la session : " .. G.used)
+    -- objectif, reserve, en-tete + 3 pistes, en-tete + 1 ligne de chiffres, session = 9
+    assert(n.db.guide.tab == "gold" and G.used == 9, "9 lignes : " .. G.used)
     local rows = n.Gold.Rows()
-    assert(rows[1].text:find("Vends 20", 1, true) and rows[2].text:find("Fabrique", 1, true) and rows[3].text:find("Cueille", 1, true), "tri par cuivre/min")
-    assert(rows[4].text:find("Session :", 1, true), "session en dernier")
+    assert(rows[4].text:find("Vends 20", 1, true) and rows[5].text:find("Fabrique", 1, true) and rows[6].text:find("Cueille", 1, true), "tri par cuivre/min")
+    assert(rows[#rows].text:find("Session :", 1, true), "session en dernier")
     mock.money = nil
   end)
 
@@ -5524,7 +5525,8 @@ local function suite(label)
     assert(table.concat(lp.names, ", ") == "Feuillargent, Mage royal, Pacifique", "3 herbes au plus : " .. table.concat(lp.names, ", "))
     assert(lp.total == 15 * 45 and lp.perHour == 45 * n.Gather.NODES_PER_HOUR, "or/heure : " .. lp.perHour)
     local b = n.Gold.Best()
-    assert(b.kind == "gather" and b.text == "Boucle d'herbes : 15 points (Feuillargent, Mage royal, Pacifique) ≈ " .. n.Prof.Money(5400) .. "/h", b.text)
+    assert(b.kind == "gather" and b.text:find("^Cueille 15 points à .+ %(Feuillargent, Mage royal, Pacifique%) : boucle ≈ 8 min, ≈ ")
+      and b.text:find(n.Prof.Money(675), 1, true), b.text)
     local d = n.Goto.For(b.go)
     assert(d.mapID == 1420 and d.x == 51 and d.y == 50 and d.text:find("Feuillargent, premier point", 1, true), "go : premier noeud")
     mock.pos = false -- position illisible : depart au centre
@@ -5537,7 +5539,9 @@ local function suite(label)
     local rows, hit = n.Gold.Rows(), {}
     for _, r in ipairs(rows) do hit[r.text] = r end
     local f = hit["Feuillargent : " .. n.Prof.Money(30) .. " · 30 nœuds"]
-    assert(f and f.icon == 1234 and rows[1].go, "rangee Feuillargent, icone ; candidat avec Repere")
+    local withGo
+    for _, r in ipairs(rows) do withGo = withGo or r.go end
+    assert(f and f.icon == 1234 and withGo, "rangee Feuillargent, icone ; candidat avec Repere")
     local t = hit["Terrestrine : " .. n.Prof.Money(5) .. " · 1 nœud"]
     assert(t and t.sub == "donne encore des points d'Herboristerie", "bonus de rang signale")
     assert(not hit["Algue : " .. n.Prof.Money(900) .. " · 1 nœud"], "rang trop bas : pas de rangee")
@@ -6207,6 +6211,143 @@ local function suite(label)
     mock.setCombat(false)
     mock.fire("PLAYER_REGEN_ENABLED")
     assert(act(n, "autre") == 10 and not findSecret(n.db, "db"))
+  end)
+
+  ------------------------------------------------------------------------
+  -- Devenir riche : pistes actionnables, farm, prix conseille, butin en quete, onglet, rangee Or
+  ------------------------------------------------------------------------
+  check("Riche : prix de depart conseille (HdV moins 1 pc, sinon marchand)", function()
+    local n = fresh().n
+    assert(n.Gold.Ask(1000, 10) == 999 and n.Gold.Ask(5, nil) == 4, "HdV - 1 pc")
+    assert(n.Gold.Ask(11, 10) == nil and n.Gold.Ask(10, 10) == nil, "pas plus haut que le marchand : vends au marchand")
+    assert(n.Gold.Ask(nil, 10) == nil and n.Gold.Ask(0, 0) == nil, "prix inconnu : rien")
+  end)
+
+  check("Riche : piste de vente actionnable (quantite, lieu, gain, prix, duree)", function()
+    if not (Auctionator and C_Container) then return end
+    local n = goldNs({ [171] = { rank = 50, max = 75 } })
+    bags(n)
+    local c = n.Gold.Candidates()[1]
+    assert(c.kind == "sell" and c.ask == 999, "prix conseille porte par la piste")
+    assert(c.text:find("Vends 20", 1, true) and c.text:find("Fossoyeuse", 1, true) and c.text:find("≈ " .. n.Prof.Money(20000), 1, true)
+      and c.text:find("prix de départ conseillé " .. n.Prof.Money(999), 1, true) and c.text:find("12 h", 1, true), c.text)
+    mock.ah[101] = { 1000, 2 } mock.bagInfo[1].stackCount = 20
+    -- ancien prix marchand haut : l'HdV moins 1 pc ne le depasse pas, la piste dit « marchand »
+    n.Sell.Lines = { { advice = "ah", itemID = 101, name = "Baguette 101", count = 20, ah = 11, merchant = 10, amount = 220, gain = 20 } }
+    local m = n.Gold.Candidates()[1]
+    assert(m.kind == "sell" and m.text:find("au marchand", 1, true) and not m.text:find("HdV de", 1, true), m.text)
+  end)
+
+  check("Riche : la vente a un repere vers le commissaire-priseur et sa zone, repli Fossoyeuse", function()
+    if not (Auctionator and C_Container) then return end
+    local n = goldNs({ [171] = { rank = 50, max = 75 } })
+    bags(n)
+    local c = n.Gold.Candidates()[1]
+    assert(c.go == nil and c.text:find("Fossoyeuse", 1, true), "sans index : repli, pas de repere")
+    n.Q.Nearest = function() return 304, { uiMapID = 1420, x = 40, y = 50 } end
+    c = n.Gold.Candidates()[1]
+    local d = n.Goto.For(c.go)
+    assert(c.go.mapID == 1420 and c.go.x == 40 and c.go.y == 50 and d and d.mapID == 1420, "go vers le commissaire-priseur")
+    assert(c.text:find(n.Goto.Zone({ uiMapID = 1420 }), 1, true) and not c.text:find("Fossoyeuse", 1, true), c.text)
+  end)
+
+  check("Riche : cueille ici a un repere vers le noeud le plus proche, la boucle vers son premier noeud", function()
+    if not (LibQuestieDB and C_Map and Auctionator) then return end
+    local n = built(herbN(60))
+    n.State.zone, n.State.mapID = 1420, 1420
+    local b = n.Gold.Best()
+    assert(b.kind == "gather" and b.go and b.go.x == 51 and b.go.y == 50, "boucle : premier noeud")
+    n.Gather.Loop = function() return nil end
+    b = n.Gold.Best()
+    assert(b.kind == "gather" and b.text:find("^Cueille 20 Feuillargent ici") and b.go and b.go.mapID == 1420
+      and b.go.x == 51 and b.go.y == 50 and n.Goto.For(b.go).text:find("nœud le plus proche", 1, true), "ici : noeud le plus proche")
+  end)
+
+  check("Riche : farm integre aux pistes, trie par cuivre/min, sans prix en bas", function()
+    if not (LibQuestieDB and C_Map and Auctionator) then return end
+    local n = farmBuilt(farmN(12))
+    n.State.profs = { [182] = { rank = 60, max = 75 } }
+    mock.ah[765] = { 30, 1 }
+    local c = n.Gold.Candidates()
+    local farms = {}
+    for _, a in ipairs(c) do if a.kind == "farm" then farms[#farms + 1] = a end end
+    assert(#farms == 2, "Lin et Terre : " .. #farms)
+    assert(farms[1].perMin == 120 * 2 * 0.3 and farms[1].go and farms[1].go.mapID == 1420, "perMin estime, lieu")
+    assert(farms[1].text:find("Farme les Loup", 1, true) and farms[1].text:find("/h (estimation)", 1, true), farms[1].text)
+    assert(farms[2].perMin == 0 and farms[2].text:find("prix inconnu, scanne l'HdV", 1, true) and c[#c] == farms[2], "sans prix : tout en bas")
+    for i = 2, #c do assert(c[i - 1].perMin >= c[i].perMin, "tri par cuivre/min") end
+    assert(not findSecret(n.db, "db"))
+  end)
+
+  check("Riche : butin pendant une quete compte dans quetes, butin hors quete reste butin", function()
+    if not C_QuestLog then return end
+    local n = earnN()
+    mock.qlog = { { questID = 1, title = "Q", level = 5, complete = false } }
+    mock.fire("LOOT_OPENED") gain(9) mock.fire("LOOT_CLOSED")
+    assert(act(n, "quetes") == 9 and act(n, "butin") == 0, "quete en cours : or des monstres dans quetes")
+    mock.qlog[1].complete = true
+    mock.time = mock.time + 6 n.Earn.Tick() -- journal relu hors combat
+    mock.fire("LOOT_OPENED") gain(4) mock.fire("LOOT_CLOSED")
+    assert(act(n, "quetes") == 9 and act(n, "butin") == 4, "hors quete : butin")
+    assert(not findSecret(n.db, "db"))
+  end)
+
+  local function sections(rows)
+    local order = {}
+    for _, r in ipairs(rows) do if order[#order] ~= r.section then order[#order + 1] = r.section end end
+    return table.concat(order, ",")
+  end
+
+  check("Riche : onglet Devenir riche, sections dans l'ordre, sans objectif puis avec objectif", function()
+    local n = goldNs()
+    mock.money, mock.time = 1000, 0
+    local rows = n.Gold.Rows()
+    assert(sections(rows) == "goal,reserve,pistes,chiffres,session", sections(rows))
+    assert(rows[1].text == "Objectif : fixe un objectif : /coach objectif 100", rows[1].text)
+    local none = false
+    for _, r in ipairs(rows) do none = none or (r.section == "chiffres" and r.text:lower():find("pas encore assez de mesure", 1, true) ~= nil) end
+    assert(none, "chiffres : pas de mesure")
+    n.db.goldGoal = 1000000
+    n.db.earn = { v = 1, act = { quetes = { c = 300000, s = 3600 }, butin = { c = 5, s = 100 } }, herbs = 0, nodes = 0 }
+    mock.money = 400000
+    rows = n.Gold.Rows()
+    assert(sections(rows) == "goal,reserve,pistes,chiffres,session", sections(rows))
+    assert(rows[1].text == "Objectif " .. n.Prof.Money(1000000) .. " : 40 % · ≈ 2 h", rows[1].text)
+    assert(rows[1].sub == "Tu as " .. n.Prof.Money(400000) .. ", il te manque " .. n.Prof.Money(600000), rows[1].sub)
+    assert(rows[2].text:find("Réserve", 1, true), rows[2].text)
+    local ch = {}
+    for _, r in ipairs(rows) do if r.section == "chiffres" then ch[#ch + 1] = r.text end end
+    assert(ch[2] == "Quêtes : ≈ " .. n.Prof.Money(300000) .. "/h" and ch[3]:find("pas encore assez de mesure", 1, true), "or/h par activite : " .. tostring(ch[2]))
+    mock.money = 2000000
+    assert(n.Earn.GoalLine():find("100 %", 1, true) and n.Earn.GoalLine():find("atteint", 1, true), n.Earn.GoalLine())
+    assert(not findSecret(n.db, "db"))
+    n.db.goldGoal, n.db.earn, mock.money = nil, nil, nil
+  end)
+
+  check("Riche : rangee Or de la carte, progression de l'objectif sinon session", function()
+    local n = gw()
+    mock.money, mock.time = 5000, 0
+    local g = n.Guide.Goals()
+    g = g[#g]
+    assert(g.kind == "gold" and g.detail:find("Session : +", 1, true), "sans objectif : session")
+    n.db.goldGoal = 1000000
+    n.db.earn = { v = 1, act = { quetes = { c = 300000, s = 3600 } }, herbs = 0, nodes = 0 }
+    mock.money = 400000
+    g = n.Guide.Goals()
+    g = g[#g]
+    assert(g.kind == "gold" and g.detail == "Objectif " .. n.Prof.Money(1000000) .. " : 40 % · ≈ 2 h", g.detail)
+    n.db.goldGoal, n.db.earn, mock.money = nil, nil, nil
+  end)
+
+  check("Riche : rien de nouveau en base, rien de secret", function()
+    local n = goldNs()
+    local before = {}
+    for k in pairs(n.db) do before[k] = true end
+    mock.money = 1000
+    n.Gold.Rows() n.Guide.Goals() n.Earn.GoalLine()
+    assert(not findSecret(n.db, "db"))
+    for k in pairs(n.db) do assert(before[k], "cle ajoutee a la base : " .. tostring(k)) end
+    mock.money = nil
   end)
 end
 

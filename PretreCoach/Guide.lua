@@ -414,7 +414,7 @@ function Guide.Goals()
   local function withGold()
     if ns.Gold and not (ns.db and ns.db.show and ns.db.show.gold == false) then
       local b = ns.Gold.Best()
-      local g = { kind = "gold", label = L.GOLD_LABEL, text = b.text, detail = ns.Gold.SessionText() or b.detail, go = b.go, best = b }
+      local g = { kind = "gold", label = L.GOLD_LABEL, text = b.text, detail = (ns.Earn and ns.Earn.GoalLine()) or ns.Gold.SessionText() or b.detail, go = b.go, best = b }
       out[#out + 1] = g
       pcall(onePrimary, g)
     end

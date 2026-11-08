@@ -77,7 +77,8 @@ local function onMoney()
   elseif ctx.merchant then a = "marchand"
   elseif ctx.mail or ctx.ah then a = "hdv"
   elseif ctx.questAt and now and now - ctx.questAt <= QUEST_WIN then a = "quetes"
-  elseif ctx.loot then a = "butin"
+  elseif ctx.loot and questOn then a = "quetes" -- or ramasse sur les monstres pendant le temps actif de quetes
+  elseif ctx.loot then a = "butin" -- hors quete
   else a = "autre" end
   local s = slot(e, a)
   s.c = math.min(CAP, s.c + math.abs(d))
@@ -186,6 +187,15 @@ function Earn.Goal()
   local best = math.max(Earn.PerHour("quetes") or 0, Earn.PerHour("cueillette") or 0)
   if r.missing and r.missing == 0 then r.eta = 0 elseif r.missing and best > 0 then r.eta = r.missing / best * 3600 end
   return r
+end
+
+-- « Objectif 100 po : 23 % · ≈ 2 h » (sans duree si pas de mesure, « atteint » si fini), ou nil sans objectif.
+function Earn.GoalLine()
+  local g = Earn.Goal()
+  if not g then return nil end
+  if not g.have then return L.EARN_GOAL_LINE_NA:format(money(g.goal)) end
+  local tail = g.eta == 0 and L.EARN_GOAL_DONE or g.eta and (" · ≈ " .. duration(g.eta)) or ""
+  return L.EARN_GOAL_LINE:format(money(g.goal), math.min(100, math.floor(g.have / g.goal * 100)), tail)
 end
 
 -- /coach objectif <po> : fixe l'objectif ; sans nombre : l'efface.

@@ -9,7 +9,7 @@ local UI, L, S = ns.UI, ns.L, ns.S
 local QM = {}
 UI.QuestMobs = QM
 
-local ICON = { kill = "Interface\\Icons\\INV_Sword_04", loot = "Interface\\Icons\\INV_Misc_Bag_08" } -- à vérifier en jeu
+local ICON = { kill = "Interface\\Icons\\INV_Sword_04", loot = "Interface\\Icons\\INV_Misc_Bag_10" } -- à vérifier en jeu
 local MAXDROP = 30 -- créatures retenues par objet de quête
 
 local index, dirty, pending = {}, false, false -- index[npcID] = { { id, title, kind, text } }

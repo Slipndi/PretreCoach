@@ -144,6 +144,7 @@ local function fill(r, mode, item, y, w)
   else
     setColor(r.text, item.alert and C.warn or C.white, item.highlight and 1 or 0.55)
     setColor(r.sub, C.accent, item.highlight and 0.95 or 0.5)
+    if item.head then setColor(r.text, C.accent) end
   end
   local h = 8 + (r.text:GetStringHeight() or 14) + ((sub and sub ~= "") and ((r.sub:GetStringHeight() or 12) + 1) or 0)
   h = math.max(h, 24)

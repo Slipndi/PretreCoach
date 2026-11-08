@@ -10,6 +10,11 @@ ns.Gold = Gold
 -- shortcut: valeur d'une cueillette = prix x 20 herbes, juste pour la classer face a une vente ou un craft ; jamais affichee.
 local HERB_BATCH = 20
 local TOP = 5
+-- shortcut: HdV de la Horde en dur (pretre mort-vivant, Fossoyeuse) ; duree de mise en vente conseillee fixe ; a lire de la faction si besoin.
+local AH_CITY, AH_HOURS = "Fossoyeuse", 12
+-- shortcut: pas de taux de drop dans QuestieDB ni de mesure comparable (Earn.PerHour ne mesure ni le farm ni le butin vendu) :
+-- 2 morts par minute et 30 % de chance de lacher la marchandise ; a remplacer par une mesure du farm quand elle existera.
+local FARM_KILLS_PER_MIN, FARM_DROP_CHANCE = 2, 0.3
 
 local function money(c) return ns.Prof.Money(c) end
 local function num(v) if type(v) == "number" and not S.IsSecret(v) then return v end end
@@ -23,6 +28,13 @@ local function fresh(id)
   return p
 end
 Gold.Fresh = fresh
+
+-- Prix de depart conseille a l'HdV (lecture seule, rien n'est mis en vente) : prix Auctionator recent moins 1 pc,
+-- seulement s'il reste au-dessus du prix marchand ; sinon nil (vends au marchand).
+function Gold.Ask(ah, merchant)
+  if not num(ah) or ah <= 0 then return nil end
+  if ah - 1 > (num(merchant) or 0) then return ah - 1 end
+end
 
 -- Chaque candidat porte perMin = cuivre par minute, la seule valeur de tri (comparable a Quests : meme unite, voir Guide.Goals).
 -- shortcut: durees a la louche (Classic), a recaler sur des mesures en jeu.
@@ -42,8 +54,14 @@ local function sell(out)
   for _, l in ipairs(ns.Sell.Lines) do -- deja triees par gain decroissant
     if l.advice == "ah" and not l.old then
       local mins = ((atAH() and 0 or AH_TRIP_SECS) + LIST_SECS) / 60
-      out[#out + 1] = { kind = "sell", value = l.gain, perMin = l.gain / mins,
-        text = L.GOLD_SELL:format(l.count, l.name or ("objet " .. l.itemID), money(l.amount)) }
+      local name, ask = l.name or ("objet " .. l.itemID), Gold.Ask(l.ah, l.merchant)
+      -- commissaire-priseur le plus proche (index Questie) : lieu et repere ; sinon ville en dur
+      local okq, _, w = pcall(function() return ns.Q.Nearest("AUCTIONEER", State.mapID) end)
+      local zone = okq and w and ns.Goto.Zone(w) or nil
+      out[#out + 1] = { kind = "sell", value = l.gain, perMin = l.gain / mins, ask = ask,
+        go = zone and { mapID = w.uiMapID, x = w.x, y = w.y, text = L.GO_AH:format(zone) } or nil,
+        text = ask and L.GOLD_SELL:format(l.count, name, zone or AH_CITY, money(l.amount), money(ask), AH_HOURS)
+          or L.GOLD_SELL_MERCHANT:format(l.count, name, money(l.amount)) }
       return
     end
   end
@@ -61,7 +79,7 @@ local function craft(out)
         if not r.craftable and num(r.cost) and ns.Budget then ok, why = ns.Budget.Check("comps", r.cost) end
         if ok then
           out[#out + 1] = { kind = "craft", value = r.margin, perMin = r.margin * CRAFT_BATCH / craftMins(CRAFT_BATCH),
-            text = L.GOLD_CRAFT:format(r.name or "?", money(r.margin)) }
+            text = L.GOLD_CRAFT:format(CRAFT_BATCH, r.name or "?", money(r.margin * CRAFT_BATCH), math.max(1, math.ceil(craftMins(CRAFT_BATCH)))) }
         elseif not blocked or r.margin > blocked.value then
           blocked = { kind = "blocked", value = r.margin, perMin = 0, text = L.GOLD_BLOCKED:format(r.name or "?", money(r.cost), why) }
         end
@@ -120,7 +138,7 @@ local function along(lp)
   end
   if n == 0 or value <= 0 then return nil end
   return { kind = "gather", along = true, value = value, perMin = value / (n * NODE_SECS / 60),
-    text = L.GOLD_ALONG:format(n, table.concat(names, ", ")) }
+    text = L.GOLD_ALONG:format(n, table.concat(names, ", "), math.max(1, math.ceil(n * NODE_SECS / 60)), money(math.floor(value))) }
 end
 
 -- Boucle d'herbes de la carte (Gather) ; valeur = ce que rapporte un tour. Sinon : meilleure herbe de Data/ProfPlan.
@@ -132,7 +150,8 @@ local function gather(out)
   if lp then
     local s = lp.stops[1]
     out[#out + 1] = { kind = "gather", value = lp.total, perMin = lp.perHour / 60,
-      text = L.GOLD_LOOP:format(#lp.stops, table.concat(lp.names, ", "), money(math.floor(lp.perHour))),
+      text = L.GOLD_LOOP:format(#lp.stops, zoneLabel(lp.mapID), table.concat(lp.names, ", "),
+        math.max(1, math.floor(lp.total / lp.perHour * 60 + 0.5)), money(math.floor(lp.total))),
       go = { mapID = lp.mapID, x = s.x, y = s.y, text = L.GOLD_LOOP_GO:format(s.herb.name) } }
     return
   end
@@ -156,11 +175,15 @@ local function gather(out)
   end
   local c = here or far
   if not c then return end
-  local text = here and L.GOLD_GATHER_HERE:format(c.name, money(c.price))
-    or L.GOLD_GATHER_AT:format(c.name, c.zone and zoneLabel(c.zone) or "?", money(c.price))
   local G = ns.Gather
-  out[#out + 1] = { kind = "gather", value = c.price * HERB_BATCH, text = text,
-    perMin = c.price * (G and G.YIELD or 1.5) * (G and G.NODES_PER_HOUR or 120) / 60 }
+  local perMin = c.price * (G and G.YIELD or 1.5) * (G and G.NODES_PER_HOUR or 120) / 60
+  local mins = math.max(1, math.ceil(HERB_BATCH * c.price / perMin))
+  local text = here and L.GOLD_GATHER_HERE:format(HERB_BATCH, c.name, mins, money(c.price * HERB_BATCH))
+    or L.GOLD_GATHER_AT:format(HERB_BATCH, c.name, c.zone and zoneLabel(c.zone) or "?", mins, money(c.price * HERB_BATCH))
+  local go
+  local node = here and G and G.Nearest(State.mapID, c.name)
+  if node then go = { mapID = State.mapID, x = node.x, y = node.y, text = L.GOLD_NODE_GO:format(c.name) } end
+  out[#out + 1] = { kind = "gather", value = c.price * HERB_BATCH, text = text, perMin = perMin, go = go }
 end
 
 -- Craft-pour-vendre avec les ressources des sacs (Keep) : gain par rapport a la vente directe.
@@ -169,11 +192,20 @@ local function keepCraft(out)
   if b and b.value > 0 then out[#out + 1] = { kind = "craft", value = b.value, perMin = b.value / craftMins(b.n or 1), text = b.text } end
 end
 
+-- Pistes de farm de la carte (Farm.Rows) : gain = prix x morts/min x chance de drop (constantes en tete) ; sans prix : perMin 0, en bas.
+local function farm(out)
+  for _, r in ipairs(ns.Farm and ns.Farm.Rows(State.mapID) or {}) do
+    local perMin = r.price and r.price * FARM_KILLS_PER_MIN * FARM_DROP_CHANCE or 0
+    out[#out + 1] = { kind = "farm", value = perMin * 60, perMin = perMin, go = r.go, farm = r,
+      text = r.price and (r.text .. L.GOLD_FARM_RATE:format(money(math.floor(perMin * 60)))) or r.text }
+  end
+end
+
 -- Actions a/b/c rangees par valeur decroissante (au plus TOP) ; vide sans Auctionator.
 function Gold.Candidates()
   local out = {}
   if not (ns.AH and ns.AH.Available()) then return out end
-  for _, f in ipairs({ sell, craft, gather, keepCraft }) do pcall(f, out) end
+  for _, f in ipairs({ sell, craft, gather, keepCraft, farm }) do pcall(f, out) end
   table.sort(out, function(a, b)
     if a.perMin ~= b.perMin then return a.perMin > b.perMin end
     return a.value > b.value
@@ -218,20 +250,46 @@ function Gold.SessionText()
   return L.GOLD_SESSION_RATE:format(signed(net), (perHour < 0 and "-" or "") .. money(math.abs(perHour)))
 end
 
--- Lignes d'affichage pour l'onglet Or : top 5 des actions, les herbes de la zone, puis la session.
+-- Lignes de l'onglet « Devenir riche » (section = repere de test) : objectif, reserve, meilleures pistes (+ herbes de la zone),
+-- tes chiffres, session.
 function Gold.Rows()
-  local rows, c = {}, Gold.Candidates()
-  for i, a in ipairs(c) do rows[i] = { text = a.text, highlight = i == 1, go = a.go } end
+  local rows = {}
+  local function add(section, r) r.section, r.highlight = section, r.highlight or false rows[#rows + 1] = r end
+  local g = ns.Earn and ns.Earn.Goal()
+  if g then
+    local have = g.have and L.RICH_HAVE:format(money(g.have), money(g.missing)) or nil
+    add("goal", { text = ns.Earn.GoalLine(), sub = have })
+  else
+    add("goal", { text = L.RICH_NOGOAL })
+  end
+  local res = ns.Budget and ns.Budget.Reserve()
+  if res then
+    local parts = {}
+    if res.spell > 0 then parts[#parts + 1] = L.RICH_RES_SPELL:format(money(res.spell)) end
+    if res.rank > 0 then parts[#parts + 1] = L.RICH_RES_RANK:format(money(res.rank)) end
+    if res.recipe > 0 then parts[#parts + 1] = L.RICH_RES_RECIPE:format(money(res.recipe)) end
+    add("reserve", { text = #parts > 0 and L.RICH_RESERVE:format(table.concat(parts, ", ")) or L.RICH_RESERVE_NONE,
+      sub = #res.unknown > 0 and table.concat(res.unknown, " · ") or nil })
+  end
+  add("pistes", { text = L.RICH_PISTES, head = true })
+  local c = Gold.Candidates()
+  for i, a in ipairs(c) do add("pistes", { text = a.text, highlight = i == 1, go = a.go }) end
   if #c == 0 then
     local b = Gold.Best()
-    rows[1] = { text = b.text, sub = b.detail, highlight = false }
+    add("pistes", { text = b.text, sub = b.detail })
   end
   local ok, herbs = pcall(function() return ns.Gather and ns.Gather.Herbs(State.mapID) or {} end)
   for _, h in ipairs(ok and herbs or {}) do
-    rows[#rows + 1] = { icon = ns.Gather.Icon(h.itemID), highlight = false, sub = h.skillup and L.GATHER_SKILLUP or nil,
-      text = (#h.nodes == 1 and L.GOLD_HERB_ROW_1 or L.GOLD_HERB_ROW):format(h.name, h.price and money(h.price) or L.GOLD_HERB_NOPRICE, #h.nodes) }
+    add("pistes", { icon = ns.Gather.Icon(h.itemID), sub = h.skillup and L.GATHER_SKILLUP or nil,
+      text = (#h.nodes == 1 and L.GOLD_HERB_ROW_1 or L.GOLD_HERB_ROW):format(h.name, h.price and money(h.price) or L.GOLD_HERB_NOPRICE, #h.nodes) })
   end
+  add("chiffres", { text = L.RICH_CHIFFRES, head = true })
+  local er = ns.Earn and ns.Earn.Rows() or {}
+  for _, e in ipairs(er) do
+    add("chiffres", { text = e.perHour and L.RICH_ROW:format(e.label, money(math.floor(e.perHour))) or L.RICH_ROW_NONE:format(e.label) })
+  end
+  if #er == 0 then add("chiffres", { text = L.RICH_NOMEASURE }) end
   local s = Gold.SessionText()
-  if s then rows[#rows + 1] = { text = s, highlight = false } end
+  if s then add("session", { text = s }) end
   return rows
 end

@@ -169,3 +169,19 @@ function Gather.Pins(mapID)
   end
   return list
 end
+
+-- Noeud de l'herbe `name` le plus proche du joueur (centre de carte si position illisible) : { x, y } ou nil.
+function Gather.Nearest(mapID, name)
+  local px, py = playerPos(mapID)
+  px, py = px or 50, py or 50
+  local best, bd
+  for _, h in ipairs(Gather.Herbs(mapID)) do
+    if h.name == name then
+      for _, p in ipairs(h.nodes) do
+        local d = (p.x - px) ^ 2 + (p.y - py) ^ 2
+        if not bd or d < bd then best, bd = p, d end
+      end
+    end
+  end
+  return best
+end
