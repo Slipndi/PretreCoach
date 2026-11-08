@@ -11,8 +11,6 @@ ignore:
   - install.sh
   - build-release.ps1
   - .github
-  - CLAUDE.md
-  - .claude
 
 manual-changelog:
   filename: CHANGELOG.md
