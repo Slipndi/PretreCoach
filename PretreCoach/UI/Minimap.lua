@@ -2,7 +2,7 @@
 local ADDON, ns = ...
 local L = ns.L
 
-local RADIUS, ICON = 80, "Interface\\Icons\\Spell_Shadow_ShadowWordPain"
+local OUTSIDE, ICON = 12, "Interface\\Icons\\Spell_Shadow_ShadowWordPain"
 
 local function onClick(button, anchor)
   if button == "RightButton" then
@@ -35,8 +35,14 @@ ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
 
 local function angle() return (ns.db and ns.db.minimap and ns.db.minimap.angle) or 220 end
 
+-- Hors de la carte : demi-largeur reelle de la minicarte (plus grande en Retail qu'en Classic) + OUTSIDE.
+local function radius()
+  local ok, w = pcall(Minimap.GetWidth, Minimap)
+  return (ok and type(w) == "number" and w > 0 and w / 2 or 70) + OUTSIDE
+end
+
 local function reposition(a)
-  local r = math.rad(a)
+  local r, RADIUS = math.rad(a), radius()
   btn:ClearAllPoints()
   btn:SetPoint("CENTER", Minimap, "CENTER", math.cos(r) * RADIUS, math.sin(r) * RADIUS)
 end
