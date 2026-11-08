@@ -1,3 +1,11 @@
+# PretreCoach 0.9.8
+
+- Quêtes clés jusqu'au niveau 60 (donjons et quêtes de classe prêtre).
+- Mot de l'ombre : Mort reconnu (sorts de Forever) et conseillé dès qu'il est appris.
+- Pénitence reconnue comme talent.
+- Règles 6 et 7 et objectifs (bâtons de Ragefeu et des Cavernes, potions de mana en stock, Triage) vérifiés automatiquement, plus aucune case à cocher.
+- Mana illisible : la baguette reste conseillée, jamais Attaque mentale à l'aveugle.
+
 # PretreCoach 0.9.7
 
 - Bulle des objets : verdict clair en couleur (GARDER, VENDRE, CRAFTER) avec la raison et les chiffres.
