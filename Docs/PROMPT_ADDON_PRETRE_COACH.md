@@ -76,7 +76,7 @@ Comme on ne connaît pas exactement l'API de Forever, commence par une commande 
   - l'identifiant de carte de la zone actuelle (`C_Map.GetBestMapForUnit("player")`) ;
   - si `UNIT_SPELLCAST_SUCCEEDED`, `PLAYER_LEVEL_UP`, `PLAYER_EQUIPMENT_CHANGED`, `ZONE_CHANGED_NEW_AREA`, `TRAINER_SHOW`, `PLAYER_TARGET_CHANGED`, `SKILL_LINES_CHANGED`, `QUEST_TURNED_IN` et les événements de talents se déclenchent bien ;
   - s'il existe une API pour les talents Legacy et la double spécialisation ;
-  - les compétences de métier (Herboristerie, Alchimie, Secourisme) et leur rang, lisibles ou non, et l'API qui les donne (`GetProfessions`/`GetProfessionInfo` ou `GetSkillLineInfo`).
+  - les compétences de métier (Herboristerie, Alchimie, Secourisme) et leur rang, lisibles ou non, et l'API qui les donne (`GetProfessions`/`GetProfessionInfo`; `GetSkillLineInfo` est absent, Forever : voir 10.1).
 - Demande au joueur de lancer la sonde en jeu et de te coller le résultat. **Adapte ensuite le code à ce qui est réellement disponible.**
 
 ---
@@ -311,7 +311,7 @@ Expert à 125 via un manuel (vendeur à vérifier), Artisan à 225 via la quête
 - Grande icône du cycle avec une lueur douce animée (AnimationGroup) quand le conseil change.
 - Objectifs cochés avec une petite animation ; jalons présentés comme une frise verticale élégante.
 - Notifications en « toast » qui glissent puis disparaissent, jamais de spam dans le chat. Une notification identique ne se répète pas avant un délai.
-- Fenêtres déplaçables, verrouillables, taille et opacité réglables. Réglages sauvegardés par personnage (SavedVariables).
+- Fenêtres déplaçables, verrouillables, taille et opacité réglables. Réglages sauvegardés en local, par machine (SavedVariables, rien n'est synchronisé).
 - Panneau d'options (via l'API `Settings` si elle existe dans Forever, sinon une fenêtre maison) : afficher ou masquer chaque bloc (guide, cycle, règles d'or, toasts), taille, opacité, verrouillage.
 - Tous les textes en français dans `Locales/frFR.lua`.
 - Commandes : `/coach` (options), `/coach guide`, `/coach lock`, `/coach unlock`, `/coach reset`, `/coach probe`, `/coach debug`.
@@ -357,7 +357,7 @@ PretreCoach/
 
 ## 9. Ordre de travail
 
-1. Crée la structure et le .toc, puis la commande `/coach probe`. Donne-moi les instructions pour copier le dossier dans `_forever_/Interface/AddOns/` (un petit script de copie ou un lien symbolique, pour que je puisse tester en tapant `/reload`).
+1. Crée la structure et le .toc, puis la commande `/coach probe`. Donne-moi les instructions pour copier le dossier dans `_forever_/Interface/AddOns/` (`install.ps1` sous Windows, `install.sh` sous Mac : lien symbolique, pour tester en tapant `/reload` ; diffusion : voir L19).
 2. Attends le résultat de la sonde que je te colle, et adapte le plan.
 3. Fais la fenêtre du guide interactif avec les objectifs qui se cochent seuls (section 3) et les données de référence (section 6).
 4. Ajoute la surveillance des règles d'or (section 4).
@@ -412,7 +412,7 @@ Sonde réelle : client 1.60.1 build 70862, Interface 16001, frFR. Ces faits prim
 | **L16 Métiers en direct** | À l'ouverture de la fenêtre de métier : lecture des recettes et de leur difficulté → « Fabrique X pour monter ». Coût des composants et marge via Auctionator. Route des herbes en liste statique par tranche (section 6.6) | `C_TradeSkillUI`, Auctionator, `Data/Professions.lua` | Sans Auctionator, pas de coût ni de marge. Sans `C_TradeSkillUI`, listes de la section 6.6 |
 | **L17 Vente et farm** | **Vente** : scan des sacs hors combat → quoi vendre à l'hôtel des ventes (prix Auctionator contre prix marchand). **Farm** : liste sourcée des boss et objets utiles au prêtre, plus le journal de donjon du jeu | Scans du joueur uniquement (`C_Container`), `Data/` pour le farm, `C_EncounterJournal` si la sonde confirme qu'il existe | Pas de scan, pas de conseil de vente. Sans journal de donjon, la liste de `Data/` seule |
 | **L18 Quêtes clés** | Courte liste écrite par ID : quêtes de classe, donjons, récompenses utiles au prêtre | Vérifiée en direct : `Quest.Exists`, prérequis, donneur et coordonnées via Questie, nom localisé via `C_QuestLog` | ID non confirmé : objectif à cocher à la main, marqué « à vérifier » |
-| **L19 Diffusion** | Dépôt GitHub public. Installation sur chaque PC ou Mac par WowUp si un essai à blanc prouve qu'il gère `_forever_`. Sauvegardes locales par machine (choix de l'utilisateur) | Dépôt GitHub | Sinon git clone + lien : `install.ps1` (Windows), `install.sh` (Mac). Mise à jour = `git pull` puis `/reload`. Chemin Mac : `/Applications/World of Warcraft/_forever_/Interface/AddOns/` |
+| **L19 Diffusion** | Dépôt GitHub public (Slipndi/PretreCoach), release avec zip, installation par WowUp (PC et Mac, WowUp.CF 2.25.4 gère `_forever_`). Dépendances optionnelles : Questie, Auctionator (+ QuestDB, What's Training). Sauvegardes locales par machine | Dépôt GitHub, `build-release.ps1` | Sinon git clone + lien : `install.ps1` (Windows), `install.sh` (Mac). Mise à jour = `git pull` puis `/reload`. Chemin Mac : `/Applications/World of Warcraft/_forever_/Interface/AddOns/` |
 
 ### 10.4 Règle 0 rappelée
 
