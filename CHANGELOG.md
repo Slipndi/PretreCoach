@@ -1,3 +1,10 @@
+# PretreCoach 0.9.7
+
+- Bulle des objets : verdict clair en couleur (GARDER, VENDRE, CRAFTER) avec la raison et les chiffres.
+- Garde ce dont tes métiers auront besoin dans les 50 prochains points, même après le prochain rang, quel que soit ton objectif ; affiche ce que coûterait le rachat.
+- Reconnaît les composants des recettes que tu as apprises (lus à l'ouverture de la fenêtre de métier).
+- Le surplus est vendu ou crafté selon ce qui rapporte le plus.
+
 # PretreCoach 0.9.6
 
 - Or : l'objectif manuel est remplacé par le prochain achat utile (sorts, rang de métier, recette, baguette), avec le reste à gagner et le temps estimé.
