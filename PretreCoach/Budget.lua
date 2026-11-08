@@ -23,7 +23,10 @@ function Budget.Reserve()
     r.spell = plan.known or 0
     if (plan.unknown or 0) > 0 then r.unknown[#r.unknown + 1] = L.BUDGET_UNKNOWN:format(L.BUDGET_SPELLS) end
   end
-  r.spell = r.spell + (ns.Training and ns.Training.Upcoming(State.level) or 0)
+  local up, upUnknown = 0, 0
+  if ns.Training then up, upUnknown = ns.Training.Upcoming(State.level) end
+  r.spell = r.spell + (up or 0)
+  if (upUnknown or 0) > 0 then r.unknown[#r.unknown + 1] = L.BUDGET_UNKNOWN_SPELLS:format(upUnknown) end
   local todo = Calc.ProfessionTodo(State.level, State.profs, D.Professions)
   for _, t in ipairs(todo or {}) do
     if num(t.rank.cost) then r.rank = r.rank + t.rank.cost

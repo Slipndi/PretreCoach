@@ -129,10 +129,10 @@ local function levelCost(from, to)
   return total, unknown
 end
 
--- Cout connu des sorts des prochains niveaux (reserve de Budget) ; 0 si inconnu.
+-- Cout connu des sorts des prochains niveaux (reserve de Budget) ; 0 si inconnu. 2e valeur : nombre de sorts au prix inconnu.
 function Training.Upcoming(level)
-  if type(level) ~= "number" then return 0 end
-  return (levelCost(level + 1, level + AHEAD))
+  if type(level) ~= "number" then return 0, 0 end
+  return levelCost(level + 1, level + AHEAD)
 end
 
 -- Argent du joueur face au cout des sorts a apprendre (plan = Training.Plan) : vert si assez, rouge s'il manque ;

@@ -333,7 +333,7 @@ local function suite(label)
     LibStub = function(name) return name == "LibQuestDB-1.0" and lib or nil end
     WT_API = { IsReady = function() return true end, GetCatalog = function() return {} end, GetSource = function() end }
     t = probeText()
-    assert(t:find("QuestDB : chargé, prêt, 3 récompense(s)", 1, true), "QuestDB present")
+    assert(t:find("quête test 6561 : 3 objet(s)", 1, true), "QuestDB present")
     assert(t:find("What's Training : chargé, prêt, coût des sorts du prochain niveau", 1, true), "WT present")
     WT_API.IsReady = function() error("boom") end
     assert(probeText():find("What's Training : chargé, pas prêt", 1, true), "WT qui plante")
@@ -6445,7 +6445,7 @@ local function suite(label)
     if hasKnows then
       knows(knownUpTo(n, 12))
       local r = n.Budget.Reserve()
-      assert(r.spell == 3700 and #r.unknown == 0, "reserve : sorts des prochains niveaux " .. r.spell)
+      assert(r.spell == 3700 and #r.unknown == 1 and r.unknown[1] == "+ 1 sort(s) au prix inconnu", "reserve : sorts des prochains niveaux " .. r.spell .. " / " .. (r.unknown[1] or "-"))
       knows(knownUpTo(n, 10))
       plan = n.Training.Plan(12)
       local got

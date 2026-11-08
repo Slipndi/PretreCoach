@@ -598,7 +598,9 @@ local function ExtraSections(add, section)
       else
         local okG, r = pcall(lib.GetRewards, lib, 6561)
         local n = okG and type(r) == "table" and (#(r.items or {}) + #(r.choices or {})) or 0
-        add("QuestDB : chargé, prêt, %d récompense(s) pour la quête 6561 (objets + choix)", n)
+        local okC, total = pcall(lib.GetRewardCount, lib)
+        add("QuestDB : chargé, prêt, %s quête(s) avec récompenses | quête test 6561 : %d objet(s) + choix, XP %s",
+          okC and type(total) == "number" and tostring(total) or "?", n, tostring(okG and type(r) == "table" and r.xp or nil))
       end
     end
     if type(WT_API) ~= "table" then

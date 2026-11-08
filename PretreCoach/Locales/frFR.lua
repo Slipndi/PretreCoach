@@ -385,6 +385,7 @@ ns.L = {
   BUDGET_RANK = "ton rang de métier",
   BUDGET_RECIPE = "tes recettes",
   BUDGET_UNKNOWN = "coût inconnu : %s",
+  BUDGET_UNKNOWN_SPELLS = "+ %d sort(s) au prix inconnu",
   OPT_KEEPTIP = "Conseil garder / vendre dans la bulle des objets",
   KEEP_TAG = "PretreCoach : ",
   KEEP_KEEP = "Garder %d (%s → %d)",
