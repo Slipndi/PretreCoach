@@ -779,11 +779,17 @@ local function suite(label)
     mock.fire("SPELLS_CHANGED")
   end)
 
+  check("Spells : Mort a les IDs Forever (1309595, 1309633), plus le 32379 inexistant", function()
+    local ids = {}
+    for _, sp in ipairs(N.Data.Spells) do if sp.key == "SWD" then for _, r in ipairs(sp.ranks) do ids[#ids + 1] = r.id end end end
+    assert(ids[1] == 1309595 and ids[2] == 1309633 and #ids == 2, "rangs SWD")
+  end)
+
   check("State : Knows ignore un rang sans nom (SWD), IsPlayerSpell qui plante", function()
     if not IsPlayerSpell and not IsSpellKnown and not C_SpellBook then return end
     local function has(list, key) for _, p in ipairs(list) do if p.key == key then return true end end end
     mock.known = {}
-    mock.unknown = { spell = { [32379] = true } }
+    mock.unknown = { spell = { [1309595] = true, [1309633] = true } }
     mock.fire("SPELLS_CHANGED")
     assert(St.Knows("SWD") == nil, "ID sans nom = inconnu")
     assert(not has(C.PendingSpells(60, St.Knows), "SWD"), "jamais a apprendre sans pouvoir l'etre")

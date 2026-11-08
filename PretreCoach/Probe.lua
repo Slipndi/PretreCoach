@@ -9,7 +9,7 @@ local S, L = ns.S, ns.L
 local SPELLS = {
   { 585, "Châtiment" }, { 589, "Mot de l'ombre : Douleur" }, { 17, "Mot de pouvoir : Bouclier" },
   { 8092, "Attaque mentale" }, { 14914, "Flammes sacrées" }, { 15407, "Fouet mental" },
-  { 15473, "Forme d'Ombre" }, { 32379, "Mot de l'ombre : Mort" }, { 6346, "Protection contre la peur" },
+  { 15473, "Forme d'Ombre" }, { 1309595, "Mot de l'ombre : Mort" }, { 6346, "Protection contre la peur" },
   { 2944, "Peste dévorante" }, { 14752, "Esprit divin" }, { 2652, "Toucher de faiblesse" },
   { 1277324, "Sacrifice sombre" }, { 20577, "Cannibalisme" }, { 5019, "Tir (baguette)" },
   { 8122, "Cri psychique" }, { 15271, "Connexion spirituelle (buff)" }, { 47540, "Pénitence" },

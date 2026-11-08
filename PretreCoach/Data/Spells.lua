@@ -40,8 +40,8 @@ ns.Data.Spells = {
     ranks = { { id = 15473, level = 40 } } },
   -- Ajouts Forever
   { key = "SWD", harmful = true, name = "Mot de l'ombre : Mort", talent = false, racial = false,
-    cooldown = 12, duration = nil, manaCost = true, verify = true, -- à vérifier : ID 32379 (TBC) tiré de WoWForeverRot, absent de la liste prêtre TellMeWhen ; recharge et rangs non confirmés
-    ranks = { { id = 32379, level = 32, verify = true } } },
+    cooldown = 12, duration = nil, manaCost = true, verify = true, -- à vérifier : IDs 1309595 (niveau 32) et 1309633 (niveau 40) lus dans WhatsTraining/Camelot/Priest.lua (maître Forever) ; nom et recharge non confirmés
+    ranks = { { id = 1309595, level = 32, verify = true }, { id = 1309633, level = 40, verify = true } } },
   { key = "FEARWARD", name = "Protection contre la peur", talent = false, racial = false,
     cooldown = 30, duration = 600, manaCost = true,
     ranks = { { id = 6346, level = 20, verify = true } } }, -- à vérifier : niveau 20 pour tous les prêtres (spec Forever), ID Classic présent dans TellMeWhen
