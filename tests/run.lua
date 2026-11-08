@@ -4703,7 +4703,7 @@ local function suite(label)
     assert(b.kind == "sell" and b.value == 19800, "vente : " .. tostring(b.kind) .. " " .. tostring(b.value))
     assert(b.text == "Vends 20 Baguette 101 à l'HdV (≈ " .. n.Prof.Money(20000) .. ")", b.text)
     local c = n.Gold.Candidates()
-    assert(#c == 3 and c[1].kind == "sell" and c[2].kind == "gather" and c[3].kind == "craft", "tri par valeur")
+    assert(#c == 3 and c[1].kind == "sell" and c[2].kind == "craft" and c[3].kind == "gather", "tri par cuivre/min : vente, craft, cueillette")
     mock.ah[101] = { 1000, 10 } -- prix trop ancien : la vente n'est plus proposee
     bagScan(n)
     assert(n.Gold.Best().kind ~= "sell", "prix ancien ecarte")
@@ -4817,7 +4817,7 @@ local function suite(label)
     G.win.tabs[idx].scripts.OnClick(G.win.tabs[idx])
     assert(n.db.guide.tab == "gold" and G.used == 4, "3 actions puis la session : " .. G.used)
     local rows = n.Gold.Rows()
-    assert(rows[1].text:find("Vends 20", 1, true) and rows[2].text:find("Cueille", 1, true) and rows[3].text:find("Fabrique", 1, true), "tri par valeur")
+    assert(rows[1].text:find("Vends 20", 1, true) and rows[2].text:find("Fabrique", 1, true) and rows[3].text:find("Cueille", 1, true), "tri par cuivre/min")
     assert(rows[4].text:find("Session :", 1, true), "session en dernier")
     mock.money = nil
   end)
@@ -5969,6 +5969,75 @@ local function suite(label)
       lib.Item = keep
       assert(#n2.Farm.Rows(1420) == 0)
     end
+  end)
+
+  ------------------------------------------------------------------------
+  -- Invariants de coherence du guide (une seule verite entre rangees)
+  ------------------------------------------------------------------------
+  check("Coherence : or trie au cuivre/min, cueillette en route, une seule destination, rien de garde ni vendu", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = built(herbN(60))
+    mock.qquests = { [201] = { name = "Q201", startedBy = { { 9001 } }, questLevel = 20 } }
+    valueLog({ 201 })
+    mock.money = 5000000
+    n.Quests.Refresh()
+    local c = n.Gold.Candidates()
+    for i = 2, #c do assert(c[i - 1].perMin >= c[i].perMin, "(d) tri par cuivre/min") end
+    local hasRoute = false
+    for _, s in ipairs(n.Quests.Route()) do if s.here and s.x then hasRoute = true end end
+    assert(hasRoute, "(e) l'itineraire du scenario a un arret localise sur la carte")
+    local function pick(list, f) for _, a in ipairs(list) do if f(a) then return a end end end
+    local along = pick(c, function(a) return a.kind == "gather" and a.along end)
+    assert(along and along.text:find("en route", 1, true) and not along.go, "(e) cueille en route : " .. tostring(along and along.text))
+    assert(not pick(c, function(a) return a.kind == "gather" and a.go end), "(e) pas de boucle concurrente")
+    -- cas inverse : une boucle bien plus rentable que l'itineraire de quetes est proposee a la place
+    mock.ah[765] = { 1000000, 1 }
+    local c2 = n.Gold.Candidates()
+    assert(not pick(c2, function(a) return a.along end), "(e) boucle > 1,5 x quete : pas de cueillette en route")
+    assert(pick(c2, function(a) return a.kind == "gather" and a.go end), "(e) la boucle est proposee")
+    mock.ah[765] = { 30, 1 }
+    local primary = 0
+    for _, g in ipairs(n.Guide.Goals()) do if g.go and g.primary ~= false then primary = primary + 1 end end
+    local far = 0
+    for _, g in ipairs(n.Guide.Goals()) do if g.go and g.primary == false then far = far + 1 end end
+    assert(primary <= 1 or far == 0, "(c) au plus une destination principale : " .. primary)
+    -- (a) rien de garde ET vendu : un objet a crafter n'est jamais propose a la vente
+    mock.items, mock.sellPrice = { [765] = 8 }, { [765] = 2 }
+    n.Sell.Scan()
+    for _, l in ipairs(n.Sell.Lines) do
+      local v = n.Keep.Verdict(l.itemID, l.count)
+      assert(v.keep == 0 or l.count <= v.rest, "(a) garde et vendu : " .. l.itemID)
+    end
+    mock.items, mock.sellPrice, mock.money = nil, nil, nil
+    assert(not findSecret(n.db, "db"), "(f) rien de secret dans db")
+  end)
+
+  check("Coherence : reserve d'argent, achat refuse avec raison, cout inconnu signale sans estimation", function()
+    local n = fresh().n
+    mock.money = 1000
+    local r = n.Budget.Reserve()
+    assert(r.money == 1000 and r.spell >= 0 and r.rank == 0, "(f) rang de metier : cout inconnu, jamais invente")
+    local ok = n.Budget.Check("comps", 1)
+    assert(ok == true or ok == false)
+    -- (b) un sort a payer chez le maitre bloque un achat que l'argent seul permettrait
+    n.db.trainer = { ["Sort1|"] = { cost = 900, category = "available" } }
+    local real = n.Training.Plan
+    n.Training.Plan = function() return { pending = { {} }, known = 900, unknown = 1, total = 900 } end
+    local ok2, why = n.Budget.Check("recipe", 500)
+    assert(ok2 == false and why:find("garde", 1, true) and why:find("sorts", 1, true), "(b) achat refuse avec raison : " .. tostring(why))
+    assert(n.Budget.Check("spell", 500) == true, "les sorts passent en premier")
+    local rr = n.Budget.Reserve()
+    local flagged = false
+    for _, u in ipairs(rr.unknown) do if u:find("coût inconnu", 1, true) then flagged = true end end
+    assert(flagged, "(f) un sort au cout inconnu est signale")
+    n.Training.Plan = real
+    mock.money = 5
+    local ok3, why3 = n.Budget.Check("comps", 100)
+    assert(ok3 == false and why3:find("manque", 1, true), "(b) il te manque : " .. tostring(why3))
+    mock.moneySecret = true
+    assert(n.Budget.Check("comps", 100) == true, "argent secret : rien a prouver")
+    mock.moneySecret, mock.money = nil, nil
+    assert(not findSecret(n.db, "db"))
   end)
 end
 

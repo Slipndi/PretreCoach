@@ -41,6 +41,7 @@ GoldenRules.lua
 Training.lua
 Talents.lua
 Professions.lua
+Budget.lua
 Sell.lua
 Gold.lua
 Keep.lua

@@ -24,25 +24,51 @@ local function fresh(id)
 end
 Gold.Fresh = fresh
 
+-- Chaque candidat porte perMin = cuivre par minute, la seule valeur de tri (comparable a Quests : meme unite, voir Guide.Goals).
+-- shortcut: durees a la louche (Classic), a recaler sur des mesures en jeu.
+local AH_TRIP_SECS, LIST_SECS = 120, 30 -- aller a l'HdV si on n'y est pas ; mise en vente
+local CRAFT_BATCH, CRAFT_SECS, CRAFT_SETUP = 5, 3, 10 -- fabrications supposees par lot, lancement, preparation (secondes)
+local NODE_SECS, NEAR, LOOP_WIN = 20, 3, 1.5 -- detour par noeud cueilli en route ; distance (0-100 de carte) ; boucle seule : x1,5 minimum
+
+local function atAH()
+  local f = _G.AuctionHouseFrame
+  local ok, shown = pcall(function() return f and f:IsShown() end)
+  return ok and shown == true
+end
+
+local function craftMins(n) return (n * CRAFT_SECS + CRAFT_SETUP) / 60 end
+
 local function sell(out)
   for _, l in ipairs(ns.Sell.Lines) do -- deja triees par gain decroissant
     if l.advice == "ah" and not l.old then
-      out[#out + 1] = { kind = "sell", value = l.gain, text = L.GOLD_SELL:format(l.count, l.name or ("objet " .. l.itemID), money(l.amount)) }
+      local mins = ((atAH() and 0 or AH_TRIP_SECS) + LIST_SECS) / 60
+      out[#out + 1] = { kind = "sell", value = l.gain, perMin = l.gain / mins,
+        text = L.GOLD_SELL:format(l.count, l.name or ("objet " .. l.itemID), money(l.amount)) }
       return
     end
   end
 end
 
 -- Meilleure marge par recette connue (Prof.Advice) ; une marge n'existe que si tous les composants ont un prix.
+-- Composants a acheter (pas encore dans les sacs) : payables apres la reserve (Budget), sinon une seule rangee dit pourquoi.
 local function craft(out)
+  local blocked
   for line in pairs(type(State.profs) == "table" and State.profs or {}) do
     local adv = ns.Prof.Get(line)
     for _, r in ipairs(adv and adv.list or {}) do
       if num(r.margin) and r.margin > 0 then
-        out[#out + 1] = { kind = "craft", value = r.margin, text = L.GOLD_CRAFT:format(r.name or "?", money(r.margin)) }
+        local ok, why = true, nil
+        if not r.craftable and num(r.cost) and ns.Budget then ok, why = ns.Budget.Check("comps", r.cost) end
+        if ok then
+          out[#out + 1] = { kind = "craft", value = r.margin, perMin = r.margin * CRAFT_BATCH / craftMins(CRAFT_BATCH),
+            text = L.GOLD_CRAFT:format(r.name or "?", money(r.margin)) }
+        elseif not blocked or r.margin > blocked.value then
+          blocked = { kind = "blocked", value = r.margin, perMin = 0, text = L.GOLD_BLOCKED:format(r.name or "?", money(r.cost), why) }
+        end
       end
     end
   end
+  if blocked then out[#out + 1] = blocked end
 end
 
 -- Herbes cueillables a ton rang : nom -> itemID tire des composants de Data/ProfPlan (les herbes sans ID sont ignorees).
@@ -61,12 +87,51 @@ local function zoneLabel(id)
   return ns.Goto.Zone({ uiMapID = id }) or (z and z[3]) or tostring(id)
 end
 
+-- Distance d'un point au segment ab (coordonnees 0-100 de la carte).
+local function segDist(p, a, b)
+  local dx, dy = b.x - a.x, b.y - a.y
+  local len2 = dx * dx + dy * dy
+  local t = len2 > 0 and math.max(0, math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) or 0
+  return math.sqrt((p.x - a.x - t * dx) ^ 2 + (p.y - a.y - t * dy) ^ 2)
+end
+
+-- Cueillette en route : noeuds a moins de NEAR d'un arret de l'itineraire de quetes (ou du segment entre deux arrets de la carte).
+-- nil sans arret localise ici, sans noeud, ou si la boucle seule rapporte nettement plus par minute que l'itineraire (Quests.score).
+local function along(lp)
+  local route, stops = ns.Quests and ns.Quests.Route() or {}, {}
+  for _, s in ipairs(route) do
+    if s.here and type(s.x) == "number" and type(s.y) == "number" then stops[#stops + 1] = s end
+  end
+  if #stops == 0 or not ns.Gather then return nil end
+  local qrate = route[1] and route[1].v and num(route[1].v.score)
+  if lp and qrate and lp.perHour / 60 > LOOP_WIN * qrate then return nil end
+  local n, value, names = 0, 0, {}
+  for _, h in ipairs(ns.Gather.Herbs(State.mapID)) do
+    local cnt = 0
+    for _, p in ipairs(h.nodes) do
+      for i, s in ipairs(stops) do
+        if segDist(p, s, stops[i + 1] or s) <= NEAR then cnt = cnt + 1 break end
+      end
+    end
+    if cnt > 0 then
+      n, value = n + cnt, value + cnt * (h.value or 0)
+      if #names < 3 then names[#names + 1] = h.name end
+    end
+  end
+  if n == 0 or value <= 0 then return nil end
+  return { kind = "gather", along = true, value = value, perMin = value / (n * NODE_SECS / 60),
+    text = L.GOLD_ALONG:format(n, table.concat(names, ", ")) }
+end
+
 -- Boucle d'herbes de la carte (Gather) ; valeur = ce que rapporte un tour. Sinon : meilleure herbe de Data/ProfPlan.
+-- Un itineraire de quetes localise ici prime : on cueille en route au lieu d'une boucle concurrente (along).
 local function gather(out)
   local lp = ns.Gather and ns.Gather.Loop(State.mapID)
+  local a = along(lp)
+  if a then out[#out + 1] = a return end
   if lp then
     local s = lp.stops[1]
-    out[#out + 1] = { kind = "gather", value = lp.total,
+    out[#out + 1] = { kind = "gather", value = lp.total, perMin = lp.perHour / 60,
       text = L.GOLD_LOOP:format(#lp.stops, table.concat(lp.names, ", "), money(math.floor(lp.perHour))),
       go = { mapID = lp.mapID, x = s.x, y = s.y, text = L.GOLD_LOOP_GO:format(s.herb.name) } }
     return
@@ -93,13 +158,15 @@ local function gather(out)
   if not c then return end
   local text = here and L.GOLD_GATHER_HERE:format(c.name, money(c.price))
     or L.GOLD_GATHER_AT:format(c.name, c.zone and zoneLabel(c.zone) or "?", money(c.price))
-  out[#out + 1] = { kind = "gather", value = c.price * HERB_BATCH, text = text }
+  local G = ns.Gather
+  out[#out + 1] = { kind = "gather", value = c.price * HERB_BATCH, text = text,
+    perMin = c.price * (G and G.YIELD or 1.5) * (G and G.NODES_PER_HOUR or 120) / 60 }
 end
 
 -- Craft-pour-vendre avec les ressources des sacs (Keep) : gain par rapport a la vente directe.
 local function keepCraft(out)
   local b = ns.Keep and ns.Keep.BestCraft()
-  if b and b.value > 0 then out[#out + 1] = { kind = "craft", value = b.value, text = b.text } end
+  if b and b.value > 0 then out[#out + 1] = { kind = "craft", value = b.value, perMin = b.value / craftMins(b.n or 1), text = b.text } end
 end
 
 -- Actions a/b/c rangees par valeur decroissante (au plus TOP) ; vide sans Auctionator.
@@ -107,7 +174,10 @@ function Gold.Candidates()
   local out = {}
   if not (ns.AH and ns.AH.Available()) then return out end
   for _, f in ipairs({ sell, craft, gather, keepCraft }) do pcall(f, out) end
-  table.sort(out, function(a, b) return a.value > b.value end)
+  table.sort(out, function(a, b)
+    if a.perMin ~= b.perMin then return a.perMin > b.perMin end
+    return a.value > b.value
+  end)
   for i = #out, TOP + 1, -1 do out[i] = nil end
   return out
 end
@@ -116,7 +186,7 @@ function Gold.Best()
   local c = Gold.Candidates()[1]
   if c then return c end
   local ah = ns.AH and ns.AH.Available()
-  return { kind = "tip", text = L.GOLD_TIP, detail = not ah and L.SELL_NO_AH or nil, value = 0 }
+  return { kind = "tip", text = L.GOLD_TIP, detail = not ah and L.SELL_NO_AH or nil, value = 0, perMin = 0 }
 end
 
 ------------------------------------------------------------------------

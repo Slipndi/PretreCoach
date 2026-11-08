@@ -191,7 +191,7 @@ local function items()
       rowsNow[#rowsNow + 1] = {
         id = e and e.id or ("goal:" .. (g.line or g.kind)), text = L.GW_GOAL:format(g.label, g.text),
         done = e and e.done or false, unknown = e and e.unknown or false, manual = e and e.manual or false,
-        go = g.kind == "xp" and e and e.go or g.go, sub = g.detail or (e and e.sub), alert = g.alert,
+        go = g.primary ~= false and (g.kind == "xp" and e and e.go or g.go) or nil, sub = g.detail or (e and e.sub), alert = g.alert,
       }
     end
     return "now", rowsNow, L.GW_NOW_EMPTY
@@ -320,7 +320,7 @@ local function fillCardRow(r, g, i, y)
     if not (type(frac) == "number" and not secret(frac)) then frac = nil end
   end
   -- « Où aller » : cible de l'objectif XP non fait, ou du metier dont le rang est a prendre
-  local go = g.kind == "xp" and (g.go or (g.e and not g.e.done and g.e.go)) or g.kind ~= "xp" and g.go or nil
+  local go = g.primary ~= false and (g.kind == "xp" and (g.go or (g.e and not g.e.done and g.e.go)) or g.kind ~= "xp" and g.go) or nil
   local d = go and ns.Goto.For(go) or nil
   local can = ns.Goto.CanPlace(d)
   r.dest = d

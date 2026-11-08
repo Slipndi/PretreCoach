@@ -382,6 +382,7 @@ local function xpPick(list, leftover)
   end
 end
 
+local FAR_GO = 10 -- deux reperes a plus de 10 (sur 100) l'un de l'autre, ou sur deux cartes : destinations concurrentes
 local PROF_ORDER = { 182, 171, 129 } -- Herboristerie, Alchimie, Secourisme, puis les autres métiers connus
 
 -- Objectifs affichés : XP d'abord, puis un par métier actif. Entrée : { kind, line, label, e, text }.
@@ -399,10 +400,23 @@ function Guide.Goals()
   out[1] = { kind = "xp", label = L.GUIDE_XP, e = xp, text = text, detail = detail, go = go, quest = quest }
   local profs = State.profs
   -- Or : derniere rangee, masquable (show.gold)
+  -- Une seule destination principale : si l'XP et l'Or visent deux lieux eloignes, celui qui rapporte le plus par minute
+  -- (Quests.score contre Gold.perMin, meme unite) garde le Repere ; l'autre garde son texte et son `go`, avec primary = false.
+  local function onePrimary(gold)
+    local xpGo = out[1].go or (out[1].e and not out[1].e.done and out[1].e.go)
+    local a, b = xpGo and ns.Goto.For(xpGo), gold.go and ns.Goto.For(gold.go)
+    if not (ns.Goto.CanPlace(a) and ns.Goto.CanPlace(b)) then return end
+    if a.mapID == b.mapID and math.sqrt((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) <= FAR_GO then return end
+    local r = out[1].quest and ns.Quests.Route()[1]
+    local xpRate = r and r.v and r.v.score
+    if type(xpRate) == "number" and (gold.best.perMin or 0) > xpRate then out[1].primary = false else gold.primary = false end
+  end
   local function withGold()
     if ns.Gold and not (ns.db and ns.db.show and ns.db.show.gold == false) then
       local b = ns.Gold.Best()
-      out[#out + 1] = { kind = "gold", label = L.GOLD_LABEL, text = b.text, detail = ns.Gold.SessionText() or b.detail, go = b.go, best = b }
+      local g = { kind = "gold", label = L.GOLD_LABEL, text = b.text, detail = ns.Gold.SessionText() or b.detail, go = b.go, best = b }
+      out[#out + 1] = g
+      pcall(onePrimary, g)
     end
     return out
   end

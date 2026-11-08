@@ -239,7 +239,7 @@ function Keep.BestCraft()
     if v.restKind == "craft" then
       local gain = (v.craft - (v.sell or 0)) * v.rest
       if not best or gain > best.value then
-        best = { value = gain, text = L.GOLD_KEEP_CRAFT:format(v.craftName, v.rest, v.name or ("objet " .. v.id), money(v.craft)) }
+        best = { value = gain, n = v.rest, text = L.GOLD_KEEP_CRAFT:format(v.craftName, v.rest, v.name or ("objet " .. v.id), money(v.craft)) }
       end
     end
   end

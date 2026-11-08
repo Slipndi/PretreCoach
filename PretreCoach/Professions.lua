@@ -273,6 +273,16 @@ end
 
 local function names(t, sep) return table.concat(t, sep or ", ") end
 
+Prof.StepFor, Prof.KnownRecipe = stepFor, knownRecipe -- pour Budget
+
+-- Achat de ce genre au cout connu payable apres la reserve (Budget) ? Rend true, ou false et la raison ; sous pcall.
+local function afford(kind, cost)
+  if not (cost and cost > 0 and ns.Budget) then return true end
+  local ok, yes, why = pcall(ns.Budget.Check, kind, cost)
+  if ok and yes == false then return false, why end
+  return true
+end
+
 local GOKEY = { [182] = "HERBALISM", [171] = "ALCHEMY", [129] = "FIRSTAID" } -- cibles de Goto.For ; autres metiers : pas de lieu
 
 function Prof.Steps(line)
@@ -319,21 +329,30 @@ function Prof.Steps(line)
   if step.buy then
     local b = step.buy
     local known = knownRecipe(adv, b.recipe) and true or nil
-    add("buy", L.PROF_STEP_BUY:format(b.item or ("Recette : " .. b.recipe), b.where) .. (b.price and (" (" .. Prof.Money(b.price) .. ")") or ""), known)
+    local txt = L.PROF_STEP_BUY:format(b.item or ("Recette : " .. b.recipe), b.where) .. (b.price and (" (" .. Prof.Money(b.price) .. ")") or "")
+    local ok, why = true, nil
+    if not known then ok, why = afford("recipe", b.price) end
+    add("buy", ok and txt or (txt .. " : " .. why), known)
+    todo[#todo].blocked = not ok or nil
   end
   if step.extra then add("extra", step.extra) end
   if step.comps then
     local left = math.max(1, math.ceil(step.crafts * (step.to - math.min(math.max(rank, step.from), step.to)) / (step.to - step.from)))
-    local parts, vendors, all = {}, {}, true
+    local parts, vendors, all, spend = {}, {}, true, 0
     for _, c in ipairs(step.comps) do
       local need, have = c.n * left, count(c.id)
       local nm = ico(c.id, c.name)
       parts[#parts + 1] = have and L.PROF_STEP_HAVE:format(need, nm, have) or ("%d %s"):format(need, nm)
-      if c.vendor then vendors[#vendors + 1] = nm end
+      if c.vendor then
+        vendors[#vendors + 1] = nm
+        if c.price then spend = spend + c.price * math.max(0, need - (have or 0)) end
+      end
       if have == nil then all = nil elseif have < need and all then all = false end
     end
     local text = L.PROF_STEP_GATHER:format(names(parts))
     if #vendors > 0 then text = text .. L.PROF_STEP_VENDOR:format(names(vendors, " et ")) end
+    local ok, why = afford("comps", spend)
+    if not ok then text = text .. " : " .. why end
     add("gather", text, all)
     add("craft", L.PROF_STEP_CRAFT:format(left, step.recipe, step.to))
   end
@@ -395,6 +414,13 @@ local function compute()
           local known = knownRecipe(adv, st.recipe)
           if known then e.skillUp = (known.color == "orange" or known.color == "yellow") or nil
           else e.confirm = true e.skillUp = (p.rank or 0) < st.to or nil end
+          -- Keep est la source : une ressource qu'il ne garde pas pour monter le metier (il la vend ou la craft ailleurs)
+          -- ne fait pas de ce craft un « skill-up » conseille ici
+          for _, c in ipairs(e.skillUp and st.comps or {}) do
+            local okK, kv = false, nil
+            if not c.vendor and ns.Keep then okK, kv = pcall(ns.Keep.Verdict, c.id) end
+            if okK and kv and kv.keep == 0 and not (kv.restKind == "craft" and kv.craftName == st.recipe) then e.skillUp = nil end
+          end
           for _, c in ipairs(st.comps) do
             if c.vendor then
               local qty = n * c.n
@@ -430,14 +456,22 @@ local function buyList(e)
   return names(t)
 end
 
+-- Achat de composants au cout connu non payable apres la reserve : « : garde X pour tes sorts » (sinon vide).
+local function buyWhy(e)
+  local total = 0
+  for _, b in ipairs(e.buy) do total = total + (b.cost or 0) end
+  local ok, why = afford("comps", total)
+  return ok and "" or (" : " .. why)
+end
+
 function Prof.BagText(e)
   local s = L.PROF_BAG:format(e.n, e.recipe, names(e.with, " et "))
-  if #e.buy > 0 then s = s .. L.PROF_BAG_BUY:format(buyList(e)) end
+  if #e.buy > 0 then s = s .. L.PROF_BAG_BUY:format(buyList(e)) .. buyWhy(e) end
   return e.confirm and (s .. L.PROF_BAG_CONFIRM) or s
 end
 
 function Prof.BagShort(e)
-  return L.PROF_BAG_SHORT:format(e.n, e.recipe) .. (#e.buy > 0 and L.PROF_BAG_SHORT_BUY:format(buyList(e)) or "")
+  return L.PROF_BAG_SHORT:format(e.n, e.recipe) .. (#e.buy > 0 and (L.PROF_BAG_SHORT_BUY:format(buyList(e)) .. buyWhy(e)) or "")
 end
 
 ns.On("BAG_UPDATE_DELAYED", function() if not InCombatLockdown() then Prof.Craftable() end end)
