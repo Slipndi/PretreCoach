@@ -1,7 +1,7 @@
 -- Or reellement gagne : chaque variation d'argent est rangee dans une activite (marchand, HdV, quetes, butin, depenses),
 -- temps actif des activites de terrain (quetes, cueillette), rendement des noeuds d'herbes mesure.
 -- Lecture seulement (Regle 0). Persistant (nombres seulement) : ns.db.earn = { v, act = { [activite] = { c = cuivre, s = secondes } }, herbs, nodes }
--- et ns.db.goldGoal (cuivre). Une valeur secrete est ignoree, jamais stockee.
+-- et ns.db.wealth { tier, record }. Une valeur secrete est ignoree, jamais stockee.
 local _, ns = ...
 local L, S, D = ns.L, ns.S, ns.Data
 
@@ -177,38 +177,144 @@ function Earn.Text()
   return L.EARN_TEXT:format(q and money(q) or "…", g and money(g) or "…")
 end
 
--- { goal, have, missing, eta } (cuivre, cuivre, cuivre, secondes) ou nil sans objectif ; have/missing nil si l'argent est illisible,
--- eta nil sans mesure (meilleur or/h entre quetes et cueillette).
-function Earn.Goal()
-  local goal = ns.db and num(ns.db.goldGoal)
-  if not (goal and goal > 0) then return nil end
+------------------------------------------------------------------------
+-- Prochain achat (automatique), monture du niveau 40, paliers de fortune. Lecture seule ; seuls wealth.tier et wealth.record
+-- (nombres lisibles) sont ecrits. Cout inconnu : l'achat est cite sans prix, jamais estime.
+------------------------------------------------------------------------
+local TIERS = { 1, 5, 10, 25, 50, 100, 250, 500, 1000 } -- po
+local MOUNT_LEVEL, RECORD_SECS = 40, 600
+
+local function nextItem()
+  local st = ns.State
+  local plan = ns.Training and ns.Training.Plan(st.level)
+  if plan and plan.pending and #plan.pending > 0 then -- 1. sorts a apprendre maintenant
+    local names = {}
+    for i = 1, math.min(#plan.pending, 2) do names[i] = plan.pending[i].text end
+    return { kind = "spell", what = L.EARN_WHAT_SPELLS:format(table.concat(names, ", ") .. (#plan.pending > 2 and ", …" or "")),
+      cost = (plan.unknown or 0) == 0 and (plan.known or 0) > 0 and plan.known or nil }
+  end
+  for _, t in ipairs(ns.Calc.ProfessionTodo(st.level, st.profs, D.Professions) or {}) do -- 2. rang de metier
+    local pf = D.Professions[t.skillLine]
+    return { kind = "rank", what = L.EARN_WHAT_RANK:format(t.rank.name, pf and pf.name or "?"), cost = num(t.rank.cost) }
+  end
+  local lines = {}
+  for line in pairs(D.ProfPlan or {}) do lines[#lines + 1] = line end
+  table.sort(lines)
+  for _, line in ipairs(lines) do -- 3. recette a acheter
+    local p = type(st.profs) == "table" and st.profs[line]
+    local step = p and ns.Prof.StepFor(D.ProfPlan[line], p.rank or 0)
+    local b = step and step.buy
+    if b and not ns.Prof.KnownRecipe(ns.Prof.Get(line), b.recipe) then
+      return { kind = "recipe", what = L.EARN_WHAT_RECIPE:format(b.recipe), cost = num(b.price) }
+    end
+  end
+  local _, best = ns.Calc.WandStatus(st.level, st.wand) -- 4. meilleure baguette
+  if best then return { kind = "wand", what = L.EARN_WHAT_WAND:format(best.name), cost = ns.Gold and num(ns.Gold.Fresh(best.itemID)) } end
+  if plan and plan.nextLevel and ((plan.nextTotal or 0) > 0 or (plan.nextUnknown or 0) > 0) then -- 5. sorts du prochain niveau
+    return { kind = "next", what = L.EARN_WHAT_NEXT:format(plan.nextLevel),
+      cost = (plan.nextUnknown or 0) == 0 and plan.nextTotal > 0 and plan.nextTotal or nil }
+  end
+end
+
+-- Reste a gagner pour `cost` : { cost, have, missing, eta (s), frac, ready } ; argent ou prix inconnu : cost seul.
+local function progress(cost)
   local have = num((S.Get(GetMoney)))
-  local r = { goal = goal, have = have, missing = have and math.max(0, goal - have) or nil }
+  local r = { cost = cost }
+  if not (have and cost) then return r end
+  r.have, r.missing, r.frac = have, math.max(0, cost - have), math.min(1, have / cost)
+  r.ready = r.missing == 0
   local best = math.max(Earn.PerHour("quetes") or 0, Earn.PerHour("cueillette") or 0)
-  if r.missing and r.missing == 0 then r.eta = 0 elseif r.missing and best > 0 then r.eta = r.missing / best * 3600 end
+  if r.ready then r.eta = 0 elseif best > 0 then r.eta = r.missing / best * 3600 end
   return r
 end
 
--- « Objectif 100 po : 23 % · ≈ 2 h » (sans duree si pas de mesure, « atteint » si fini), ou nil sans objectif.
-function Earn.GoalLine()
-  local g = Earn.Goal()
-  if not g then return nil end
-  if not g.have then return L.EARN_GOAL_LINE_NA:format(money(g.goal)) end
-  local tail = g.eta == 0 and L.EARN_GOAL_DONE or g.eta and (" · ≈ " .. duration(g.eta)) or ""
-  return L.EARN_GOAL_LINE:format(money(g.goal), math.min(100, math.floor(g.have / g.goal * 100)), tail)
+-- { kind, what, cost, have, missing, eta, frac, ready } ou nil s'il n'y a rien a acheter.
+function Earn.Next()
+  local it = nextItem()
+  if not it then return nil end
+  for k, v in pairs(progress(it.cost)) do it[k] = v end
+  return it
 end
 
--- /coach objectif <po> : fixe l'objectif ; sans nombre : l'efface.
-function Earn.SetGoal(arg)
-  if not ns.db then return end
-  arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
-  if arg == "" then ns.db.goldGoal = nil ns.Print(L.EARN_GOAL_CLEAR) return end
-  local po = tonumber((arg:gsub(",", ".")))
-  if not po or po <= 0 or po > 1e6 then ns.Print(L.EARN_GOAL_BAD) return end
-  ns.db.goldGoal = math.floor(po * 10000)
-  local g = Earn.Goal()
-  local st = g and g.missing and (g.eta and L.EARN_GOAL_ETA:format(money(g.missing), g.eta == 0 and "0 min" or duration(g.eta))
-    or L.EARN_GOAL_NOETA:format(money(g.missing))) or ""
-  ns.Print(L.EARN_GOAL_SET, money(ns.db.goldGoal), st)
-  ns.Fire("GUIDE")
+local function priced(what, cost) return cost and (what .. " (" .. money(cost) .. ")") or what end
+
+-- « ✓ prêt, va l'acheter » ou « Tu as X, il te manque Y · ≈ 30 min à ton rythme » ; nil si prix ou argent inconnu.
+local function detail(r)
+  if r.ready then return L.EARN_NEXT_READY end
+  if not r.have then return nil end
+  return L.RICH_HAVE:format(money(r.have), money(r.missing)) .. (r.eta and L.EARN_NEXT_ETA:format(duration(r.eta)) or "")
+end
+
+-- Onglet : (texte, detail).
+function Earn.NextText()
+  local r = Earn.Next()
+  if not r then return L.RICH_NONEXT end
+  return L.EARN_NEXT:format(priced(r.what, r.cost)), detail(r)
+end
+
+-- Carte : une ligne courte, et la fraction (0-1) pour la barre (nil si prix ou argent inconnu).
+function Earn.NextShort()
+  local r = Earn.Next()
+  if not r then return nil end
+  local s = L.EARN_NEXT:format(priced(r.what, r.cost))
+  if r.ready then return s .. " · " .. L.EARN_NEXT_READY, 1 end
+  return s .. (r.missing and (" · " .. L.EARN_NEXT_MISS:format(money(r.missing))) or ""), r.frac
+end
+
+-- Monture : cout de la competence de monte lu chez un maitre deja visite (ns.db.trainer), la moins elevee puis la moins chere.
+-- What's Training n'a pas la monte (catalogue de sorts de classe et d'armes seulement) : pas d'autre source. nil si illisible.
+function Earn.Mount()
+  local best
+  for k, v in pairs((ns.db and ns.db.trainer) or {}) do
+    local name = k:match("^(.*)|")
+    local low = type(name) == "string" and name:lower()
+    local cost = type(v) == "table" and num(v.cost)
+    if low and cost and cost > 0 and v.category ~= "used" and (low:find("cavalier", 1, true) or low:find("riding", 1, true) or low:find("quitation", 1, true)) then
+      local lv = num(v.level) or 999
+      if not best or lv < best.lv or (lv == best.lv and cost < best.cost) then best = { name = name, cost = cost, lv = lv } end
+    end
+  end
+  if not best then return nil end
+  local r = progress(best.cost)
+  r.name = best.name
+  return r
+end
+
+-- (texte, detail) ou nil si le prix n'est pas lisible.
+function Earn.MountText()
+  local m = Earn.Mount()
+  if not m then return nil end
+  local d = m.missing and (m.ready and L.EARN_MOUNT_OK or L.EARN_MOUNT_MISS:format(MOUNT_LEVEL, money(m.missing))) or nil
+  return L.EARN_MOUNT:format(MOUNT_LEVEL, m.name, money(m.cost)), d
+end
+
+-- Palier de fortune franchi (une annonce par palier et par personnage) et record or/heure de session ; hors combat, argent lisible.
+local function track()
+  if InCombatLockdown() or not ns.db then return end
+  local m = num((S.Get(GetMoney)))
+  if not m then return end
+  local w = ns.db.wealth
+  if type(w) ~= "table" then w = {} ns.db.wealth = w end
+  local top = 0
+  for i, po in ipairs(TIERS) do if m >= po * 10000 then top = i end end
+  local last = num(w.tier)
+  if not last then w.tier = top -- premiere lecture : on retient sans annoncer
+  elseif top > last then
+    w.tier = top
+    ns.Toast(L.EARN_TIER:format(TIERS[top]), { key = "pc:wealth:" .. top })
+  end
+  if ns.Gold then
+    local net, rate, dt = ns.Gold.Session()
+    if net and rate and rate > 0 and dt and dt >= RECORD_SECS and rate > (num(w.record) or 0) then w.record = math.floor(rate) end
+  end
+end
+Earn.Track = track
+ns.On("PLAYER_MONEY", track)
+ns.On("PLAYER_LOGIN", function() if ns.db then ns.db.goldGoal = nil end track() end) -- ancien objectif manuel : supprime
+ns.On("PLAYER_REGEN_ENABLED", track)
+
+-- « Record : ≈ X/h » ou nil.
+function Earn.RecordText()
+  local r = ns.db and type(ns.db.wealth) == "table" and num(ns.db.wealth.record)
+  return r and r > 0 and L.EARN_RECORD:format(money(r)) or nil
 end

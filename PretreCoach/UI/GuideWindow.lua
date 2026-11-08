@@ -315,7 +315,7 @@ local function fillCardRow(r, g, i, y)
   r.detail:SetShown(hasDetail)
   local last = hasDetail and r.detail or r.text
   if hasDetail then h = h + 2 + (r.detail:GetStringHeight() or 12) end
-  local frac
+  local frac = g.kind == "gold" and g.frac or nil
   if g.kind == "xp" then
     frac = ns.Pace and ns.Pace.Fraction()
     if not (type(frac) == "number" and not secret(frac)) then frac = nil end

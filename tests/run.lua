@@ -4829,7 +4829,7 @@ local function suite(label)
     local goals = n.Guide.Goals()
     local g = goals[#goals]
     assert(#goals == 4 and g.kind == "gold" and g.label == "Or" and goals[3].line == 171, "dernier, apres les metiers")
-    assert(g.text == n.Gold.Best().text and g.detail:find("Session : +", 1, true), "texte de Best et detail de session : " .. tostring(g.detail))
+    assert(g.text == n.Gold.Best().text and g.detail:find("Prochain achat", 1, true), "texte de Best et prochain achat : " .. tostring(g.detail))
     n.SetCompact(true)
     local r = G.card.rows[4]
     assert(G.card.used == 4 and r.label.text == "Or" and r.icon.tex == "Interface\\Icons\\INV_Misc_Coin_01", "carte : icone de piece")
@@ -6260,7 +6260,7 @@ local function suite(label)
     mock.moneySecret = nil
     mock.money = 160 mock.fire("PLAYER_MONEY") -- compte depuis la derniere valeur lisible (100)
     assert(act(n, "marchand") == 60, "delta depuis la derniere lecture : " .. act(n, "marchand"))
-    assert(not findSecret(n.db, "db") and n.Earn.Goal() == nil)
+    assert(not findSecret(n.db, "db"))
     n.db.earn = { v = 0, act = { quetes = { c = 99, s = 99 } } }
     gain(1)
     assert(n.db.earn.v == 1 and act(n, "quetes") == 0, "ancien format : reparti de zero")
@@ -6349,37 +6349,6 @@ local function suite(label)
     assert(n.Earn.Text() == "Tes chiffres : quêtes ≈ " .. n.Prof.Money(100000) .. "/h, cueillette ≈ " .. n.Prof.Money(100000) .. "/h", n.Earn.Text())
     n.db.earn.act.cueillette.s = 100
     assert(n.Earn.Text():find("cueillette ≈ …", 1, true), "cueillette pas mesuree")
-  end)
-
-  check("Earn : /coach objectif, effacement, reste a gagner et duree estimee", function()
-    local N = ns
-    local d = N.db
-    local np = #mock.printed
-    suiteSlash("objectif 100")
-    assert(d.goldGoal == 1000000, "100 po : " .. tostring(d.goldGoal))
-    suiteSlash("OBJECTIF 1,5")
-    assert(d.goldGoal == 15000, "1,5 po")
-    suiteSlash("objectif abc")
-    assert(d.goldGoal == 15000 and #mock.printed >= np + 3, "texte invalide : inchange, message")
-    suiteSlash("objectif 100")
-    mock.money = 400000
-    local g = N.Earn.Goal()
-    assert(g.goal == 1000000 and g.have == 400000 and g.missing == 600000 and g.eta == nil, "sans mesure : pas de duree")
-    d.earn = { v = 1, act = { quetes = { c = 300000, s = 3600 }, cueillette = { c = 100000, s = 3600 } }, herbs = 0, nodes = 0 }
-    g = N.Earn.Goal()
-    assert(g.eta == 7200, "meilleur or/h (300000) : " .. tostring(g.eta))
-    mock.money = 2000000
-    g = N.Earn.Goal()
-    assert(g.missing == 0 and g.eta == 0, "objectif atteint")
-    mock.moneySecret = true
-    g = N.Earn.Goal()
-    assert(g.have == nil and g.missing == nil and g.eta == nil, "argent illisible")
-    mock.moneySecret = nil
-    suiteSlash("objectif")
-    assert(d.goldGoal == nil and N.Earn.Goal() == nil, "efface")
-    assert(N.RunCommand("objectif") and N.RunCommand("help"), "commandes existantes intactes")
-    assert(not findSecret(d, "db"))
-    d.earn = nil
   end)
 
   check("Earn : rien ne casse en combat", function()
@@ -6477,45 +6446,164 @@ local function suite(label)
     return table.concat(order, ",")
   end
 
-  check("Riche : onglet Devenir riche, sections dans l'ordre, sans objectif puis avec objectif", function()
+  -- Prochain achat : le plan d'achats est pilote par des bouchons (Training.Plan, Calc.ProfessionTodo...) pour fixer l'ordre.
+  local function buyN()
+    local n = goldNs()
+    mock.money, mock.time = 100, 0
+    n.State.wand = { itemID = 1, reqLevel = 10, name = "Baguette" } -- baguette correcte : pas d'achat de baguette
+    n.Calc.ProfessionTodo = function() return {} end
+    n.Training.Plan = function() return { pending = {} } end
+    return n
+  end
+
+  check("Achats : ordre sorts, rang de metier, recette, baguette, sorts du niveau suivant", function()
+    local n = buyN()
+    n.Training.Plan = function() return { pending = { { text = "Éclair" } }, known = 500, unknown = 0, nextLevel = 14, nextTotal = 300, nextUnknown = 0 } end
+    n.Calc.ProfessionTodo = function() return { { skillLine = 182, rank = { name = "Compagnon", cost = 1000 } } } end
+    n.Prof.StepFor = function() return { buy = { recipe = "Potion X", price = 2000 } } end
+    n.Prof.KnownRecipe = function() return nil end
+    n.State.profs = { [171] = { rank = 50, max = 75 } }
+    n.State.wand = false
+    local r = n.Earn.Next()
+    assert(r.kind == "spell" and r.cost == 500 and r.what:find("Éclair", 1, true), "1. sorts a apprendre")
+    n.Training.Plan = function() return { pending = {}, nextLevel = 14, nextTotal = 300, nextUnknown = 0 } end
+    r = n.Earn.Next()
+    assert(r.kind == "rank" and r.cost == 1000 and r.what == "Compagnon (Herboristerie)", "2. rang de metier : " .. tostring(r.what))
+    n.Calc.ProfessionTodo = function() return {} end
+    r = n.Earn.Next()
+    assert(r.kind == "recipe" and r.cost == 2000 and r.what:find("Potion X", 1, true), "3. recette a acheter")
+    n.Prof.KnownRecipe = function() return {} end
+    r = n.Earn.Next()
+    assert(r.kind == "wand" and r.what:find("aguette", 1, true), "4. baguette : " .. tostring(r.kind))
+    n.State.wand = { itemID = 1, reqLevel = 10, name = "Baguette" }
+    r = n.Earn.Next()
+    assert(r.kind == "next" and r.cost == 300 and r.what:find("14", 1, true), "5. sorts du niveau suivant")
+    n.Training.Plan = function() return { pending = {} } end
+    assert(n.Earn.Next() == nil and n.Earn.NextShort() == nil and n.Earn.NextText():find("rien à prévoir", 1, true), "rien a acheter")
+    mock.money = nil
+  end)
+
+  check("Achats : prix inconnu cite sans prix, jamais invente", function()
+    local n = buyN()
+    n.Training.Plan = function() return { pending = { { text = "Éclair" } }, known = 0, unknown = 1 } end
+    mock.money = 5000
+    local r = n.Earn.Next()
+    local t, sub = n.Earn.NextText()
+    assert(r.cost == nil and r.frac == nil and r.ready == nil, "pas de cout, pas de progression")
+    assert(t == "Prochain achat : sorts à apprendre : Éclair" and sub == nil, t)
+    local s, frac = n.Earn.NextShort()
+    assert(not s:find("|T", 1, true) and frac == nil, s)
+    n.Training.Plan = function() return { pending = { { text = "A" }, { text = "B" } }, known = 900, unknown = 1 } end
+    assert(n.Earn.Next().cost == nil, "cout partiel : pas de total invente")
+    mock.money = nil
+  end)
+
+  check("Achats : reste a gagner, duree au meilleur rythme, pret, barre de la rangee Or", function()
+    local n = buyN()
+    n.Training.Plan = function() return { pending = { { text = "Éclair" } }, known = 1000000, unknown = 0 } end
+    n.db.earn = { v = 1, act = { quetes = { c = 300000, s = 3600 }, cueillette = { c = 100000, s = 3600 } }, herbs = 0, nodes = 0 }
+    mock.money = 400000
+    local t, sub = n.Earn.NextText()
+    assert(t == "Prochain achat : sorts à apprendre : Éclair (" .. n.Prof.Money(1000000) .. ")", t)
+    assert(sub == "Tu as " .. n.Prof.Money(400000) .. ", il te manque " .. n.Prof.Money(600000) .. " · ≈ 2 h à ton rythme", sub)
+    local goals = n.Guide.Goals()
+    local g = goals[#goals]
+    assert(g.kind == "gold" and g.frac == 0.4 and g.detail:find("il te manque", 1, true), "rangee Or : texte court et barre : " .. tostring(g.detail))
+    n.db.earn = nil
+    assert(select(2, n.Earn.NextText()) == "Tu as " .. n.Prof.Money(400000) .. ", il te manque " .. n.Prof.Money(600000), "sans mesure : pas de duree")
+    mock.money = 2000000
+    assert(select(2, n.Earn.NextText()) == "✓ prêt, va l'acheter" and n.Earn.NextShort():find("✓ prêt", 1, true), "atteint")
+    n.Training.Plan = function() return { pending = {} } end -- achete : on passe au suivant (rien ici)
+    assert(n.Earn.Next() == nil)
+    mock.money = nil
+  end)
+
+  check("Achats : monture du niveau 40 seulement si son prix est lisible", function()
+    local n = buyN()
+    mock.money = 150000
+    local rows = n.Gold.Rows()
+    assert(n.Earn.Mount() == nil and n.Earn.MountText() == nil and not rows[2].text:find("Monture", 1, true), "aucun maitre vu : rien")
+    n.db.trainer = { ["Apprenti cavalier|"] = { level = 40, category = "unavailable" } } -- prix illisible
+    assert(n.Earn.MountText() == nil, "prix illisible : rien")
+    n.db.trainer["Apprenti cavalier|"].cost = 200000
+    local t, sub = n.Earn.MountText()
+    assert(t == "Monture (niveau 40) : Apprenti cavalier (" .. n.Prof.Money(200000) .. ")", t)
+    assert(sub == "Au niveau 40 : il te manque " .. n.Prof.Money(50000), sub)
+    rows = n.Gold.Rows()
+    assert(rows[1].section == "goal" and rows[2].section == "goal" and rows[2].text == t, "montree sous le prochain achat")
+    n.db.trainer["Apprenti cavalier|"].category = "used"
+    assert(n.Earn.MountText() == nil, "deja apprise : rien")
+    mock.money = nil
+  end)
+
+  check("Achats : palier de fortune annonce une seule fois, record or/h, argent secret = rien", function()
+    local n = buyN()
+    local toasts = {}
+    n.Toast = function(text) toasts[#toasts + 1] = text return true end
+    mock.money = 100
+    n.Earn.Track()
+    assert(#toasts == 0 and n.db.wealth.tier == 0, "premiere lecture : retenue sans annonce")
+    mock.money = 60000 n.Earn.Track() n.Earn.Track()
+    assert(#toasts == 1 and toasts[1] == "Fortune : 5 po atteints !", "5 po, une fois : " .. #toasts)
+    mock.money = 1000000 n.Earn.Track()
+    assert(#toasts == 2 and toasts[2]:find("100 po", 1, true), "palier le plus haut franchi")
+    mock.money = 0 n.Earn.Track() mock.money = 1000000 n.Earn.Track()
+    assert(#toasts == 2 and n.db.wealth.tier == 6, "jamais reannonce")
+    mock.setCombat(true) mock.money = 5000000 n.Earn.Track() mock.setCombat(false)
+    assert(#toasts == 2, "pas en combat")
+    -- record sur une heure, puis un rythme plus bas ne le baisse pas
+    mock.money, mock.time = 10000, 0
+    n.Gold.Session()
+    mock.time, mock.money = 3600, 40000
+    n.Earn.Track()
+    local rate = select(2, n.Gold.Session())
+    assert(rate and n.db.wealth.record == math.floor(rate) and n.Earn.RecordText() == "Ton record : ≈ " .. n.Prof.Money(math.floor(rate)) .. "/h", tostring(n.db.wealth.record))
+    mock.time, mock.money = 7200, 50000
+    n.Earn.Track()
+    assert(n.db.wealth.record == math.floor(rate), "record non baisse")
+    if not mock.noSecrets then
+      mock.moneySecret = true
+      local n2 = goldNs()
+      n2.Toast = function() error("aucune annonce avec un argent secret") end
+      n2.Earn.Track() mock.fire("PLAYER_MONEY")
+      local r = n2.Earn.Next()
+      assert(n2.db.wealth == nil, "rien d'ecrit")
+      assert(r == nil or (r.have == nil and r.missing == nil and r.eta == nil and r.frac == nil and r.ready == nil), "rien de calcule")
+      assert(not findSecret(n2.db, "db") and not findSecret(n.db, "db"))
+      mock.moneySecret = nil
+    end
+    mock.money = nil
+  end)
+
+  check("Riche : onglet Devenir riche, sections dans l'ordre, prochain achat en tete", function()
     local n = goldNs()
     mock.money, mock.time = 1000, 0
     local rows = n.Gold.Rows()
     assert(sections(rows) == "goal,reserve,pistes,chiffres,session", sections(rows))
-    assert(rows[1].text == "Objectif : fixe un objectif : /coach objectif 100", rows[1].text)
+    assert(rows[1].text:find("Prochain achat : ", 1, true), rows[1].text)
+    assert(not rows[1].text:find("/coach objectif", 1, true), "plus d'objectif manuel")
     local none = false
     for _, r in ipairs(rows) do none = none or (r.section == "chiffres" and r.text:lower():find("pas encore assez de mesure", 1, true) ~= nil) end
     assert(none, "chiffres : pas de mesure")
-    n.db.goldGoal = 1000000
-    n.db.earn = { v = 1, act = { quetes = { c = 300000, s = 3600 }, butin = { c = 5, s = 100 } }, herbs = 0, nodes = 0 }
-    mock.money = 400000
-    rows = n.Gold.Rows()
-    assert(sections(rows) == "goal,reserve,pistes,chiffres,session", sections(rows))
-    assert(rows[1].text == "Objectif " .. n.Prof.Money(1000000) .. " : 40 % · ≈ 2 h", rows[1].text)
-    assert(rows[1].sub == "Tu as " .. n.Prof.Money(400000) .. ", il te manque " .. n.Prof.Money(600000), rows[1].sub)
     assert(rows[2].text:find("Réserve", 1, true), rows[2].text)
+    n.db.earn = { v = 1, act = { quetes = { c = 300000, s = 3600 }, butin = { c = 5, s = 100 } }, herbs = 0, nodes = 0 }
     local ch = {}
-    for _, r in ipairs(rows) do if r.section == "chiffres" then ch[#ch + 1] = r.text end end
+    for _, r in ipairs(n.Gold.Rows()) do if r.section == "chiffres" then ch[#ch + 1] = r.text end end
     assert(ch[2] == "Quêtes : ≈ " .. n.Prof.Money(300000) .. "/h" and ch[3]:find("pas encore assez de mesure", 1, true), "or/h par activite : " .. tostring(ch[2]))
-    mock.money = 2000000
-    assert(n.Earn.GoalLine():find("100 %", 1, true) and n.Earn.GoalLine():find("atteint", 1, true), n.Earn.GoalLine())
+    n.db.wealth = { tier = 0, record = 30000 }
+    rows = n.Gold.Rows()
+    assert(rows[#rows].section == "session" and rows[#rows].sub == "Ton record : ≈ " .. n.Prof.Money(30000) .. "/h", "record sous la session")
     assert(not findSecret(n.db, "db"))
-    n.db.goldGoal, n.db.earn, mock.money = nil, nil, nil
+    n.db.earn, n.db.wealth, mock.money = nil, nil, nil
   end)
 
-  check("Riche : rangee Or de la carte, progression de l'objectif sinon session", function()
+  check("Riche : rangee Or de la carte, prochain achat en detail", function()
     local n = gw()
     mock.money, mock.time = 5000, 0
     local g = n.Guide.Goals()
     g = g[#g]
-    assert(g.kind == "gold" and g.detail:find("Session : +", 1, true), "sans objectif : session")
-    n.db.goldGoal = 1000000
-    n.db.earn = { v = 1, act = { quetes = { c = 300000, s = 3600 } }, herbs = 0, nodes = 0 }
-    mock.money = 400000
-    g = n.Guide.Goals()
-    g = g[#g]
-    assert(g.kind == "gold" and g.detail == "Objectif " .. n.Prof.Money(1000000) .. " : 40 % · ≈ 2 h", g.detail)
-    n.db.goldGoal, n.db.earn, mock.money = nil, nil, nil
+    assert(g.kind == "gold" and (g.detail:find("Prochain achat : ", 1, true) or g.detail:find("Session : +", 1, true)), "detail : " .. tostring(g.detail))
+    mock.money = nil
   end)
 
   check("Riche : rien de nouveau en base, rien de secret", function()
@@ -6523,7 +6611,7 @@ local function suite(label)
     local before = {}
     for k in pairs(n.db) do before[k] = true end
     mock.money = 1000
-    n.Gold.Rows() n.Guide.Goals() n.Earn.GoalLine()
+    n.Gold.Rows() n.Guide.Goals() n.Earn.NextShort() n.Earn.MountText()
     assert(not findSecret(n.db, "db"))
     for k in pairs(n.db) do assert(before[k], "cle ajoutee a la base : " .. tostring(k)) end
     mock.money = nil

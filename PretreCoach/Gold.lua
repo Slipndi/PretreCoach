@@ -238,7 +238,7 @@ function Gold.Session()
   local m = num(GetMoney())
   if not (m and start) then return nil end
   local net, dt = m - start, GetTime() - t0
-  return net, dt >= 60 and net * 3600 / dt or nil
+  return net, dt >= 60 and net * 3600 / dt or nil, dt
 end
 
 local function signed(c) return (c < 0 and "-" or "+") .. money(math.abs(c)) end
@@ -250,17 +250,16 @@ function Gold.SessionText()
   return L.GOLD_SESSION_RATE:format(signed(net), (perHour < 0 and "-" or "") .. money(math.abs(perHour)))
 end
 
--- Lignes de l'onglet « Devenir riche » (section = repere de test) : objectif, reserve, meilleures pistes (+ herbes de la zone),
+-- Lignes de l'onglet « Devenir riche » (section = repere de test) : prochain achat (+ monture), reserve, meilleures pistes (+ herbes de la zone),
 -- tes chiffres, session.
 function Gold.Rows()
   local rows = {}
   local function add(section, r) r.section, r.highlight = section, r.highlight or false rows[#rows + 1] = r end
-  local g = ns.Earn and ns.Earn.Goal()
-  if g then
-    local have = g.have and L.RICH_HAVE:format(money(g.have), money(g.missing)) or nil
-    add("goal", { text = ns.Earn.GoalLine(), sub = have })
-  else
-    add("goal", { text = L.RICH_NOGOAL })
+  if ns.Earn then
+    local t, sub = ns.Earn.NextText()
+    add("goal", { text = t, sub = sub })
+    local mt, msub = ns.Earn.MountText() -- grand objectif : seulement si le prix est lisible
+    if mt then add("goal", { text = mt, sub = msub }) end
   end
   local res = ns.Budget and ns.Budget.Reserve()
   if res then
@@ -290,6 +289,6 @@ function Gold.Rows()
   end
   if #er == 0 then add("chiffres", { text = L.RICH_NOMEASURE }) end
   local s = Gold.SessionText()
-  if s then add("session", { text = s }) end
+  if s then add("session", { text = s, sub = ns.Earn and ns.Earn.RecordText() }) end
   return rows
 end

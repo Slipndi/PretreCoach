@@ -151,7 +151,6 @@ local commands = {
   herbo = function() ns.FindTrainer("HERBALISM") end,
   secourisme = function() ns.FindTrainer("FIRSTAID") end,
   craft = function() if ns.ToggleCraft then ns.ToggleCraft() end end,
-  objectif = function(arg) if ns.Earn then ns.Earn.SetGoal(arg) end end, -- /coach objectif <po> ; sans nombre : efface
   debug = function()
     ns.db.debug = not ns.db.debug
     ns.Print(ns.db.debug and L.DEBUG_ON or L.DEBUG_OFF)
