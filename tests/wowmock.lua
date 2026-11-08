@@ -373,7 +373,7 @@ C_Map = { GetPlayerMapPosition = function(mapID, unit) assert(type(mapID) == "nu
   CanSetUserWaypointOnMap = function() return mock.canWaypoint ~= false end, GetUserWaypoint = function() return nil end,
   SetUserWaypoint = function(p) mock.waypoint = p end,
   GetBestMapForUnit = function() return mock.mapID or 1 end, GetMapWorldSize = function() return 1000, 500 end,
-  GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = (mock.mapNames or {})[id] or "Tirisfal", parentMapID = id == 1 and 1420 or 0 } end,
+  GetMapInfo = function(id) if (mock.unknown.map or {})[id] then return nil end return { name = (mock.mapNames or {})[id] or "Tirisfal", parentMapID = (mock.mapParents or {})[id] or (id == 1 and 1420 or 0), mapType = (mock.mapTypes or {})[id] } end,
   -- mock.areas = { [areaID] = nom } ; mock.mapKids = { [racine] = { { mapID, name }, ... } } (defauts : Tirisfal, Fossoyeuse, Orgrimmar sous 946)
   GetAreaInfo = function(id) return (mock.areas or { [85] = "Tirisfal", [1497] = "Fossoyeuse", [1637] = "Orgrimmar" })[id] end,
   -- une entree peut porter kind (Enum.UIMapType) : elle n'est rendue que pour ce type

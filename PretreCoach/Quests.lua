@@ -500,8 +500,21 @@ function Quests.Order(stops, px, py, plain)
   return out
 end
 
+-- Carte de la zone ou se trouve le joueur : depuis une grotte, un batiment ou une instance (Dungeon, Micro, Orphan),
+-- on remonte au parent, car les lieux QuestieDB sont donnes sur la carte de zone. Type illisible : la carte telle quelle.
+local SUBMAP = { [4] = true, [5] = true, [6] = true }
+function Quests.ZoneMap(mapID)
+  for _ = 1, 5 do
+    local info = type(mapID) == "number" and S.Get(C_Map and C_Map.GetMapInfo, mapID)
+    local t, parent = type(info) == "table" and info.mapType, type(info) == "table" and info.parentMapID
+    if not (SUBMAP[t] and type(parent) == "number" and parent > 0 and not S.IsSecret(parent)) then break end
+    mapID = parent
+  end
+  return mapID
+end
+
 local function compute()
-  local level, mapID = State.level, State.mapID
+  local level, mapID = State.level, Quests.ZoneMap(State.mapID)
   if type(level) ~= "number" then return {} end
   local px, py = playerPos(mapID)
   local yards

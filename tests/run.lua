@@ -5218,6 +5218,23 @@ local function suite(label)
   end)
 
 
+  check("Quetes : dans une grotte ou un batiment, la route se calcule sur la carte de la zone", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN()
+    mock.mapTypes, mock.mapParents = { [9999] = 5, [9998] = 4 }, { [9999] = 9998, [9998] = 1420 }
+    local ok, err = pcall(function()
+      assert(n.Quests.ZoneMap(9999) == 1420 and n.Quests.ZoneMap(1420) == 1420 and n.Quests.ZoneMap(nil) == nil, "remonte micro -> instance -> zone")
+      mock.qquests = { [202] = { name = "Finie", startedBy = { { 9001 } }, finishedBy = { { 9001 } } } }
+      mock.qlog = { { questID = 202, title = "Finie", complete = true } }
+      n.State.mapID = 9999
+      n.Quests.Refresh()
+      local r = n.Quests.Route()
+      assert(r[1] and r[1].questID == 202 and r[1].here == true, "le rendu de la zone est ici, pas dans une autre zone")
+    end)
+    mock.mapTypes, mock.mapParents = nil, nil
+    assert(ok, err)
+  end)
+
   check("Quetes : un rendu a l'autre bout de la zone n'ouvre plus la route (seulement s'il est pres)", function()
     if not (C_QuestLog and C_Map and LibQuestieDB) then return end
     local n = questN()
