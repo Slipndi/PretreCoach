@@ -162,7 +162,7 @@ function GetLocale() return "frFR" end
 function GetBuildInfo() return "1.15.0", "60001", "Jan 1 2026", 16001 end
 function UnitClass() if mock.noClass then return nil end return "Pretre", "PRIEST", 5 end
 RAID_CLASS_COLORS = { PRIEST = { r = 0.9, g = 0.8, b = 0.7 } }
-function UnitRace() return "Mort-vivant", "Scourge" end
+function UnitRace() return "Mort-vivant", "Scourge", 5 end
 function UnitLevel() return mock.level or 12 end
 -- mock.xp / mock.xpMax = XP du joueur (nil par defaut : illisible) ; mock.xpSecret = valeur secrete
 function UnitXP() if mock.xpSecret or secretNow() then return mock.SECRET end return mock.xp end
@@ -436,7 +436,7 @@ C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 UiMapPoint C_SuperTrack WorldMapFrame hooksecurefunc Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
-EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator GetItemIcon UnitXP UnitXPMax RegisterUnitWatch UnitInRange
+EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator LibStub WT_API GetItemIcon UnitXP UnitXPMax RegisterUnitWatch UnitInRange
 GetQuestLogRewardXP GetQuestLogRewardMoney GetNumQuestChoices GetQuestItemLink GetQuestItemInfo GetQuestID QuestInfoRewardsFrame
 GetRewardXP GetRewardMoney GetNumQuestRewards C_NamePlate TooltipDataProcessor
 ]]

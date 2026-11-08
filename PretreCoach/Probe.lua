@@ -585,6 +585,33 @@ local function ExtraSections(add, section)
       local ok, v = pcall(price, "PretreCoach", 2589)
       add("GetAuctionPriceByItemID(2589, étoffe de lin) : %s", ok and Show(v) or ("erreur : " .. tostring(v)))
     end
+    -- addons tiers lus par leur API publique (Quests.lua, Training.lua)
+    local okL, lib = pcall(function() return LibStub and LibStub("LibQuestDB-1.0", true) end)
+    if not (okL and type(lib) == "table") then
+      add("QuestDB : non installé")
+    else
+      local okR, ready = pcall(lib.IsReady, lib)
+      if not (okR and ready) then
+        add("QuestDB : chargé, pas prêt")
+      else
+        local okG, r = pcall(lib.GetRewards, lib, 6561)
+        local n = okG and type(r) == "table" and (#(r.items or {}) + #(r.choices or {})) or 0
+        add("QuestDB : chargé, prêt, %d récompense(s) pour la quête 6561 (objets + choix)", n)
+      end
+    end
+    if type(WT_API) ~= "table" then
+      add("What's Training : non installé")
+    else
+      local okR, ready = pcall(WT_API.IsReady)
+      if not (okR and ready) then
+        add("What's Training : chargé, pas prêt")
+      else
+        local plan = ns.Training and ns.Training.Plan(ns.State.level)
+        local c = plan and plan.nextLevel and plan.nextTotal
+        add("What's Training : chargé, prêt, coût des sorts du prochain niveau (%s) : %s", tostring(plan and plan.nextLevel),
+          c and ns.Prof.Money(c) or "inconnu")
+      end
+    end
     local idx = ns.db and ns.db.qindex
     if type(idx) == "table" and type(idx.trainers) == "table" then
       local t = {}

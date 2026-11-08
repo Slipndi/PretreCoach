@@ -303,7 +303,7 @@ function DETAIL.known(e)
   for _, sp in ipairs(D.Spells) do
     if sp.key == e.arg and type(sp.ranks[1].level) == "number" then
       local text = L.GUIDE_KNOWN:format(sp.name, sp.ranks[1].level)
-      local cost = ns.Training.Cost(sp.name, 1)
+      local cost = ns.Training.Cost(sp.name, 1, sp.ranks[1].id)
       return cost and (text .. " : " .. coin(cost)) or text
     end
   end
@@ -489,8 +489,12 @@ function REFERENCE.spells(level)
   if money then out[#out + 1] = { text = money, highlight = false } end
   if #out == 0 then
     out[1] = { text = plan.nextLevel and L.TRAIN_NOTHING:format(plan.nextLevel) or L.TRAIN_NOTHING_END, highlight = false }
+    local nx = ns.Training.NextText(plan)
+    if nx then out[2] = { text = nx, highlight = false } end
   elseif plan.nextLevel then
     out[#out + 1] = { text = L.TRAIN_NEXT:format(plan.nextLevel, table.concat(plan.nextNames, ", ")), highlight = false }
+    local nx = ns.Training.NextText(plan)
+    if nx then out[#out + 1] = { text = nx, highlight = false } end
   end
   return out
 end

@@ -104,6 +104,37 @@ local function realReward(id)
   return num(S.Get(GetQuestLogRewardXP, id)), num(S.Get(GetQuestLogRewardMoney, id))
 end
 
+-- QuestDB (addon tiers, lib « LibQuestDB-1.0 », optionnel, lecture seule). Donnees CMaNGOS Classic : les quetes propres a
+-- Forever (ids >= 65309) n'ont aucune ligne, et un nil ne veut pas dire « sans recompense ».
+local function extLib()
+  local ok, lib = pcall(function() return LibStub and LibStub("LibQuestDB-1.0", true) end)
+  if not (ok and type(lib) == "table") then return nil end
+  local ok2, ready = pcall(lib.IsReady, lib)
+  return ok2 and ready and lib or nil
+end
+
+-- { xp (au niveau actuel, pénalité grise comprise), money (signé), items, choices } ; nil si la quête n'a pas de ligne.
+local function extReward(id, level)
+  local lib = extLib()
+  if not lib then return nil end
+  local ok, r = pcall(lib.GetRewards, lib, id)
+  if not ok or type(r) ~= "table" then return nil end
+  local okx, xp = pcall(lib.GetQuestXP, lib, id, level)
+  xp = okx and num(xp) or nil
+  return { xp = xp and xp > 0 and xp or nil, money = num(r.money), items = r.items, choices = r.choices }
+end
+
+-- Valeur en cuivre d'une liste { { itemID, nombre } } : somme (fixes) ou meilleur élément (choix).
+local function extItems(list, best)
+  local sum = 0
+  for _, it in ipairs(type(list) == "table" and list or {}) do
+    local id, n = type(it) == "table" and (it[1] or it.id), type(it) == "table" and (it[2] or it.count) or 1
+    local v = (Quests.ItemValue(id) or 0) * (num(n) or 1)
+    sum = best and math.max(sum, v) or sum + v
+  end
+  return sum
+end
+
 local function median(t)
   if #t == 0 then return nil end
   table.sort(t)
@@ -124,6 +155,9 @@ local function calibrate(list, level)
   for _, j in ipairs(list) do
     if j.ql then
       local xp, money = realReward(j.id)
+      local e = (not xp or not money) and extReward(j.id, level)
+      if not xp and sx[j.id] == nil and e then xp = e.xp end
+      if not money and sm[j.id] == nil and e then money = e.money end
       if xp and xp > 0 then sx[j.id] = xp / (rawXP(j.ql) * greyPct(j.ql, level)) end
       if money and money > 0 then sm[j.id] = money / rawMoney(j.ql) end
     end
@@ -153,9 +187,10 @@ local function learned(id, ql, level)
   local xp, q = r.xp, ql or r.ql
   if xp and q and r.level and r.level ~= level then xp = math.floor(xp * greyPct(q, level) / greyPct(q, r.level) + 0.5) end
   local items, bestChoice = 0, 0
-  for _, it in ipairs(QuestDB.Fixed(id) or {}) do items = items + (Quests.ItemValue(it[1]) or 0) * it[2] end
-  for _, it in ipairs(QuestDB.Choices(id) or {}) do bestChoice = math.max(bestChoice, (Quests.ItemValue(it[1]) or 0) * it[2]) end
-  return xp, r.money, items + bestChoice
+  local fixed, choices = QuestDB.Fixed(id), QuestDB.Choices(id)
+  for _, it in ipairs(fixed or {}) do items = items + (Quests.ItemValue(it[1]) or 0) * it[2] end
+  for _, it in ipairs(choices or {}) do bestChoice = math.max(bestChoice, (Quests.ItemValue(it[1]) or 0) * it[2]) end
+  return xp, r.money, items + bestChoice, fixed ~= nil, choices ~= nil
 end
 
 local function focusWeight()
@@ -188,23 +223,37 @@ local function objectivesLeft(id)
   return seen and n or OBJ_DEFAULT
 end
 
--- { xp, gold, rate (cuivre/min), score, grey, far } ; nil si rien n'est connu (ni récompense réelle, ni niveau de quête).
+-- { xp, gold, rate (cuivre/min), score, grey, far, src } ; nil si rien n'est connu (ni récompense réelle, ni niveau de quête).
+-- Priorité : appris (QUEST_TURNED_IN exact, jamais écrasé, puis le reste) > journal > QuestDB tiers > estimation par niveau.
+-- src = source de l'XP (sinon de l'argent) : « appris », « journal », « QuestDB », « estimé ».
 local function value(id, ql, level, inLog, objs, nStops, travelYd)
-  local xp, money, items = learned(id, ql, level)
+  local xp, money, items, haveF, haveC = learned(id, ql, level)
+  local sx, sm = xp and "appris", money and "appris"
   if inLog then
     local jx, jm = realReward(id)
-    xp, money = xp or jx, money or jm
+    if not xp and jx then xp, sx = jx, "journal" end
+    if not money and jm then money, sm = jm, "journal" end
+  end
+  if not (xp and money and haveF and haveC) then
+    local e = extReward(id, level)
+    if e then
+      if not xp and e.xp then xp, sx = e.xp, "QuestDB" end
+      if not money and e.money then money, sm = e.money, "QuestDB" end
+      if not haveF then items = (items or 0) + extItems(e.items) end
+      if not haveC then items = (items or 0) + extItems(e.choices, true) end
+    end
   end
   if ql then
     local ex, em = Quests.Estimate(ql, level)
-    xp, money = xp or ex, money or em
+    if not xp then xp, sx = ex, "estimé" end
+    if not money then money, sm = em, "estimé" end
   end
   if not (xp or money) then return nil end
   xp, money = xp or 0, money or 0
   local gold = money + (items or 0)
   local move = travelYd / SPEED
   local mins = math.max(0.5, (move + objs * OBJ_SECS + nStops * STOP_SECS) / 60)
-  return { xp = xp, gold = gold, rate = gold / mins, grey = ql ~= nil and greyPct(ql, level) < 1, far = move > mins * 30,
+  return { src = sx or sm, xp = xp, gold = gold, rate = gold / mins, grey = ql ~= nil and greyPct(ql, level) < 1, far = move > mins * 30,
     score = (gold + focusWeight() * xp * xpCopper(level)) * chainBonus(id) / mins }
 end
 
@@ -212,7 +261,7 @@ end
 local function valueText(v)
   if not v then return nil end
   local m = ns.Prof and ns.Prof.Money or tostring
-  return L.QUEST_VALUE:format(math.floor(v.xp + 0.5), m(math.floor(v.gold + 0.5)), m(math.floor(v.rate + 0.5)))
+  return L.QUEST_VALUE:format(math.floor(v.xp + 0.5), v.src and (" (" .. v.src .. ")") or "", m(math.floor(v.gold + 0.5)), m(math.floor(v.rate + 0.5)))
 end
 
 -- Premier objectif non fini : « 3/8 Loups tués ».

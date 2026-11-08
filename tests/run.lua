@@ -323,6 +323,22 @@ local function suite(label)
     assert(t:find("GetPlayerMapPosition : illisible", 1, true))
     mock.pos = nil
   end)
+  check("probe : QuestDB et What's Training tiers, presents puis absents", function()
+    local ls, wt = LibStub, WT_API
+    LibStub = nil WT_API = nil
+    local t = probeText()
+    assert(t:find("QuestDB : non installé", 1, true) and t:find("What's Training : non installé", 1, true), "absents")
+    local lib = { IsReady = function() return true end,
+      GetRewards = function(_, id) return id == 6561 and { items = { { 1, 1 } }, choices = { { 2, 1 }, { 3, 1 } } } or nil end }
+    LibStub = function(name) return name == "LibQuestDB-1.0" and lib or nil end
+    WT_API = { IsReady = function() return true end, GetCatalog = function() return {} end, GetSource = function() end }
+    t = probeText()
+    assert(t:find("QuestDB : chargé, prêt, 3 récompense(s)", 1, true), "QuestDB present")
+    assert(t:find("What's Training : chargé, prêt, coût des sorts du prochain niveau", 1, true), "WT present")
+    WT_API.IsReady = function() error("boom") end
+    assert(probeText():find("What's Training : chargé, pas prêt", 1, true), "WT qui plante")
+    LibStub, WT_API = ls, wt
+  end)
   check("probe : Questie et Auctionator presents, Auctionator qui plante", function()
     local lib0, ah0 = LibQuestieDB, Auctionator -- a restaurer : les etapes Questie plus bas en ont besoin
     mock.addons = { Questie = true, QuestieDB = true, Auctionator = true }
@@ -6348,6 +6364,194 @@ local function suite(label)
     assert(not findSecret(n.db, "db"))
     for k in pairs(n.db) do assert(before[k], "cle ajoutee a la base : " .. tostring(k)) end
     mock.money = nil
+  end)
+
+  ------------------------------------------------------------------------
+  -- Addons tiers optionnels : What's Training (couts des sorts) et QuestDB (recompenses de quetes)
+  ------------------------------------------------------------------------
+  -- Niveau 14 : Chatiment r3 (598), Cri psychique (8122), Renouveau r2 (6074), Guerison des maladies (528).
+  local WT_DISC = { [598] = 900, [592] = 405 } -- GetSource : prix remise (Honore, -10 %)
+  local WT_LIST = {
+    { id = 598, kind = "trainer", level = 14, cost = 1000 }, { id = 8122, kind = "trainer", level = 14, cost = 2000 },
+    { id = 6074, kind = "trainer", level = 14, cost = 700 }, { id = 592, kind = "trainer", level = 12, cost = 450 },
+    { id = 99001, kind = "trainer", level = 14, cost = 500 }, -- absent de Data/Spells : compte dans le niveau
+    { id = 99002, kind = "trainer", level = 14, cost = 7000, requiredTalentId = 15470 }, -- talent non pris
+    { id = 99003, kind = "trainer", level = 14, cost = 800, races = { 2 } }, -- autre race (Orc)
+    { id = 99004, kind = "quest", level = 14, cost = 5000 }, { id = 99005, kind = "item", level = 14, cost = 5000 },
+    { id = 99006, kind = "weaponMaster", level = 14, cost = 5000 },
+  }
+  local function installWT(ready)
+    WT_API = { IsReady = function() return ready ~= false end,
+      GetCatalog = function() local c = {} for i, e in ipairs(WT_LIST) do c[i] = e end return c end,
+      GetSource = function(id) return WT_DISC[id] and { kind = "trainer", cost = WT_DISC[id], baseCost = 0, level = 14 } or nil end }
+  end
+  local function keys(t) local k = {} for x in pairs(t) do k[x] = true end return k end
+  local function sameKeys(a, b) for x in pairs(a) do assert(b[x], "cle ajoutee a la base : " .. tostring(x)) end end
+
+  check("WT : cout = maitre > What's Training (remise, puis catalogue) > inconnu ; filtres kind, talent, race", function()
+    WT_API = nil
+    local n = fresh().n
+    setState(n, { level = 12 })
+    n.db.trainer = {}
+    local before = keys(n.db)
+    assert(n.Training.Cost("Sort598", 3, 598) == nil, "sans WT : inconnu")
+    installWT()
+    assert(n.Training.Cost("Sort598", 3, 598) == 900, "GetSource, remise incluse")
+    assert(n.Training.Cost("Sort8122", 1, 8122) == 2000, "pas de GetSource : prix du catalogue")
+    n.db.trainer["Sort598|Rang 3"] = { cost = 777, category = "available" }
+    assert(n.Training.Cost("Sort598", 3, 598) == 777, "le maitre prime")
+    assert(n.Training.Cost("Sort1", 1, 12345) == nil, "sort inconnu de WT")
+    assert(n.Training.Cost("Sort99001", 1, 99001) == 500)
+    mock.known = {} -- aucun talent pris
+    for _, id in ipairs({ 99002, 99003, 99004, 99005, 99006 }) do assert(n.Training.Cost("x", 1, id) == nil, "ignore : " .. id) end
+    if IsPlayerSpell then
+      mock.known = { [15470] = true }
+      assert(n.Training.Cost("x", 1, 99002) == 7000, "talent pris : compte")
+      mock.known = nil
+    end
+    installWT(false)
+    assert(n.Training.Cost("Sort8122", 1, 8122) == nil, "WT pas pret")
+    WT_API = { IsReady = function() error("boom") end }
+    assert(n.Training.Cost("Sort8122", 1, 8122) == nil, "WT qui plante")
+    WT_API = nil
+    assert(not findSecret(n.db, "db"))
+    sameKeys(keys(n.db), before)
+  end)
+
+  check("WT : Plan, texte du niveau suivant (assez / il manque), reserve de Budget, Reference", function()
+    local n = fresh().n
+    setState(n, { level = 12, profs = {} })
+    mock.known = {} -- aucun talent pris
+    n.db.trainer = { ["Sort6074|Rang 2"] = { cost = 300, category = "available" } }
+    installWT()
+    local before = keys(n.db)
+    local plan = n.Training.Plan(12)
+    assert(plan.nextLevel == 14, "prochain palier " .. tostring(plan.nextLevel))
+    -- 598 : 900 (remise) + 8122 : 2000 + 6074 : 300 (maitre, pas 700) + 99001 : 500 ; 528 : inconnu
+    assert(plan.nextTotal == 3700 and plan.nextUnknown == 1, plan.nextTotal .. " / " .. plan.nextUnknown)
+    assert(n.Training.Upcoming(12) == 3700 and n.Training.Upcoming("x") == 0)
+    mock.money = 5000
+    local t = n.Training.NextText(plan)
+    assert(t:find("Sorts du niveau 14 : " .. n.Training.Coin(3700), 1, true) and t:find("tu as assez", 1, true) and t:find("coût inconnu", 1, true), t)
+    mock.money = 1000
+    t = n.Training.NextText(plan)
+    assert(t:find("il te manque " .. n.Training.Coin(2700), 1, true), t)
+    mock.moneySecret = true
+    assert(n.Training.NextText(plan) == nil, "argent secret")
+    mock.moneySecret = nil
+    if hasKnows then
+      knows(knownUpTo(n, 12))
+      local r = n.Budget.Reserve()
+      assert(r.spell == 3700 and #r.unknown == 0, "reserve : sorts des prochains niveaux " .. r.spell)
+      knows(knownUpTo(n, 10))
+      plan = n.Training.Plan(12)
+      local got
+      for _, p in ipairs(plan.pending) do if p.text == "Sort592 (rang 2)" then got = p end end
+      assert(got and got.cost == 405 and plan.known >= 405, "cout WT d'un sort a apprendre")
+      knows(knownUpTo(n, 12))
+      local rows = n.Guide.Reference("spells")
+      local found
+      for _, row in ipairs(rows) do if row.text:find("^Sorts du niveau 14 : ") then found = true end end
+      assert(found, rowTexts(rows))
+      WT_API = nil
+      assert(n.Budget.Reserve().spell == 300, "sans WT : seul le prix du maitre")
+      assert(n.Training.NextText(n.Training.Plan(12)) ~= nil, "prix du maitre : texte")
+    end
+    WT_API = nil
+    assert(not findSecret(n.db, "db"))
+    sameKeys(keys(n.db), before)
+    mock.money, mock.known = nil, nil
+  end)
+
+  local EXT = {}
+  local function installExt(ready)
+    local lib = { IsReady = function() return ready ~= false end,
+      GetRewards = function(_, id)
+        local r = EXT[id]
+        return r and { items = r.items, choices = r.choices, money = r.money, xp = r.xp, questLevel = 20 } or nil
+      end,
+      GetQuestXP = function(_, id, lvl) return EXT[id] and EXT[id].xp end }
+    LibStub = setmetatable({}, { __call = function(_, name) return name == "LibQuestDB-1.0" and lib or nil end })
+  end
+  local function oneQuest(id, level)
+    local n = questN(level or 20)
+    mock.qquests = { [id] = { name = "Q" .. id, startedBy = { { 9001 } }, questLevel = 20 } }
+    valueLog({ id })
+    return n
+  end
+
+  check("QuestDB tiers : appris > journal > QuestDB > estimation, source memorisee et affichee", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB and GetQuestLogRewardXP) then return end
+    EXT = { [201] = { xp = 2000, money = 700 } }
+    installExt()
+    local n = oneQuest(201)
+    local before = keys(n.db)
+    mock.qreward = nil
+    n.Quests.Refresh()
+    local v = n.Quests.Route()[1].v
+    assert(v.xp == 2000 and v.gold == 700 and v.src == "QuestDB", "QuestDB : " .. v.xp .. " / " .. v.gold .. " / " .. tostring(v.src))
+    assert(n.Quests.Best().detail:find("≈ 2000 XP (QuestDB)", 1, true), n.Quests.Best().detail)
+    mock.qreward = { [201] = { 1650, 12 } }
+    n.Quests.Refresh()
+    v = n.Quests.Route()[1].v
+    assert(v.xp == 1650 and v.gold == 12 and v.src == "journal", "journal : " .. v.xp .. " " .. tostring(v.src))
+    n.QuestDB.Learn(201, { xp = 3300, money = 2400, ql = 20 })
+    n.Quests.Refresh()
+    v = n.Quests.Route()[1].v
+    assert(v.xp == 3300 and v.gold == 2400 and v.src == "appris", "appris : " .. v.xp)
+    n.QuestDB.Learn(201, { xp = 1234, money = 5, zeroMoney = true, exact = true })
+    n.Quests.Refresh()
+    assert(n.Quests.Route()[1].v.xp == 1234, "QUEST_TURNED_IN exact")
+    assert(n.Quests.Rows()[1].sub:find("(appris)", 1, true), "source dans l'Itineraire : " .. tostring(n.Quests.Rows()[1].sub))
+    -- quete propre a Forever (id >= 65309) sans ligne : estimation, jamais zero
+    n = oneQuest(65400)
+    mock.qreward = nil
+    n.Quests.Refresh()
+    v = n.Quests.Route()[1].v
+    local ex, em = n.Quests.Estimate(20, 20)
+    assert(v.src == "estimé" and v.xp == ex and v.xp > 0 and v.gold == em, "Forever sans ligne : " .. v.xp .. " " .. tostring(v.src))
+    assert(n.Quests.Best().detail:find("(estimé)", 1, true))
+    assert(not findSecret(n.db, "db"))
+    sameKeys(keys(n.db), before)
+    mock.qlog, mock.qreward, LibStub = nil, nil, nil
+  end)
+
+  check("QuestDB tiers : meilleur choix, repli sur la base apprise, calibration, absent ou pas pret", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB and GetQuestLogRewardXP) then return end
+    mock.ah, mock.sellPrice = {}, { [1001] = 100, [1002] = 50, [1003] = 10 }
+    EXT = { [201] = { xp = 2000, money = 700, choices = { { 1001, 1 }, { 1002, 5 } }, items = { { 1003, 3 } } } }
+    installExt()
+    local n = oneQuest(201)
+    mock.qreward = nil
+    n.Quests.Refresh()
+    assert(n.Quests.Route()[1].v.gold == 700 + 30 + 250, "meilleur des choix (5 x 50) + objets : " .. n.Quests.Route()[1].v.gold)
+    n.QuestDB.Learn(201, { ql = 20, choices = "1001:1" }) -- la base apprise a des choix : elle prime
+    n.Quests.Refresh()
+    assert(n.Quests.Route()[1].v.gold == 700 + 30 + 100, "choix appris : " .. n.Quests.Route()[1].v.gold)
+    -- calibration : XP 3300 et 2400 cuivre contre 1650 / 1200 estimes
+    EXT = {}
+    for _, id in ipairs({ 301, 302, 303 }) do EXT[id] = { xp = 3300, money = 2400 } end
+    n = questN(20)
+    mock.qquests = {}
+    for _, id in ipairs({ 301, 302, 303 }) do mock.qquests[id] = { name = "Q" .. id, startedBy = { { 9001 } }, questLevel = 20 } end
+    valueLog({ 301, 302, 303 })
+    mock.qreward = nil
+    n.Quests.Refresh() n.Quests.Route()
+    local cx, cm = n.Quests.Calib()
+    assert(cx == 2 and cm == 2, "calibration QuestDB : " .. cx .. " / " .. cm)
+    -- pas pret, absent, qui plante : estimation sans erreur
+    installExt(false)
+    n = oneQuest(201)
+    n.Quests.Refresh()
+    assert(n.Quests.Route()[1].v.src == "estimé", "pas pret")
+    LibStub = function() error("boom") end
+    n.Quests.Refresh()
+    assert(n.Quests.Route()[1].v.src == "estimé", "qui plante")
+    LibStub = nil
+    n.Quests.Refresh()
+    assert(n.Quests.Route()[1].v.src == "estimé" and n.Training.Cost("x", 1, 598) == nil, "absent")
+    assert(not findSecret(n.db, "db"))
+    mock.qlog, mock.qreward, mock.ah, mock.sellPrice, EXT = nil, nil, nil, nil, {}
   end)
 end
 

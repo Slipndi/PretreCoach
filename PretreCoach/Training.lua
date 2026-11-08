@@ -50,7 +50,90 @@ local function knownCost(name, rankIndex)
   end
 end
 
-Training.Cost = knownCost
+-- What's Training (addon tiers, optionnel, lecture seule par WT_API) : prix de Forever, remise de faction comprise.
+-- Les entrees du catalogue sont gardees en memoire seulement (jamais en base) ; seuls les sorts de maitre comptent.
+local AHEAD = 2 -- la reserve de Budget couvre les sorts jusqu'a niveau + AHEAD
+local inData = {}
+for _, sp in ipairs(D.Spells) do for _, r in ipairs(sp.ranks) do inData[r.id] = true end end
+
+local function wtApi()
+  if type(WT_API) ~= "table" then return nil end
+  local ok, ready = pcall(WT_API.IsReady)
+  return ok and ready and WT_API or nil
+end
+
+local function playerRace()
+  local st, _, _, id = S.GetAll(UnitRace, "player")
+  return st == "lisible" and type(id) == "number" and id or nil
+end
+
+local wtAll -- { [spellId] = entree } kind "trainer" seulement
+local function catalog(api)
+  if wtAll then return wtAll end
+  local ok, cat = pcall(api.GetCatalog, "PRIEST", { race = playerRace(), faction = "Horde" })
+  if not ok or type(cat) ~= "table" then return {} end
+  local all = {}
+  for _, e in ipairs(cat) do
+    if type(e) == "table" and e.kind == "trainer" and type(e.id) == "number" and type(e.cost) == "number" then all[e.id] = e end
+  end
+  wtAll = all
+  return all
+end
+
+-- Talent non pris ou sort reserve a une autre race : ignore.
+local function allowed(e)
+  if e.requiredTalentId and S.Get(IsPlayerSpell, e.requiredTalentId) ~= true then return false end
+  local race = playerRace()
+  if type(e.races) == "table" and next(e.races) and race then
+    for k, v in pairs(e.races) do if k == race or v == race then return true end end
+    return false
+  end
+  return true
+end
+
+local function wtCost(id)
+  local api = wtApi()
+  if not (api and id) then return nil end
+  local e = catalog(api)[id]
+  if e and not allowed(e) then return nil end
+  local ok, src = pcall(api.GetSource, id)
+  if ok and type(src) == "table" and src.kind == "trainer" and type(src.cost) == "number" then return src.cost end
+  return e and e.cost or nil
+end
+
+-- Cout d'un rang : prix vu chez le maitre, sinon What's Training (si spellId donne), sinon nil.
+function Training.Cost(name, rankIndex, spellId) return knownCost(name, rankIndex) or wtCost(spellId) end
+
+-- Sorts de niveau [from, to] : (total des couts connus, nombre de couts inconnus). Les sorts du catalogue absents de
+-- Data/Spells sont comptes aussi (leur niveau vient du catalogue).
+local function levelCost(from, to)
+  local total, unknown = 0, 0
+  for _, sp in ipairs(D.Spells) do
+    if not sp.talent and not sp.noTrainer then
+      for i, r in ipairs(sp.ranks) do
+        if r.level and r.level >= from and r.level <= to then
+          local c = Training.Cost(spellName(sp, i), i, r.id)
+          if c then total = total + c else unknown = unknown + 1 end
+        end
+      end
+    end
+  end
+  local api = wtApi()
+  if api then
+    for id, e in pairs(catalog(api)) do
+      if not inData[id] and type(e.level) == "number" and e.level >= from and e.level <= to and allowed(e) then
+        total = total + (wtCost(id) or e.cost)
+      end
+    end
+  end
+  return total, unknown
+end
+
+-- Cout connu des sorts des prochains niveaux (reserve de Budget) ; 0 si inconnu.
+function Training.Upcoming(level)
+  if type(level) ~= "number" then return 0 end
+  return (levelCost(level + 1, level + AHEAD))
+end
 
 -- Argent du joueur face au cout des sorts a apprendre (plan = Training.Plan) : vert si assez, rouge s'il manque ;
 -- cout incomplet : minimum connu ; argent illisible : nil.
@@ -58,12 +141,23 @@ function Training.MoneyText(plan)
   local money = S.Get(GetMoney)
   if type(money) ~= "number" or not plan or not plan.pending or #plan.pending == 0 then return nil end
   local need = plan.total or plan.known or 0
-  if need == 0 then return L.TRAIN_MONEY_UNKNOWN:format(coin(money)) end
+  if need == 0 and (plan.unknown or 0) > 0 then return L.TRAIN_MONEY_UNKNOWN:format(coin(money)) end
   local short = need - money
   local s
   if short > 0 then s = "|cffff4444" .. L.TRAIN_MONEY_SHORT:format(coin(short), coin(money)) .. "|r"
   else s = "|cff33ff33" .. L.TRAIN_MONEY_OK:format(coin(money)) .. "|r" end
   if not plan.total and (plan.unknown or 0) > 0 then s = s .. L.TRAIN_MONEY_PARTIAL:format(plan.unknown) end
+  return s
+end
+
+-- « Sorts du niveau 14 : 3,6 pa, tu as assez » / « ..., il te manque X » ; nil si rien de connu ou argent illisible.
+function Training.NextText(plan)
+  local money = S.Get(GetMoney)
+  if type(money) ~= "number" or not (plan and plan.nextLevel) or (plan.nextTotal or 0) == 0 then return nil end
+  local short = plan.nextTotal - money
+  local s = short > 0 and L.TRAIN_NEXT_SHORT:format(plan.nextLevel, coin(plan.nextTotal), coin(short))
+    or L.TRAIN_NEXT_OK:format(plan.nextLevel, coin(plan.nextTotal))
+  if (plan.nextUnknown or 0) > 0 then s = s .. L.TRAIN_MONEY_PARTIAL:format(plan.nextUnknown) end
   return s
 end
 
@@ -79,7 +173,7 @@ function Training.Plan(level)
     local total, known, unknown = 0, 0, 0
     for _, e in ipairs(p) do
       local name = spellName(byKey[e.key], e.rankIndex)
-      local cost = knownCost(name, e.rankIndex)
+      local cost = Training.Cost(name, e.rankIndex, byKey[e.key].ranks[e.rankIndex].id)
       out.pending[#out.pending + 1] = { text = rankText(name, e.rankIndex), cost = cost }
       total = total and cost and total + cost or nil
       if cost then known = known + cost else unknown = unknown + 1 end
@@ -98,6 +192,7 @@ function Training.Plan(level)
     end
     if best then
       out.nextLevel, out.nextNames = best, {}
+      out.nextTotal, out.nextUnknown = levelCost(best, best)
       for _, sp in ipairs(D.Spells) do
         if not sp.talent and not sp.noTrainer then
           for i, r in ipairs(sp.ranks) do
