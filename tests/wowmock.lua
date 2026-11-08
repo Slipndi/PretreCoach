@@ -123,6 +123,7 @@ function mock.reset()
   if mock.qinit then mock.qinit() end
   mock.recipeInfo, mock.schematics, mock.tsNotReady = nil, nil, nil
   mock.bagInfo, mock.itemClass, mock.itemSub, mock.itemInfo, mock.icons = nil, nil, nil, nil, nil
+  mock.tipPost, mock.tipItem = nil, nil
   mock.pos, mock.recipes, mock.bag, mock.addons, mock.sellPrice, mock.sub, mock.ejSelected = nil, nil, nil, nil, nil, nil, nil
 end
 
@@ -381,7 +382,10 @@ C_Map = { GetPlayerMapPosition = function(mapID, unit) assert(type(mapID) == "nu
     return out
   end }
 Enum = { UIMapType = { Cosmic = 0, World = 1, Continent = 2, Zone = 3, City = 10, Dungeon = 4, Micro = 5, Orphan = 6 },
-  TradeskillRelativeDifficulty = { Optimal = 0, Medium = 1, Easy = 2, Trivial = 3 } }
+  TradeskillRelativeDifficulty = { Optimal = 0, Medium = 1, Easy = 2, Trivial = 3 }, TooltipDataType = { Item = 0 } }
+-- bulles d'objets : mock.tipPost = rappel de TooltipDataProcessor ; mock.tipItem = lien rendu par GameTooltip:GetItem (repli OnTooltipSetItem)
+TooltipDataProcessor = { AddTooltipPostCall = function(kind, fn) assert(kind == Enum.TooltipDataType.Item) mock.tipPost = fn end }
+function GameTooltip.GetItem() return "x", mock.tipItem end
 
 -- Carte du monde minimale : mock.worldMap = uiMapID affiche ; WorldMapFrame:Show() l'ouvre ; mock.hooked = hooksecurefunc ;
 -- WorldMapFrame.hooks = HookScript ; mock.grouped = IsInGroup
@@ -427,7 +431,7 @@ GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventor
 UiMapPoint C_SuperTrack WorldMapFrame hooksecurefunc Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
 EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator GetItemIcon UnitXP UnitXPMax RegisterUnitWatch UnitInRange
 GetQuestLogRewardXP GetQuestLogRewardMoney GetNumQuestChoices GetQuestItemLink GetQuestItemInfo GetQuestID QuestInfoRewardsFrame
-GetRewardXP GetRewardMoney GetNumQuestRewards
+GetRewardXP GetRewardMoney GetNumQuestRewards TooltipDataProcessor
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end

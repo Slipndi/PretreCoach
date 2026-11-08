@@ -96,11 +96,17 @@ local function gather(out)
   out[#out + 1] = { kind = "gather", value = c.price * HERB_BATCH, text = text }
 end
 
+-- Craft-pour-vendre avec les ressources des sacs (Keep) : gain par rapport a la vente directe.
+local function keepCraft(out)
+  local b = ns.Keep and ns.Keep.BestCraft()
+  if b and b.value > 0 then out[#out + 1] = { kind = "craft", value = b.value, text = b.text } end
+end
+
 -- Actions a/b/c rangees par valeur decroissante (au plus TOP) ; vide sans Auctionator.
 function Gold.Candidates()
   local out = {}
   if not (ns.AH and ns.AH.Available()) then return out end
-  for _, f in ipairs({ sell, craft, gather }) do pcall(f, out) end
+  for _, f in ipairs({ sell, craft, gather, keepCraft }) do pcall(f, out) end
   table.sort(out, function(a, b) return a.value > b.value end)
   for i = #out, TOP + 1, -1 do out[i] = nil end
   return out

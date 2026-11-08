@@ -42,6 +42,7 @@ Talents.lua
 Professions.lua
 Sell.lua
 Gold.lua
+Keep.lua
 Gather.lua
 Pace.lua
 Consumables.lua

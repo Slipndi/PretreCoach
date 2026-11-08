@@ -55,7 +55,7 @@ local function classID(id)
 end
 
 local function build()
-  local used, prof, lines = usedSet(), hasProf(), {}
+  local used, prof, lines, left = usedSet(), hasProf(), {}, {}
   local api = C_Container
   if type(api) ~= "table" then return lines end
   for _, bag in ipairs(BAGS) do
@@ -63,9 +63,18 @@ local function build()
     for slot = 1, num(slots) or 0 do
       local info = S.Get(api.GetContainerItemInfo, bag, slot)
       local id = type(info) == "table" and num(info.itemID)
-      if id and info.isBound ~= true and not used[id] then
+      -- ressource a garder (monter le metier, jouer) ou a crafter : retiree de la pile, jamais proposee a la vente
+      local q = type(info) == "table" and num(info.stackCount) or 1
+      local kv = id and ns.Keep and ns.Keep.Verdict(id)
+      if kv then
+        left[id] = left[id] or kv.keep
+        local k = math.min(left[id], q)
+        left[id], q = left[id] - k, q - k
+        if kv.restKind == "craft" then q = 0 end
+      end
+      if id and q > 0 and info.isBound ~= true and not used[id] then
         local name, m = itemInfo(id)
-        local q, merchant = num(info.stackCount) or 1, m or 0
+        local merchant = m or 0
         local class, icon = classID(id)
         local ah = ns.AH and ns.AH.Price(id)
         local age = ah and ns.AH.Age(id)
@@ -123,6 +132,8 @@ function Sell.Rows()
       text = ("%s x%d  ·  %s  ·  %s"):format(l.name or ("objet " .. l.itemID), l.count, L["SELL_" .. l.advice], money(l.amount)),
       sub = table.concat(subs, "  ·  "), highlight = l.advice == "ah" }
   end
+  -- ressources de craft : garder / vendre / crafter (Keep)
+  for _, r in ipairs(ns.Keep and ns.Keep.Rows() or {}) do rows[#rows + 1] = r end
   return rows
 end
 
