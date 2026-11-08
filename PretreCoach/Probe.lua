@@ -270,8 +270,10 @@ local function TraitsReport(add)
     end
   end
   add("Plan de talents :")
+  local seen = {} -- le plan reprend un talent après le respec (même key, deux tranches de niveaux) : une ligne par talent
   for _, e in ipairs(ns.Data.TalentPlan) do
-    if e.spellIDs then
+    if e.spellIDs and not seen[e.key or e.name] then
+      seen[e.key or e.name] = true
       local hit
       for _, id in ipairs(e.spellIDs) do if found[id] then hit = { id = id, n = found[id] } break end end
       add("  %s : %s", e.name, hit and ("trouvé (spellID %d, rang %s/%s)"):format(hit.id, Show(hit.n.rank), Show(hit.n.max)) or "introuvable")
