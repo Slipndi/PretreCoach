@@ -9,6 +9,7 @@ ignore:
   - test.ps1
   - install.ps1
   - install.sh
+  - build-release.ps1
   - .github
   - CLAUDE.md
   - .claude
