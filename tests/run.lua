@@ -785,6 +785,10 @@ local function suite(label)
     assert(ids[1] == 1309595 and ids[2] == 1309633 and #ids == 2, "rangs SWD")
   end)
 
+  check("Donnees mortes supprimees : StatAdvice, legacyPoints (jamais affichees)", function()
+    assert(N.Data.StatAdvice == nil and N.Data.Professions[171].legacyPoints == nil)
+  end)
+
   check("Spells : Penitence = talent 402174 (IsPlayerSpell), plus l'ID 47540", function()
     if not IsPlayerSpell and not IsSpellKnown and not C_SpellBook then return end
     for _, sp in ipairs(N.Data.Spells) do

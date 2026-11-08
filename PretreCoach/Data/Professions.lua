@@ -25,7 +25,6 @@ ns.Data.Professions = {
 	[171] = { -- à vérifier : skillLine, compétences requises
 		name = "Alchimie",
 		ranks = ranks,
-		legacyPoints = { 150, 225, 300 },
 		recipes = {
 			{ skill = 1, name = "Potion de soins mineure", verify = true },
 			{ skill = 25, name = "Potion de mana mineure", verify = true },

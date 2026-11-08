@@ -12,5 +12,3 @@ ns.Data.Wands = {
 -- Gravestone Scepter de cette quête vient de warcraft.wiki.gg. À vérifier en jeu sur Forever.
 ns.Data.GravestoneQuest = 6561
 ns.Data.GravestoneQuestVerify = true
-
-ns.Data.StatAdvice = "Puissance des sorts au début, puis Esprit dès 40 à 50 de puissance des sorts, puis Intelligence et Endurance."
