@@ -1,3 +1,11 @@
+# PretreCoach 0.9.4
+
+- Itinéraire : les objectifs « ramasser un objet » mènent au lieu de l'objet, au point le plus proche de toi.
+- Itinéraire : les quêtes à prendre sont choisies sur ce qu'elles rapportent, plus seulement sur la distance.
+- Itinéraire : plus de quête trop haute (niveau supérieur au tien + 2) ; celles du journal passent en fin de liste.
+- Itinéraire : un rendu lointain n'est plus imposé en premier.
+- Itinéraire : enchaîne jusqu'à 3 zones rentables (ligne « Ensuite : zone ») ; une quête faible ne justifie plus un voyage.
+
 # PretreCoach 0.9.3
 
 - Métiers : « achète des fioles » n'apparaît que s'il en manque, avec la quantité manquante.
