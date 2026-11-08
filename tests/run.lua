@@ -4372,7 +4372,11 @@ local function suite(label)
       return
     end
     assert(g.text:find("45 Feuillargent (tu en as 10)", 1, true) and g.text:find("45 Fiole vide (tu en as 0)", 1, true) and g.done == false, g.text)
-    assert(g.text:find("achète Fiole vide chez un marchand de fournitures", 1, true), g.text)
+    assert(g.text:find("achète 45 Fiole vide chez un marchand de fournitures", 1, true), g.text)
+    mock.items = { [765] = 10, [2447] = 3, [3371] = 40 }
+    assert(gatherOf(n, 171).text:find("achète 5 Fiole vide", 1, true), "il en manque 5")
+    mock.items = { [765] = 10, [2447] = 3, [3371] = 45 }
+    assert(not gatherOf(n, 171).text:find("achète", 1, true), "assez de fioles : rien a acheter")
     assert(todoText(n.Prof.Steps(171)):find("Fabrique-en ~45 (Élixir de défense mineure) jusqu'à 55", 1, true), todoText(n.Prof.Steps(171)))
     mock.items = { [765] = 99, [2447] = 99, [3371] = 99 }
     assert(gatherOf(n, 171).done == true, "tout est la")

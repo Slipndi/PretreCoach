@@ -364,8 +364,9 @@ function Prof.Steps(line)
       local need, have = c.n * left, count(c.id)
       local nm = ico(c.id, c.name)
       parts[#parts + 1] = have and L.PROF_STEP_HAVE:format(need, nm, have) or ("%d %s"):format(need, nm)
-      if c.vendor then
-        vendors[#vendors + 1] = nm
+      -- a acheter seulement s'il en manque : compte lu = le manque ; compte illisible = sans quantite
+      if c.vendor and (have == nil or have < need) then
+        vendors[#vendors + 1] = have and ("%d %s"):format(need - have, nm) or nm
         if c.price then spend = spend + c.price * math.max(0, need - (have or 0)) end
       end
       if have == nil then all = nil elseif have < need and all then all = false end
