@@ -220,6 +220,7 @@ function GetNumTrainerServices() return 3 end
 function GetTrainerServiceInfo(i) return "Sort" .. i, "", "available" end
 function GetTrainerServiceLevelReq() return 10 end
 function GetTrainerServiceCost() return 100 end
+function GetTrainerServiceSkillLine() return nil end
 function GetCoinTextureString(c) return "COIN:" .. c end
 C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
 -- Journal pilotable : mock.qlog = { { questID, title, isHeader, complete, objectives = { { text, numFulfilled, numRequired, finished } } } } ;
@@ -436,7 +437,7 @@ local UNCERTAIN = [[
 C_Traits C_ClassTalents C_SpecializationInfo GetNumSpecGroups GetNumUnspentTalents
 C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
-GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
+GetTrainerServiceLevelReq GetTrainerServiceCost GetTrainerServiceSkillLine GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 UiMapPoint C_SuperTrack WorldMapFrame hooksecurefunc Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
 EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator LibStub WT_API GetItemIcon UnitXP UnitXPMax RegisterUnitWatch UnitInRange
 GetQuestLogRewardXP GetQuestLogRewardMoney GetNumQuestChoices GetQuestItemLink GetQuestItemInfo GetQuestID QuestInfoRewardsFrame

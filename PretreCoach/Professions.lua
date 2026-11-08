@@ -334,20 +334,17 @@ function Prof.Steps(line)
     end
   end
   local held = lock ~= nil and rank >= max -- plafond atteint : rien d'autre a faire avant le maitre
-  -- Recettes du plan a apprendre chez le maitre : etape courante, et la suivante a 5 points ou moins. Seulement si la fenetre
-  -- du metier a deja ete lue (adv), sinon on ne sait pas ce qui est connu. Les recettes a acheter (step.buy) ne sont pas ici.
-  local learn
-  if adv and adv.list then
-    local nxt
-    for i, x in ipairs(plan.steps) do if x == step then nxt = plan.steps[i + 1] end end
-    for _, x in ipairs({ step, nxt and rank >= step.to - 5 and nxt or nil }) do
-      if x.recipe and not x.buy and not knownRecipe(adv, x.recipe) then
-        local ok, d = false, nil
-        if GOKEY[line] and ns.Goto then ok, d = pcall(ns.Goto.For, GOKEY[line]) end
-        local where = ok and type(d) == "table" and d.x and d.text
-        add("learn", where and L.PROF_STEP_LEARN:format(x.recipe, where) or L.PROF_STEP_LEARN_ANY:format(x.recipe), false)
-        learn = true
-      end
+  -- Recettes a apprendre : seulement ce que le maitre de ce metier a affiche « disponible » a la derniere visite (lu en jeu,
+  -- jamais deduit du plan, dont les noms ne sont pas verifies) et pas deja connu dans la fenetre du metier.
+  local learn, nl = nil, 0
+  for k, v in pairs((ns.db and ns.db.trainer) or {}) do
+    local rname = k:match("^(.-)|")
+    if type(v) == "table" and v.category == "available" and v.skill == pname and rname and not knownRecipe(adv, rname) and nl < 3 then
+      local ok, d = false, nil
+      if GOKEY[line] and ns.Goto then ok, d = pcall(ns.Goto.For, GOKEY[line]) end
+      local where = ok and type(d) == "table" and d.x and d.text
+      add("learn", where and L.PROF_STEP_LEARN:format(rname, where) or L.PROF_STEP_LEARN_ANY:format(rname), false)
+      learn, nl = true, nl + 1
     end
   end
   if step.buy then

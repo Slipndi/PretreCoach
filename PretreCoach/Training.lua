@@ -274,7 +274,8 @@ local function readTrainer()
       if type(cost) ~= "number" then cost = nil end
       if ns.db then
         ns.db.trainer = ns.db.trainer or {}
-        ns.db.trainer[name .. "|" .. rank] = { level = level, cost = cost, category = cat }
+        local skill = S.Get(GetTrainerServiceSkillLine, i) -- metier du service (nom localise), nil pour un sort de classe
+        ns.db.trainer[name .. "|" .. rank] = { level = level, cost = cost, category = cat, skill = type(skill) == "string" and skill or nil }
       end
       if cat == "available" and #lines < MAX_LINES then
         lines[#lines + 1] = name .. (rank ~= "" and (" (" .. rank .. ")") or "") .. (cost and cost > 0 and (" : " .. coin(cost)) or "")

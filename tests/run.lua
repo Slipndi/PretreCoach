@@ -4336,20 +4336,21 @@ local function suite(label)
     assert(not kinds(n.Prof.Steps(171)):find("live", 1, true), "verte : pas de conseil En direct")
   end)
 
-  check("Prof.Steps : recette du plan a apprendre chez le maitre", function()
+  check("Prof.Steps : recettes a apprendre = ce que le maitre du metier affiche disponible", function()
     local n = fresh().n
-    planState(n, { [171] = { rank = 40, max = 75 } }, 9)
-    assert(not kinds(n.Prof.Steps(171)):find("learn", 1, true), "fenetre jamais lue : on ne sait pas")
-    n.Prof.Advice[171] = { list = { { name = "Élixir arcanique mineur", color = "gray" } } }
+    planState(n, { [171] = { rank = 52, max = 75 } }, 9)
+    n.db.trainer = { ["Élixir de défense mineure|"] = { category = "available" } } -- sans metier (sort de classe ou ancien releve)
+    assert(not n.Prof.Steps(171).learn, "pas de metier connu : rien")
+    n.db.trainer = {
+      ["Étude des toxines|"] = { category = "available", skill = "Alchimie" },
+      ["Laboratoire|"] = { category = "unavailable", skill = "Alchimie" },
+      ["Bandage|"] = { category = "available", skill = "Secourisme" },
+    }
     local s = n.Prof.Steps(171)
-    assert(s.learn and todoText(s):find("Apprends « Élixir de défense mineure » chez le maître", 1, true), todoText(s))
-    assert(not todoText(s):find("Potion de mana mineure", 1, true), "suivante a plus de 5 points : pas encore")
-    n.State.profs[171].rank = 51
-    n.Prof.Advice[171] = { list = { { name = "Élixir de défense mineure", color = "yellow" } } }
-    s = n.Prof.Steps(171)
-    assert(s.learn and todoText(s):find("Apprends « Potion de mana mineure »", 1, true), "suivante a 5 points : " .. todoText(s))
-    n.Prof.Advice[171].list[2] = { name = "Potion de mana mineure", color = "orange" }
-    assert(not n.Prof.Steps(171).learn, "tout est connu")
+    assert(s.learn and todoText(s):find("Apprends « Étude des toxines » chez le maître", 1, true), todoText(s))
+    assert(not todoText(s):find("Laboratoire", 1, true) and not todoText(s):find("Bandage", 1, true))
+    n.Prof.Advice[171] = { list = { { name = "Étude des toxines", color = "orange" } } }
+    assert(not n.Prof.Steps(171).learn, "deja connue dans la fenetre")
   end)
 
   check("Prof.Steps : comptes de composants lisibles, absents, secrets", function()
