@@ -593,7 +593,7 @@ local function update(announce)
     changed = true
     local texts = {}
     for _, e in ipairs(entries) do
-      if e.priority and not e.done then texts[#texts + 1] = "- " .. e.text end
+      if e.priority and not e.done and not tostring(e.id):find("^kq") then texts[#texts + 1] = "- " .. e.text end
     end
     if #texts > 0 then
       ns.Toast(L.GUIDE_TIER:format(tier) .. "\n" .. table.concat(texts, "\n"), { key = "tier:" .. tier })

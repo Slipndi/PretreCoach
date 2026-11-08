@@ -3584,6 +3584,12 @@ local function suite(label)
       assert(type(q.id) == "number" and q.from <= q.to and type(q.why) == "string" and q.source:find(":%d+"), "donnee : " .. tostring(q.id))
     end
     for _, q in ipairs(n.Data.KeyQuests) do assert(q.id ~= 5658, "5658 absente de Forever") end
+    local seen, top = {}, 0
+    for _, q in ipairs(n.Data.KeyQuests) do
+      assert(not seen[q.id] and q.source:find("QuestieDB_Forever.toc:%d+"), "doublon ou source : " .. q.id)
+      seen[q.id] = true; top = math.max(top, q.to)
+    end
+    assert(top == 60, "les quetes cles vont jusqu au 60")
     -- quete de test (fictive) : la logique de tranche et de prerequis ne depend pas d'une vraie quete
     local TQ = { id = 99658, from = 10, to = 19, why = "quete test, Toucher de faiblesse", source = "test:1" }
     table.insert(n.Data.KeyQuests, TQ)
