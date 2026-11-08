@@ -8,7 +8,7 @@ ns.Data = ns.Data or {}
 -- talent (arg = key de TalentPlan), spells, known (arg = key de sort), quest (arg = questID), specGroups (arg = n),
 -- why (facultatif, jamais sur un objectif manuel) : le « pourquoi », affiché en détail sous l'objectif (d'après la spec).
 -- Les objectifs manuels ne sont plus affichés (ni carte ni Maintenant) : voir Guide.lua, xpPick et firstTodo.
--- prof (facultatif) : skillLine du métier concerné (objectif de métier du guide) ; herbZone (arg = skillLine), items (arg = { count, ids }), manual (case cochée à la main, aucune API connue).
+-- prof (facultatif) : skillLine du métier concerné (objectif de métier du guide) ; herbZone (arg = skillLine), items (arg = { count, ids }).
 local HERB, ALCH, AID = 182, 171, 129
 
 -- Bandages de Data/Professions.lua (anti-venin exclu) : les seuls objets de Data/ utilisables pour un compte d'objets.
@@ -16,6 +16,14 @@ local bandages = {}
 for _, b in ipairs(ns.Data.Professions[AID].bandages) do
 	if b.name:find("^Bandage") then bandages[#bandages + 1] = b.itemID end
 end
+
+-- Potions de mana Classic (mineure à majeure) et seuil de stock avant les donjons.
+local MANA_POTIONS = { 2455, 3385, 3827, 6149, 13443, 13444 }
+local MANA_POTIONS_MIN = 5
+
+-- Quêtes lues par C_QuestLog : Staff of Orgrimmar (15444) = récompense de « Hidden Enemies » 5730 (Attune, Forever) ;
+-- Crescent Staff (6505) = choix de « Leaders of the Fang » 914 (à vérifier : bâton +5 non confirmé) ; Triage Horde 6622 (QuestDB).
+local RFC_STAFF_QUEST, LORD_STAFF_QUEST, TRIAGE_QUEST = 5730, 914, 6622
 
 ns.Data.ThrillName = "Thrill of Adventure" -- talent Legacy, retrouvé par son nom dans l'arbre C_Traits
 
@@ -34,8 +42,8 @@ ns.Data.Objectives = {
 	{ id = "legacy_toa", from = 10, to = 29, text = "Premier point Legacy : Thrill of Adventure", check = "talentName", arg = ns.Data.ThrillName },
 	{ id = "bandages", from = 10, to = 29, text = "Aie au moins 10 bandages sur toi", check = "items", arg = { count = 10, ids = bandages }, prof = AID },
 	{ id = "wand_sup", from = 13, to = 19, text = "Baguette magique supérieure", check = "wandItem", arg = 11288, go = "WAND" },
-	{ id = "rfc_staff", from = 13, to = 18, text = "Gouffre de Ragefeu : bâton de quête (+18 dégâts des sorts)", check = "manual" },
-	{ id = "lord_staff", from = 15, to = 24, text = "Ruines de Lordaeron et Cavernes des lamentations : bâton de quête (+5 dégâts des sorts)", check = "manual" },
+	{ id = "rfc_staff", from = 13, to = 18, text = "Gouffre de Ragefeu : bâton de quête (+18 dégâts des sorts)", check = "quest", arg = RFC_STAFF_QUEST },
+	{ id = "lord_staff", from = 15, to = 24, text = "Ruines de Lordaeron et Cavernes des lamentations : bâton de quête (+5 dégâts des sorts)", check = "quest", arg = LORD_STAFF_QUEST },
 	{ id = "impswp", from = 17, to = 18, text = "Mot de l'ombre : Douleur amélioré 2/2", check = "talent", arg = "IMPSWP" },
 	{ id = "mentalstr", from = 19, to = 39, text = "Force mentale 5/5", check = "talent", arg = "MENTALSTR" },
 	{ id = "mentalagi", from = 19, to = 39, text = "Agilité mentale 3/3", check = "talent", arg = "MENTALAGI" },
@@ -45,14 +53,14 @@ ns.Data.Objectives = {
 	{ id = "rank_expert_herb", from = 20, to = 29, text = "Rang Expert en Herboristerie", check = "profRank", arg = { line = HERB, max = 225 }, priority = 1, prof = HERB },
 	{ id = "rank_expert_alch", from = 20, to = 29, text = "Rang Expert en Alchimie", check = "profRank", arg = { line = ALCH, max = 225 }, priority = 1, prof = ALCH },
 	{ id = "fearward", from = 20, to = 29, text = "Apprends Protection contre la peur", check = "known", arg = "FEARWARD", priority = 2, go = "PRIEST" },
-	{ id = "mana_potions", from = 20, to = 39, text = "Potions de mana en stock avant les donjons", check = "manual", prof = ALCH },
+	{ id = "mana_potions", from = 20, to = 39, text = "Potions de mana en stock avant les donjons", check = "items", arg = { count = MANA_POTIONS_MIN, ids = MANA_POTIONS }, prof = ALCH },
 	{ id = "bfd_quest", from = 24, to = 32, text = "Quête Blackfathom Villainy (Gravestone Scepter)", check = "quest", arg = ns.Data.GravestoneQuest, priority = 3, go = "Q" .. ns.Data.GravestoneQuest },
 	-- 30-40
 	{ id = "divspirit", from = 30, to = 39, text = "Apprends Esprit divin", check = "known", arg = "DIVSPIRIT", priority = 2, go = "PRIEST" },
 	{ id = "swd", from = 32, to = 39, text = "Apprends Mot de l'ombre : Mort", check = "known", arg = "SWD", go = "PRIEST" },
 	{ id = "rank_artisan_herb", from = 35, to = 39, text = "Rang Artisan en Herboristerie", check = "profRank", arg = { line = HERB, max = 300 }, priority = 1, prof = HERB },
 	{ id = "rank_artisan_alch", from = 35, to = 39, text = "Rang Artisan en Alchimie", check = "profRank", arg = { line = ALCH, max = 300 }, priority = 1, prof = ALCH },
-	{ id = "triage", from = 35, to = 45, text = "Secourisme Artisan : quête Triage", check = "manual", prof = AID },
+	{ id = "triage", from = 35, to = 45, text = "Secourisme Artisan : quête Triage", check = "quest", arg = TRIAGE_QUEST, prof = AID },
 	-- 40-60
 	{ id = "shadowform", from = 40, to = 60, text = "Forme d'Ombre", check = "known", arg = "SHADOWFORM", priority = 1 },
 	{ id = "dualspec", from = 40, to = 60, text = "Double spécialisation", check = "specGroups", arg = 2, priority = 2, why = "une spécialisation Ombre en solo, une spécialisation soin pour les donjons" },

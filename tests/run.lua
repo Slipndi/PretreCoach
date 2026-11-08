@@ -1093,7 +1093,29 @@ local function suite(label)
     else
       assert(st(ev(n, "bfd_quest")) == "unknown")
     end
+    -- point 4 : objectifs autrefois manuels, verifiables
+    if C_QuestLog then
+      local orig = C_QuestLog.IsQuestFlaggedCompleted
+      for id, q in pairs({ rfc_staff = 5730, lord_staff = 914, triage = 6622 }) do
+        n.State.level = id == "triage" and 36 or 16
+        C_QuestLog.IsQuestFlaggedCompleted = function() return false end
+        assert(st(ev(n, id)) == "todo", id .. " a faire")
+        C_QuestLog.IsQuestFlaggedCompleted = function(x) return x == q end
+        assert(st(ev(n, id)) == "done", id .. " fait")
+      end
+      C_QuestLog.IsQuestFlaggedCompleted = orig
+    end
     n.State.level = 12
+    if C_Item and C_Item.GetItemCount or GetItemCount then
+      n.State.level = 25
+      mock.items = {}
+      assert(st(ev(n, "mana_potions")) == "todo")
+      mock.items = { [3385] = 2, [3827] = 3 }
+      assert(st(ev(n, "mana_potions")) == "done", "5 potions de mana = stock")
+      mock.items = { [3385] = 2 }
+      assert(st(ev(n, "mana_potions")) == "todo", "stock insuffisant")
+      n.State.level = 12
+    end
     if GetItemCount then
       mock.items = {}
       assert(st(ev(n, "bandages")) == "todo")
