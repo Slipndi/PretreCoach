@@ -609,7 +609,7 @@ local function ExtraSections(add, section)
         local plan = ns.Training and ns.Training.Plan(ns.State.level)
         local c = plan and plan.nextLevel and plan.nextTotal
         add("What's Training : chargé, prêt, coût des sorts du prochain niveau (%s) : %s", tostring(plan and plan.nextLevel),
-          c and ns.Prof.Money(c) or "inconnu")
+          c and ns.Prof.Money(c, true) or "inconnu")
       end
     end
     local idx = ns.db and ns.db.qindex

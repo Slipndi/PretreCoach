@@ -2813,6 +2813,9 @@ local function suite(label)
     end
     GetCoinTextureString = function(c) return c .. "|TInterface\\X:0|t" end
     assert(n.Prof.Money(7) == "7|TInterface\\X:0|t", "chaine du jeu avec |T conservee")
+    local pm = n.Prof.Money
+    assert(pm(12005, true) == "1 po 20 pa 5 pc" and pm(3600, true) == "36 pa" and pm(0, true) == "0 pc" and pm(mock.SECRET, true) == "?"
+      and not pm(12005, true):find("|T", 1, true), "texte brut po/pa/pc (sonde), meme avec GetCoinTextureString")
     GetCoinTextureString = g
     -- marge : verte si positive, rouge si negative, aucun signe colle aux icones
     local adv2 = { list = { { name = "R", color = "orange", skillUps = 1, cost = 100, value = 50, margin = -50 } } }

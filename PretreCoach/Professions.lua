@@ -180,8 +180,16 @@ end
 
 -- Seule fonction d'argent de l'addon : « 1[or] 20[argent] », zéros omis (0 = « 0[cuivre] »). Valeur illisible : « ? ».
 local COIN = { "|TInterface\\MoneyFrame\\UI-GoldIcon:0:0:2:0|t", "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t", "|TInterface\\MoneyFrame\\UI-CopperIcon:0:0:2:0|t" }
-function Prof.Money(c)
+function Prof.Money(c, plain) -- plain : texte po/pa/pc (sonde, copiable hors du jeu)
   if type(c) ~= "number" or S.IsSecret(c) then return "?" end
+  if plain then
+    c = math.floor(math.abs(c))
+    local po, pa, pc, t = math.floor(c / 10000), math.floor(c / 100) % 100, c % 100, {}
+    if po > 0 then t[#t + 1] = po .. " po" end
+    if pa > 0 then t[#t + 1] = pa .. " pa" end
+    if pc > 0 or #t == 0 then t[#t + 1] = pc .. " pc" end
+    return table.concat(t, " ")
+  end
   if GetCoinTextureString then
     local ok, s = pcall(GetCoinTextureString, c)
     if ok and type(s) == "string" and s:find("|T", 1, true) then return s end
