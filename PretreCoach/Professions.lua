@@ -334,6 +334,22 @@ function Prof.Steps(line)
     end
   end
   local held = lock ~= nil and rank >= max -- plafond atteint : rien d'autre a faire avant le maitre
+  -- Recettes du plan a apprendre chez le maitre : etape courante, et la suivante a 5 points ou moins. Seulement si la fenetre
+  -- du metier a deja ete lue (adv), sinon on ne sait pas ce qui est connu. Les recettes a acheter (step.buy) ne sont pas ici.
+  local learn
+  if adv and adv.list then
+    local nxt
+    for i, x in ipairs(plan.steps) do if x == step then nxt = plan.steps[i + 1] end end
+    for _, x in ipairs({ step, nxt and rank >= step.to - 5 and nxt or nil }) do
+      if x.recipe and not x.buy and not knownRecipe(adv, x.recipe) then
+        local ok, d = false, nil
+        if GOKEY[line] and ns.Goto then ok, d = pcall(ns.Goto.For, GOKEY[line]) end
+        local where = ok and type(d) == "table" and d.x and d.text
+        add("learn", where and L.PROF_STEP_LEARN:format(x.recipe, where) or L.PROF_STEP_LEARN_ANY:format(x.recipe), false)
+        learn = true
+      end
+    end
+  end
   if step.buy then
     local b = step.buy
     local known = knownRecipe(adv, b.recipe) and true or nil
@@ -375,7 +391,7 @@ function Prof.Steps(line)
     add("live", L.PROF_STEP_LIVE:format(top.name, L["PROF_C_" .. top.color]))
   end
   if held then for _, a in ipairs(todo) do if a.kind ~= "rank" then a.held = true end end end
-  return { title = title, short = title:sub(#pname + 2), todo = todo, step = step, alert = lock ~= nil, go = goKey }
+  return { title = title, short = title:sub(#pname + 2), todo = todo, step = step, alert = lock ~= nil, learn = learn, go = GOKEY[line] } -- maitre le plus proche, toujours propose
 end
 
 -- Texte court pour la carte : titre + premiere action non faite (2 lignes max), ou le conseil « tes sacs » si une

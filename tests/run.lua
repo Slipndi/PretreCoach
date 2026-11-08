@@ -4336,6 +4336,22 @@ local function suite(label)
     assert(not kinds(n.Prof.Steps(171)):find("live", 1, true), "verte : pas de conseil En direct")
   end)
 
+  check("Prof.Steps : recette du plan a apprendre chez le maitre", function()
+    local n = fresh().n
+    planState(n, { [171] = { rank = 40, max = 75 } }, 9)
+    assert(not kinds(n.Prof.Steps(171)):find("learn", 1, true), "fenetre jamais lue : on ne sait pas")
+    n.Prof.Advice[171] = { list = { { name = "Élixir arcanique mineur", color = "gray" } } }
+    local s = n.Prof.Steps(171)
+    assert(s.learn and todoText(s):find("Apprends « Élixir de défense mineure » chez le maître", 1, true), todoText(s))
+    assert(not todoText(s):find("Potion de mana mineure", 1, true), "suivante a plus de 5 points : pas encore")
+    n.State.profs[171].rank = 51
+    n.Prof.Advice[171] = { list = { { name = "Élixir de défense mineure", color = "yellow" } } }
+    s = n.Prof.Steps(171)
+    assert(s.learn and todoText(s):find("Apprends « Potion de mana mineure »", 1, true), "suivante a 5 points : " .. todoText(s))
+    n.Prof.Advice[171].list[2] = { name = "Potion de mana mineure", color = "orange" }
+    assert(not n.Prof.Steps(171).learn, "tout est connu")
+  end)
+
   check("Prof.Steps : comptes de composants lisibles, absents, secrets", function()
     local n = fresh().n
     planState(n, { [171] = { rank = 10, max = 75 } })
@@ -4662,8 +4678,8 @@ local function suite(label)
   check("Rang bloquant : rang pas encore disponible (niveau) ou presque au plafond", function()
     local n = rankBoot(75, 5, MASTER)
     local s = n.Prof.Steps(182)
-    assert(not s.alert and s.go == nil and s.todo[1].kind == "wait" and s.todo[1].text == "Compagnon au niveau 10 : continue", s.todo[1].text)
-    assert(not s.todo[2].held and n.Guide.Goals()[2].go == nil and n.Guide.Goals()[2].text:find("Compagnon au niveau 10", 1, true))
+    assert(not s.alert and s.go == "HERBALISM" and s.todo[1].kind == "wait" and s.todo[1].text == "Compagnon au niveau 10 : continue", s.todo[1].text)
+    assert(not s.todo[2].held and n.Guide.Goals()[2].go == "HERBALISM" and n.Guide.Goals()[2].text:find("Compagnon au niveau 10", 1, true))
     n.State.level = 20
     n.State.profs[182].rank = 72
     s = n.Prof.Steps(182)
@@ -4685,7 +4701,7 @@ local function suite(label)
     assert(r.go.shown == true and r.dest == MASTER, "bouton Repere sur la rangee metier")
     n.State.profs[182].rank = 10
     n.Fire("GUIDE")
-    assert(not r.where.shown and not r.go.shown, "plus de rang a prendre : ni lieu ni bouton")
+    assert(r.where.shown and r.go.shown == true and r.dest == MASTER, "plus de rang a prendre : maitre le plus proche toujours propose")
     n.State.profs[182].rank = 75
     n.SetCompact(false)
     n.ToggleGuide()

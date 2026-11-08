@@ -444,7 +444,7 @@ function Guide.Goals()
         elseif not g.text and ns.Prof then g.text = ns.Prof.Text(line) end
       end
       local st = ns.Prof and ns.Prof.Steps(line)
-      if st and st.alert then g.alert, g.go = true, st.go end -- rang a prendre : rangee marquee + « Où aller »
+      if st then g.alert, g.go = (st.alert or st.learn) or nil, st.go end -- « Où aller » = maitre le plus proche, toujours ; rangee marquee si rang a prendre
       if g.text then out[#out + 1] = g end
     end
   end
@@ -551,7 +551,7 @@ function REFERENCE.profs(level)
           t[#t + 1] = a.held and ("|cff808080" .. line .. "|r") or line
         end
         sub = table.concat(t, "\n")
-        if s.alert then alert, go = true, s.go end
+        alert, go = (s.alert or s.learn) or nil, s.go
       end
       -- conseil lu en direct (cout, marge) ; Herboristerie n'a pas de fenetre de recettes
       if ns.Prof and not D.Professions[id].herbs then sub = sub .. "\n" .. ns.Prof.Text(id) end
