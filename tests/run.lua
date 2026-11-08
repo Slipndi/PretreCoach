@@ -5044,6 +5044,112 @@ local function suite(label)
   end
   local LOUPS = { { text = "3/8 Loups tués", numFulfilled = 3, numRequired = 8, finished = false } }
 
+  -- Signal sur les monstres de quete : index, barres de nom, bulle
+  local function mobLog()
+    mock.qquests = {
+      [501] = { name = "Q501", objectives = { { { 7001, "Loup" } }, {}, { { 8001, "Peau" } } } },
+      [502] = { name = "Q502", objectives = { { { 7005, "Rat" } } } },
+    }
+    mock.qnpcs[7001] = { 0, "", "H", 85, {} }
+    mock.qitems = { [8001] = { name = "Peau", npcDrops = { 7002, 7003 } } }
+    mock.qlog = {
+      { questID = 501, title = "Loups", objectives = {
+        { text = "Loup tué : 3/8", numFulfilled = 3, numRequired = 8, finished = false },
+        { text = "Peau : 0/4", numFulfilled = 0, numRequired = 4, finished = false } } },
+      { questID = 502, title = "Fini", objectives = { { text = "Rat tué : 5/5", numFulfilled = 5, numRequired = 5, finished = true } } },
+    }
+  end
+  local function tipLine(n, guid)
+    GameTooltip.lines = nil
+    if mock.tipCall then mock.tipCall(GameTooltip, { guid = guid })
+    else GameTooltip.hooks.OnTooltipSetUnit(GameTooltip) end
+    return GameTooltip.lines and GameTooltip.lines[1]
+  end
+
+  check("Monstres de quete : index kill + loot, objectif fini ignore, signal, bulle, option, combat", function()
+    if not (C_QuestLog and C_NamePlate and LibQuestieDB) then return end
+    local n = questN(20)
+    local QM = n.UI.QuestMobs
+    assert(n.DEFAULTS.show.questmobs == true)
+    mobLog()
+    QM.Rebuild()
+    local idx = QM.Index()
+    assert(idx[7001] and idx[7001][1].kind == "kill" and idx[7001][1].text == "Loup tué : 3/8", "kill")
+    assert(idx[7002] and idx[7002][1].kind == "loot" and idx[7002][1].text == "Peau : 0/4" and idx[7003], "loot via npcDrops")
+    assert(idx[7005] == nil, "objectif fini ignore")
+    -- barres de nom
+    local plate = {}
+    mock.plates = { nameplate1 = plate, nameplate2 = {} }
+    mock.guid = "Creature-0-1-2-3-7001-0000ABCD"
+    mock.fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    local ic = QM.Icon("nameplate1")
+    assert(ic and ic.shown and ic.pt[1] == "BOTTOM" and ic.pt[2] == plate, "icone ancree sur la barre")
+    mock.fire("NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    assert(QM.Icon("nameplate1") == nil and not ic.shown, "icone retiree")
+    mock.fire("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    assert(QM.Icon("nameplate1") == ic, "pool reutilise")
+    -- GUID secret, illisible, absent : rien, aucune erreur
+    for _, g in ipairs({ mock.SECRET, "n'importe quoi", "Creature-0", "Creature-0-1-2-3-9999-0" }) do
+      mock.guid = g
+      mock.fire("NAME_PLATE_UNIT_ADDED", "nameplate2")
+      assert(QM.Icon("nameplate2") == nil, "pas de signal")
+      mock.fire("NAME_PLATE_UNIT_REMOVED", "nameplate2")
+    end
+    mock.guid = "Creature-0-1-2-3-7001-0000ABCD"
+    mock.noGuid = true
+    mock.fire("NAME_PLATE_UNIT_ADDED", "nameplate2")
+    mock.noGuid = nil
+    assert(QM.Icon("nameplate2") == nil)
+    mock.fire("NAME_PLATE_UNIT_REMOVED", "nameplate2")
+    -- bulle
+    local g = "Creature-0-1-2-3-7001-0000ABCD"
+    assert(tipLine(n, g) == "Quête : Loups — Loup tué : 3/8", "ligne de bulle : " .. tostring(tipLine(n, g)))
+    assert(tipLine(n, "Creature-0-1-2-3-9999-0") == nil and tipLine(n, mock.SECRET) == nil, "autre PNJ ou secret : rien")
+    GameTooltip.NumLines = function() return 1 end
+    _G.GameTooltipTextLeft1 = { GetText = function() return "- Loup tué : 3/8" end }
+    assert(tipLine(n, g) == nil, "pas de doublon avec la ligne Blizzard")
+    GameTooltip.NumLines, _G.GameTooltipTextLeft1 = nil, nil
+    -- option
+    n.db.show.questmobs = false
+    QM.Update()
+    assert(not ic.shown and tipLine(n, g) == nil, "option decochee")
+    n.db.show.questmobs = true
+    QM.Update()
+    assert(ic.shown)
+    -- combat : l'index ne bouge pas, repris a la sortie
+    mock.inCombat = true
+    mock.qlog = {}
+    QM.Rebuild()
+    assert(QM.Index()[7001], "combat : index garde")
+    mock.inCombat = false
+    mock.fire("PLAYER_REGEN_ENABLED")
+    assert(next(QM.Index()) == nil and not ic.shown, "sortie de combat : index refait")
+    assert(not findSecret(n.db, "db") and n.db.questmobs == nil)
+  end)
+
+  check("Monstres de quete : sans LibQuestieDB, aucun signal", function()
+    if not C_QuestLog then return end
+    local lib = _G.LibQuestieDB
+    _G.LibQuestieDB = nil
+    local n = questN()
+    mobLog()
+    mock.plates = { nameplate1 = {} }
+    mock.guid = "Creature-0-1-2-3-7001-0000ABCD"
+    n.UI.QuestMobs.Rebuild()
+    if C_NamePlate then mock.fire("NAME_PLATE_UNIT_ADDED", "nameplate1") end
+    local none = next(n.UI.QuestMobs.Index()) == nil and n.UI.QuestMobs.Icon("nameplate1") == nil
+    _G.LibQuestieDB = lib
+    assert(none, "sans base : rien")
+  end)
+
+  check("Monstres de quete : sans API de quetes ni de barres de nom, aucune erreur", function()
+    if C_QuestLog and C_NamePlate then return end
+    local n = questN()
+    n.UI.QuestMobs.Rebuild()
+    mock.fire("PLAYER_REGEN_ENABLED")
+    assert(next(n.UI.QuestMobs.Index()) == nil)
+  end)
+
   check("Quetes : une quete terminee a rendre passe avant une quete en cours, meme plus loin", function()
     if not (C_QuestLog and C_Map and LibQuestieDB) then return end
     local n = questN()

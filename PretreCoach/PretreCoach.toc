@@ -52,6 +52,7 @@ UI\Minimap.lua
 UI\MinimapMenu.lua
 UI\GuideWindow.lua
 UI\QuestPins.lua
+UI\QuestMobs.lua
 UI\QuestReward.lua
 UI\RotationPanel.lua
 UI\RulesBar.lua

@@ -116,7 +116,7 @@ function mock.reset()
   PretreCoachDB = nil
   mock.registered, mock.opened = nil, nil
   mock.waypoint, mock.superTracked, mock.canWaypoint, mock.areas, mock.mapKids, mock.mapNames = nil, nil, nil, nil, nil, nil
-  mock.worldMap, mock.hooked, mock.grouped = nil, nil, nil
+  mock.worldMap, mock.hooked, mock.grouped, mock.plates, mock.tipCall = nil, nil, nil, nil, nil
   mock.qreward, mock.choices, mock.questID = nil, nil, nil
   mock.rewards, mock.rewardXP, mock.rewardMoney = nil, nil, nil
   if WorldMapFrame then WorldMapFrame.shown = false end
@@ -402,7 +402,14 @@ function hooksecurefunc(obj, name, fn)
 end
 function IsInGroup() return mock.grouped == true end
 
--- Recompenses : mock.qreward = { [questID] = { xp, cuivre } } (valeurs mock.SECRET possibles) ; mock.choices = { { itemID, quantite } }
+-- Barres de nom : mock.plates = { [unit] = cadre } ; bulle d'unite : mock.tipCall = rappel de AddTooltipPostCall
+C_NamePlate = { GetNamePlateForUnit = function(unit) return (mock.plates or {})[unit] end }
+Enum.TooltipDataType.Unit = 2
+TooltipDataProcessor = { AddTooltipPostCall = function(kind, fn)
+  if kind == Enum.TooltipDataType.Unit then mock.tipCall = fn else assert(kind == Enum.TooltipDataType.Item) mock.tipPost = fn end
+end }
+
+-- Recompenses : mock.qreward ={ [questID] = { xp, cuivre } } (valeurs mock.SECRET possibles) ; mock.choices = { { itemID, quantite } }
 -- pour la fenetre de quete ouverte (mock.questID) ; QuestInfoRewardsFrame.RewardButtons = boutons Blizzard
 function GetQuestLogRewardXP(id) local r = (mock.qreward or {})[id] return r and r[1] end
 function GetQuestLogRewardMoney(id) local r = (mock.qreward or {})[id] return r and r[2] end
@@ -431,7 +438,7 @@ GetTrainerServiceLevelReq GetTrainerServiceCost GetCoinTextureString GetInventor
 UiMapPoint C_SuperTrack WorldMapFrame hooksecurefunc Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex
 EJ_SelectInstance EJ_GetEncounterInfoByIndex EJ_GetLootInfoByIndex LibQuestieDB Auctionator GetItemIcon UnitXP UnitXPMax RegisterUnitWatch UnitInRange
 GetQuestLogRewardXP GetQuestLogRewardMoney GetNumQuestChoices GetQuestItemLink GetQuestItemInfo GetQuestID QuestInfoRewardsFrame
-GetRewardXP GetRewardMoney GetNumQuestRewards TooltipDataProcessor
+GetRewardXP GetRewardMoney GetNumQuestRewards C_NamePlate TooltipDataProcessor
 ]]
 local saved = {}
 for n in UNCERTAIN:gmatch("%S+") do saved[n] = _G[n] end

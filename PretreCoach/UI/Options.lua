@@ -132,6 +132,7 @@ local function build(parent, y)
   check("herbpins", L.OPT_HERBPINS, showSet("herbpins", function() if UI.QuestPins then UI.QuestPins.Update() end end))
   check("questreward", L.OPT_QUESTREWARD, showSet("questreward", function() if UI.QuestReward then UI.QuestReward.Update() end end))
   check("keeptip", L.OPT_KEEPTIP, showSet("keeptip"))
+  check("questmobs", L.OPT_QUESTMOBS, showSet("questmobs", function() if UI.QuestMobs then UI.QuestMobs.Update() end end))
   c.focus = focusButton(parent, y)
   y = y + 24
   check("minimap", L.OPT_MINIMAP, showSet("minimap", function() if ns.RefreshMinimap then ns.RefreshMinimap() end end))
