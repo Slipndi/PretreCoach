@@ -1,3 +1,10 @@
+# PretreCoach 0.9.6
+
+- Or : l'objectif manuel est remplacé par le prochain achat utile (sorts, rang de métier, recette, baguette), avec le reste à gagner et le temps estimé.
+- Or : jauge vers la monte du niveau 40 dès que son prix est connu (visite du maître de monte).
+- Or : record d'or par heure et message à chaque palier de fortune (1, 5, 10, 25, 50, 100 po…).
+- Minicarte : le bouton est placé autour de la carte, plus dessus.
+
 # PretreCoach 0.9.5
 
 - Itinéraire : dans une grotte, un bâtiment ou une instance, la zone où tu es est bien reconnue (ses quêtes restent en tête).
