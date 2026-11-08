@@ -5201,21 +5201,83 @@ local function suite(label)
     assert(next(n.UI.QuestMobs.Index()) == nil)
   end)
 
-  check("Quetes : une quete terminee a rendre passe avant une quete en cours, meme plus loin", function()
+  check("Quetes : une quete terminee a rendre passe avant une quete en cours, meme un peu plus loin", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN()
+    mock.qnpcs[9004] = { 0, "", "H", 85, { [85] = { { 52.5, 50 } } } } -- rendu a 2,5 (arret le plus proche : 2)
+    mock.qquests = { [201] = { name = "En cours", startedBy = { { 9001 } } }, [202] = { name = "Finie", startedBy = { { 9001 } }, finishedBy = { { 9004 } } } }
+    mock.qlog = { { questID = 201, title = "En cours", objectives = LOUPS }, { questID = 202, title = "Finie", complete = true } }
+    n.Quests.Refresh()
+    local b = n.Quests.Best()
+    assert(b and b.kind == "turnin" and b.questID == 202 and b.text == "Rends « Finie »" and b.go == "N9004", b and b.text)
+    local g = n.Guide.Goals()[1]
+    assert(g.text == b.text and g.go == "N9004" and g.e == nil and g.quest == b, "la rangee XP est la quete : " .. tostring(g.text))
+    local d = n.Goto.For(g.go)
+    assert(d.mapID == 1420 and d.x == 52.5 and d.y == 50 and d.text:find("Tirisfal", 1, true), d.text)
+    assert(n.Goto.Place(d) == true and mock.waypoint.mapID == 1420, "Repere pose")
+  end)
+
+
+  check("Quetes : un rendu a l'autre bout de la zone n'ouvre plus la route (seulement s'il est pres)", function()
     if not (C_QuestLog and C_Map and LibQuestieDB) then return end
     local n = questN()
     mock.qquests = { [201] = { name = "En cours", startedBy = { { 9001 } } }, [202] = { name = "Finie", startedBy = { { 9001 } }, finishedBy = { { 9003 } } } }
     mock.qlog = { { questID = 201, title = "En cours", objectives = LOUPS }, { questID = 202, title = "Finie", complete = true } }
     n.Quests.Refresh()
-    local b = n.Quests.Best()
-    assert(b and b.kind == "turnin" and b.questID == 202 and b.text == "Rends « Finie »" and b.go == "N9003", b and b.text)
-    local g = n.Guide.Goals()[1]
-    assert(g.text == b.text and g.go == "N9003" and g.e == nil and g.quest == b, "la rangee XP est la quete : " .. tostring(g.text))
-    local d = n.Goto.For(g.go)
-    assert(d.mapID == 1420 and d.x == 80 and d.y == 80 and d.text:find("Tirisfal", 1, true), d.text)
-    assert(n.Goto.Place(d) == true and mock.waypoint.mapID == 1420, "Repere pose")
+    local r = n.Quests.Route()
+    assert(r[1].questID == 201 and r[2].kind == "turnin", "rendu a 42 contre 2 : plus proche voisin")
+    local o = n.Quests.Order({ { kind = "turnin", questID = 1, x = 53, y = 50 }, { kind = "pickup", questID = 2, x = 52, y = 50 } }, 50, 50)
+    assert(o[1].kind == "turnin", "rendu a 3 contre 2 (1,5x) : d'abord")
   end)
 
+  check("Quetes : objectif objet lache ou objet du monde, spawn le plus proche, objectif fini ecarte", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN()
+    mock.qnpcs[7002] = { 0, "", "H", 85, { [85] = { { 90, 90 }, { 60, 50 } } } } -- 2 spawns : le plus proche est (60, 50)
+    mock.qnpcs[7003] = { 0, "", "H", 85, { [85] = { { 30, 30 } } } }
+    mock.qitems = { [8001] = { name = "Peau", npcDrops = { 7002 } }, [8002] = { name = "Griffe", npcDrops = { 7003 } } }
+    mock.qobjects = { [6001] = { name = "Caisse", spawns = { [85] = { { 70, 50 } } } } }
+    mock.qquests = {
+      [201] = { name = "Peaux", startedBy = { { 9003 } }, objectives = { {}, {}, { { 8001, "Peau" } } } },
+      [202] = { name = "Caisses", startedBy = { { 9003 } }, objectives = { {}, { { 6001, "Caisse" } } } },
+      [203] = { name = "Deux", startedBy = { { 9003 } }, objectives = { {}, {}, { { 8002, "Griffe" }, { 8001, "Peau" } } } },
+    }
+    local function ob(text, fin) return { text = text, numFulfilled = fin and 1 or 0, numRequired = 1, finished = fin } end
+    mock.qlog = { { questID = 201, title = "Peaux", objectives = { ob("Peau : 0/1") } } }
+    n.Quests.Refresh()
+    local s = n.Quests.Route()[1]
+    assert(s.x == 60 and s.y == 50 and s.here and s.npc == 7002 and type(s.go) == "table", "objet lache : spawn le plus proche, pas le donneur (80, 80)")
+    mock.qlog = { { questID = 202, title = "Caisses", objectives = { ob("Caisse : 0/1") } } }
+    n.Quests.Refresh()
+    s = n.Quests.Route()[1]
+    assert(s.x == 70 and s.y == 50 and s.npc == nil and s.go.x == 70, "objet du monde")
+    mock.qlog = { { questID = 203, title = "Deux", objectives = { ob("Griffe : 0/1"), ob("Peau : 1/1", true) } } }
+    n.Quests.Refresh()
+    s = n.Quests.Route()[1]
+    assert(s.x == 30 and s.y == 30, "la Peau est finie : seule la Griffe compte")
+    mock.pos = false
+    n.Quests.Refresh()
+    assert(n.Quests.Route()[1].x == 30, "position illisible : centre des spawns")
+    assert(n.Q.WhereNear(7002, 1420, 85, 85).x == 90 and n.Q.WhereNear(7002, 1420).x == 60 or n.Q.WhereNear(7002, 1420).x == 90, "WhereNear")
+    assert(n.Q.WhereNear(7002, 999, 50, 50) == nil, "autre carte : nil")
+  end)
+
+  check("Quetes : a prendre, les 20 plus proches sont evalues, les 6 plus rentables gardees", function()
+    if not (C_QuestLog and C_Map and LibQuestieDB) then return end
+    local n = questN()
+    n.db.qindex = {}
+    mock.qquests = {}
+    for i = 1, 8 do mock.qnpcs[9100 + i] = { 0, "", "H", 85, { [85] = { { 50 + i, 50 } } } } end
+    mock.qnpcs[9200] = { 0, "", "H", 85, { [85] = { { 70, 50 } } } }
+    for i = 1, 8 do mock.qquests[400 + i] = { name = "Proche" .. i, startedBy = { { 9100 + i } }, requiredLevel = 16, questLevel = 16 } end
+    mock.qquests[499] = { name = "Rentable", startedBy = { { 9200 } }, requiredLevel = 20, questLevel = 24 }
+    assert(n.Quests.StartIndex() == true)
+    for _ = 1, 5 do mock.flushTimers() end
+    n.Quests.Refresh()
+    local found
+    for _, s in ipairs(n.Quests.Route()) do if s.questID == 499 then found = true end end
+    assert(found, "la quete de niveau 24, a 20 unites, n'est pas eliminee par 8 quetes proches")
+  end)
   check("Quetes : la quete en cours la plus proche est choisie, texte des objectifs", function()
     if not (C_QuestLog and C_Map and LibQuestieDB) then return end
     local n = questN()

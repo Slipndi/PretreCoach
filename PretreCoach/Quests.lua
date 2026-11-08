@@ -1,7 +1,7 @@
 -- Itinéraire des quêtes de la zone : Quests.Route() -> { { kind, questID, name, mapID, x, y, text, ... } } et Quests.Best() = premier arrêt.
 -- Lecture seule (Règle 0). kind : "turnin" (journal, terminée : à rendre), "progress" (journal, en cours), "pickup" (disponible, connue de QuestieDB).
 -- QuestieDB (ns.Q) donne les lieux ; sans lui : journal seul, sans lieu. Récompenses : base apprise (QuestDB), journal, estimation.
--- Ordre : plus proche voisin depuis le joueur (une quête à rendre dans la zone d'abord), puis 2-opt borné ; une quête à prendre
+-- Ordre : plus proche voisin depuis le joueur (une quête à rendre d'abord si elle n'est pas bien plus loin que l'arrêt le plus proche), puis 2-opt borné ; une quête à prendre
 -- passe toujours avant son objectif puis son rendu. Ce qui est sur une autre carte ou sans lieu passe après (rendre, en cours, prendre).
 -- Choix des quêtes retenues (au plus MAX_STOPS arrêts) : score = (or + poids x XP en or) / minutes, voir « Valeur » ci-dessous.
 -- Quests.Pins(uiMapID) : repères à dessiner sur la carte du monde (UI/QuestPins.lua).
@@ -18,6 +18,8 @@ local RANK = { turnin = 1, progress = 2, pickup = 3 } -- ordre des arrêts hors 
 local PHASE = { pickup = 1, progress = 2, turnin = 3 } -- ordre imposé pour une même quête
 local CHUNK = 200 -- quêtes lues par tick pour l'index
 local MAX_STOPS, MAX_PICKUPS, TWO_OPT, MAX_PINS = 12, 6, 200, 60
+local POOL = 20 -- quêtes à prendre évaluées (les plus proches) avant de garder les MAX_PICKUPS de meilleur score
+local NEAR_TURNIN = 1.5 -- un rendu n'ouvre la route que s'il est à moins de 1,5 x la distance de l'arrêt le plus proche
 -- Valeur d'une quête (inspirée de RestedXP/Zygor) : score = (or + poids x XP convertie en or) x chaîne / minutes.
 -- shortcut: constantes à la louche (Classic, à pied), à recaler sur des mesures en jeu.
 local SPEED = 7 -- yards par seconde à pied
@@ -39,6 +41,10 @@ local function firstNpc(id, key)
   return type(npc) == "number" and npc or nil
 end
 
+local function str(v) return type(v) == "string" and not S.IsSecret(v) and v ~= "" and v or nil end
+local function num(v) return type(v) == "number" and not S.IsSecret(v) and v or nil end
+local function posLevel(v) v = num(v) return v and v > 0 and v or nil end
+
 -- objectives = { { { npcID, nom } }, { objets }, ... } : jusqu'à 3 PNJ à tuer. shortcut: les objets ne sont pas lus.
 local function objectiveNpcs(id)
   local o = Q.Quest(id, "objectives")
@@ -56,9 +62,51 @@ end
 
 local function objectiveNpc(id) return objectiveNpcs(id)[1] end
 
-local function str(v) return type(v) == "string" and not S.IsSecret(v) and v ~= "" and v or nil end
-local function num(v) return type(v) == "number" and not S.IsSecret(v) and v or nil end
-local function posLevel(v) v = num(v) return v and v > 0 and v or nil end
+-- Lieu d'un objectif non fini, sur la carte mapID : le point le plus proche du joueur (px, py) parmi les monstres à tuer
+-- (objectives[1]), les objets du monde (objectives[2]) et les créatures qui lâchent l'objet (objectives[3], Q.Item npcDrops).
+-- objs = C_QuestLog.GetQuestObjectives (nil : quête pas prise) ; un objectif fini (texte contenant le nom) est écarté.
+-- Rend w, npc (npc nil pour un objet du monde) ; nil si rien sur cette carte.
+local MAX_OBJ, MAX_DROPS = 3, 8
+local function objectiveSpot(id, mapID, px, py, objs)
+  local o = Q.Quest(id, "objectives")
+  if type(o) ~= "table" or type(mapID) ~= "number" then return nil end
+  local bw, bnpc, bd
+  local function open(name)
+    for _, ob in ipairs(type(objs) == "table" and objs or {}) do
+      local t = type(ob) == "table" and ob.finished == true and str(ob.text)
+      if t and name and t:find(name, 1, true) then return false end
+    end
+    return true
+  end
+  local function consider(w, npc)
+    if not w then return end
+    local d = px and ((w.x - px) ^ 2 + (w.y - py) ^ 2) or 0
+    if not bd or d < bd then bw, bnpc, bd = w, npc, d end
+  end
+  local function each(list, f)
+    local n = 0
+    for _, e in ipairs(type(list) == "table" and list or {}) do
+      n = n + 1
+      if n > MAX_OBJ then break end
+      f(type(e) == "table" and e[1] or e, type(e) == "table" and str(e[2]) or nil)
+    end
+  end
+  each(o[1], function(npc, name)
+    if type(npc) == "number" and open(name or str(Q.Npc(npc, "name"))) then consider(Q.WhereNear(npc, mapID, px, py), npc) end
+  end)
+  each(o[2], function(obj, name)
+    if type(obj) == "number" and open(name or str(Q.Object(obj, "name"))) then consider(Q.NearestSpawn(Q.Object(obj, "spawns"), mapID, px, py)) end
+  end)
+  each(o[3], function(item, name)
+    if type(item) ~= "number" or not open(name or str(Q.Item(item, "name"))) then return end
+    local drops = Q.Item(item, "npcDrops")
+    for k, npc in ipairs(type(drops) == "table" and drops or {}) do
+      if k > MAX_DROPS then break end
+      if type(npc) == "number" then consider(Q.WhereNear(npc, mapID, px, py), npc) end
+    end
+  end)
+  return bw, bnpc
+end
 
 -- Quêtes du journal (hors en-têtes) : { id, title, done, ql }.
 local function journal()
@@ -395,7 +443,7 @@ local function valid(order)
   return true
 end
 
--- stops : { { kind, questID, x, y } } tous localisés. Rend un nouvel ordre. Le premier arrêt est le plus proche, une quête
+-- stops : { { kind, questID, x, y } } tous localisés. Rend un nouvel ordre. Le premier arrêt est le plus proche, une quête (rendue d’abord : NEAR_TURNIN)
 -- à rendre d'abord ; la passe 2-opt (au plus MAX_STOPS arrêts, TWO_OPT améliorations) ne le déplace pas. plain : sans 2-opt.
 function Quests.Order(stops, px, py, plain)
   local rest, out = {}, {}
@@ -418,7 +466,12 @@ function Quests.Order(stops, px, py, plain)
     return bi
   end
   while #rest > 0 do
-    local bi = (#out == 0 and pick("turnin")) or pick() or 1
+    local bi
+    if #out == 0 then
+      local t, a = pick("turnin"), pick()
+      if t and (not x or dist(x, y, rest[t].x, rest[t].y) <= NEAR_TURNIN * dist(x, y, rest[a].x, rest[a].y)) then bi = t end
+    end
+    bi = bi or pick() or 1
     local s = table.remove(rest, bi)
     out[#out + 1] = s
     x, y = s.x, s.y
@@ -454,11 +507,16 @@ local function compute()
     local st, w, h = S.GetAll(C_Map.GetMapWorldSize, mapID)
     if st == "lisible" and type(w) == "number" and type(h) == "number" then yards = { w, h } end
   end
-  local function stop(kind, id, name, text, npc, extra)
+  -- w : lieu déjà choisi (objectif) ; « Repère » vise alors ce point, pas le premier spawn du PNJ
+  local function stop(kind, id, name, text, npc, extra, w0)
     local s = { kind = kind, questID = id, name = name, text = text, npc = npc, extra = extra }
-    local w = npc and Q.Where(npc)
+    local w = w0 or (npc and Q.Where(npc))
     if w then
-      s.mapID, s.x, s.y, s.go = w.uiMapID, w.x, w.y, "N" .. npc
+      s.mapID, s.x, s.y, s.go = w.uiMapID, w.x, w.y, npc and "N" .. npc or nil
+      if w0 then
+        local base = npc and Q.Where(npc)
+        if not (base and base.x == w.x and base.y == w.y) then s.go = { mapID = w.uiMapID, x = w.x, y = w.y, text = name } end
+      end
       s.w = w
       s.here = mapID ~= nil and w.uiMapID == mapID
       if s.here and px then
@@ -491,7 +549,9 @@ local function compute()
       s = stop("turnin", j.id, name, L.QUEST_TURNIN:format(name), firstNpc(j.id, "finishedBy") or firstNpc(j.id, "startedBy"))
     else
       local obj = objectiveText(j.id)
-      s = stop("progress", j.id, name, obj and L.QUEST_PROGRESS:format(name, obj) or name, objectiveNpc(j.id) or firstNpc(j.id, "startedBy"))
+      local ow, onpc = objectiveSpot(j.id, mapID, px, py, S.Get(C_QuestLog and C_QuestLog.GetQuestObjectives, j.id))
+      s = stop("progress", j.id, name, obj and L.QUEST_PROGRESS:format(name, obj) or name,
+        ow and onpc or (not ow and (objectiveNpc(j.id) or firstNpc(j.id, "startedBy")) or nil), nil, ow)
     end
     s.order = #units + #tail + 1
     s.v = value(j.id, j.ql, level, true, j.done and 0 or objectivesLeft(j.id), 1, travel({ s }))
@@ -503,13 +563,14 @@ local function compute()
     end
   end
   -- à prendre : avec, dans la zone, l'objectif et le rendu s'ils sont connus (même PNJ ou à côté : pickup -> progress -> turnin)
-  for _, e in ipairs(pickups(mapID, level, px, py, MAX_PICKUPS, inLog)) do
+  local picks = {}
+  for _, e in ipairs(pickups(mapID, level, px, py, POOL, inLog)) do
     local p = stop("pickup", e.id, e.name, L.QUEST_PICKUP:format(e.name), e.npc, e.req)
     if p.here then
       local u = { stops = { p }, order = 1000 + #units }
-      local o = objectiveNpc(e.id)
+      local ow, onpc = objectiveSpot(e.id, mapID, px, py)
       local f = firstNpc(e.id, "finishedBy")
-      local po = o and stop("progress", e.id, e.name, e.name, o)
+      local po = ow and stop("progress", e.id, e.name, e.name, onpc, nil, ow)
       local pf = f and stop("turnin", e.id, e.name, L.QUEST_TURNIN:format(e.name), f)
       if po and po.here then po.virtual = true u.stops[#u.stops + 1] = po end
       if pf and pf.here then pf.virtual = true u.stops[#u.stops + 1] = pf end
@@ -517,9 +578,16 @@ local function compute()
       -- shortcut: niveau de quête inconnu = celui du joueur
       p.v = value(e.id, e.lvl > 0 and e.lvl or level, level, false, type(qo) == "table" and next(qo) and OBJ_DEFAULT or 0, 2, travel(u.stops))
       u.v = p.v
-      units[#units + 1] = u
+      picks[#picks + 1] = u
     end
   end
+  -- on évalue les POOL plus proches, on garde les MAX_PICKUPS de meilleur score
+  table.sort(picks, function(x, y)
+    local sx, sy = x.v and x.v.score or 0, y.v and y.v.score or 0
+    if sx ~= sy then return sx > sy end
+    return x.order < y.order
+  end)
+  for i = 1, math.min(MAX_PICKUPS, #picks) do units[#units + 1] = picks[i] end
   -- par score/minute ; une quête du journal sans valeur connue garde sa place en tête (ordre du journal)
   local function score(u) return u.v and u.v.score or math.huge end
   table.sort(units, function(a, b) if score(a) ~= score(b) then return score(a) > score(b) end return a.order < b.order end)

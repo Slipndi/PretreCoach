@@ -91,6 +91,34 @@ function Q.Where(npcID)
   return { areaID = area, uiMapID = Q.MapFor(area), x = row[1], y = row[2] }
 end
 
+-- Spawn de la carte uiMapID le plus proche de (px, py) (0-100) ; sans position, le plus proche du centre des spawns de la carte.
+-- spawns = { [areaID] = { { x, y } } } (PNJ ou objet). nil si aucun spawn lisible sur cette carte.
+function Q.NearestSpawn(spawns, uiMapID, px, py)
+  if type(spawns) ~= "table" or type(uiMapID) ~= "number" then return nil end
+  local rows, sx, sy = {}, 0, 0
+  for area, list in pairs(spawns) do
+    if type(area) == "number" and type(list) == "table" and Q.MapFor(area) == uiMapID then
+      for _, r in ipairs(list) do
+        if type(r) == "table" and type(r[1]) == "number" and type(r[2]) == "number" and r[1] >= 0 then
+          rows[#rows + 1] = { area, r[1], r[2] }
+          sx, sy = sx + r[1], sy + r[2]
+        end
+      end
+    end
+  end
+  if #rows == 0 then return nil end
+  if not px then px, py = sx / #rows, sy / #rows end
+  local best, bd
+  for _, r in ipairs(rows) do
+    local d = (r[2] - px) ^ 2 + (r[3] - py) ^ 2
+    if not bd or d < bd then best, bd = r, d end
+  end
+  return { areaID = best[1], uiMapID = uiMapID, x = best[2], y = best[3] }
+end
+
+-- Comme Q.Where, mais le spawn de la carte uiMapID le plus proche du joueur (pour un objectif : monstre a tuer).
+function Q.WhereNear(npcID, uiMapID, px, py) return Q.NearestSpawn(Q.Npc(npcID, "spawns"), uiMapID, px, py) end
+
 ------------------------------------------------------------------------
 -- Index des PNJ utiles (maitres, commissaires-priseurs)
 ------------------------------------------------------------------------
