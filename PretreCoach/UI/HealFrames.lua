@@ -259,3 +259,30 @@ for _, e in ipairs({ "UNIT_HEALTH", "UNIT_MAXHEALTH", "UNIT_CONNECTION", "UNIT_N
     if b then H.Refresh(b) end
   end)
 end
+
+-- Soin plus fort appris alors qu'un bouton de souris garde l'ancien : rappel en texte seulement. Le reglage reste celui du
+-- joueur (il le change dans /coach) : l'addon ne remplace jamais le sort d'un bouton (Regle 0).
+local UPGRADE = { LESSERHEAL = "HEAL", HEAL = "GREATERHEAL" }
+function H.Upgrades()
+  local out, spells = {}, spellsDB()
+  for _, slot in ipairs(SLOTS) do
+    local to = UPGRADE[spells[slot]]
+    local k = to and ns.State.Knows(to)
+    if type(k) == "number" and k > 0 then out[#out + 1] = { slot = slot, from = spells[slot], to = to } end
+  end
+  return out
+end
+
+local upShown = {} -- une fois par session et par (bouton, sort) : SPELLS_CHANGED est frequent
+ns.Listen("STATE", function(_, changed)
+  local spellsChanged
+  for _, k in ipairs(changed or {}) do if k == "spells" or k == "level" then spellsChanged = true end end
+  if not spellsChanged or not ns.db or (ns.db.show and ns.db.show.heal == false) then return end
+  for _, u in ipairs(H.Upgrades()) do
+    local key = "pc:healup:" .. u.slot .. ":" .. u.to
+    if not upShown[key] then
+      upShown[key] = true
+      ns.Toast(L.HEAL_UPGRADE:format(H.SpellName(u.to), L.HEAL_SLOT[u.slot]:lower(), H.SpellName(u.from)), { key = key })
+    end
+  end
+end)

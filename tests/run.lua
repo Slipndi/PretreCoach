@@ -2624,6 +2624,26 @@ local function suite(label)
   end
   local hasKnows = IsPlayerSpell or IsSpellKnown or (C_SpellBook and C_SpellBook.IsSpellInSpellBook)
 
+  check("Cadres de soin : soin plus fort appris = rappel de changer le clic, jamais de changement automatique", function()
+    local o = fresh()
+    local n = o.n
+    if not hasKnows then return end
+    knows({ [2050] = true }) -- Soins inferieurs seul
+    n.Fire("STATE", { "spells" })
+    assert(#pcToasts(o, "^pc:healup:") == 0, "rien de mieux connu")
+    knows({ [2050] = true, [2054] = true }) -- Soins appris
+    n.Fire("STATE", { "spells" })
+    local t = pcToasts(o, "^pc:healup:")
+    n.Fire("STATE", { "spells" })
+    t = pcToasts(o, "^pc:healup:")
+    assert(#t == 1 and t[1].key == "pc:healup:1:HEAL", "une seule fois par session")
+    assert( t[1].text:find("clic gauche", 1, true), tostring(t[1] and t[1].text))
+    assert((n.db.heal and n.db.heal.spells or n.DEFAULTS.heal.spells)["1"] == "LESSERHEAL", "reglage du joueur intact")
+    n.db.heal = { spells = { ["1"] = "HEAL", ["2"] = "RENEW", ["shift-1"] = "PWS" } }
+    assert(#n.UI.HealFrames.Upgrades() == 0, "deja choisi : plus de rappel")
+    knows(nil)
+  end)
+
   check("Training : level up 9->10, toast avec noms et rangs, compteur", function()
     local o = fresh()
     local n = o.n

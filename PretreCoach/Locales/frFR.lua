@@ -26,6 +26,7 @@ ns.L = {
   HEAL_OFFLINE = "Hors ligne",
   HEAL_SLOT = { ["1"] = "Clic gauche", ["2"] = "Clic droit", ["shift-1"] = "Maj + clic gauche" },
   HEAL_SHORT = { ["1"] = "G :", ["2"] = "D :", ["shift-1"] = "Maj :" },
+  HEAL_UPGRADE = "Tu connais %s : ton %s lance encore %s. Change-le dans /coach (cadres de soin), hors combat.",
   HEAL_HOWTO = "Clique sur le cadre pour lancer le sort sur ce joueur (rang le plus haut connu). Change les sorts dans /coach, hors combat.",
   OPT_MINIMAP = "Afficher le bouton de la minicarte",
   OPT_LOCKED = "Verrouiller les cadres",
