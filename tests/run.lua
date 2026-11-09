@@ -4072,7 +4072,7 @@ local function suite(label)
     n.State.level = 12
     n.State.profs[182].rank = 72
     assert(n.Guide.Goals()[2].text:find("rang Compagnon", 1, true), "rang a prendre chez le maitre : " .. n.Guide.Goals()[2].text)
-    assert(goals[3].text == n.Prof.StepsText(171) and goals[3].text:find("Apprends « Élixir de défense mineure »", 1, true), "plan alchimie : recette du plan d'abord : " .. goals[3].text)
+    assert(goals[3].text == n.Prof.StepsText(171) and goals[3].text:find("Recette du plan : « Élixir de défense mineure »", 1, true), "plan alchimie : recette du plan d'abord : " .. goals[3].text)
     n.State.profs[182].rank = 10
     assert(n.Guide.Goals()[2].text:find("Cueille", 1, true), "herboristerie : cueillette")
   end)
@@ -4493,7 +4493,7 @@ local function suite(label)
     local function learnOf(s) for _, a in ipairs(s.todo) do if a.kind == "learn" then return a end end end
     local s = n.Prof.Steps(171)
     assert(learnOf(s) and learnOf(s).done == nil and not s.learn, "fenetre jamais lue : recette du plan citee, sans coche")
-    assert(n.Prof.StepsText(171):find("Apprends « Élixir de défense mineure »", 1, true), "la carte cite la recette du plan avant les sacs")
+    assert(n.Prof.StepsText(171):find("Recette du plan : « Élixir de défense mineure »", 1, true), "la carte cite la recette du plan avant les sacs")
     n.Prof.Advice[171] = { list = {}, known = { ["Élixir arcanique mineur"] = "gray" } }
     s = n.Prof.Steps(171)
     assert(s.learn and learnOf(s).done == false and todoText(s):find("Apprends « Élixir de défense mineure »", 1, true), todoText(s))
@@ -4501,6 +4501,8 @@ local function suite(label)
     n.Prof.Advice[171].known["Élixir de défense mineure"] = "yellow" -- connue hors du top
     s = n.Prof.Steps(171)
     assert(not s.learn and learnOf(s).done == true and bag() and not bag().confirm and bag().skillUp, "connue : cochee, a fabriquer")
+    n.Prof.Advice[171] = { list = {}, known = { [7183] = "yellow", ["Elixir de défense mineur"] = "yellow" } } -- nom du client different
+    assert(learnOf(n.Prof.Steps(171)).done == true, "reconnue par son recipeID malgre un autre nom")
     mock.items = nil
   end)
 

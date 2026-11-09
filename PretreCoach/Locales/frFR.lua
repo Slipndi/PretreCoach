@@ -298,6 +298,7 @@ ns.L = {
   PROF_STEP_BUY = "Achète « %s » chez %s",
   PROF_STEP_LEARN = "Apprends « %s » chez le maître : %s",
   PROF_STEP_LEARN_ANY = "Apprends « %s » chez le maître de ton métier",
+  PROF_STEP_LEARN_CHECK = "Recette du plan : « %s » ; ouvre ta fenêtre de métier pour vérifier que tu la connais",
   PROF_STEP_GATHER = "Réunis : %s",
   PROF_STEP_HAVE = "%d %s (tu en as %d)",
   PROF_STEP_VENDOR = " ; achète %s chez un marchand de fournitures",

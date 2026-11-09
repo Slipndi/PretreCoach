@@ -179,7 +179,8 @@ function Prof.Read()
     if type(info) == "table" and field(info, "learned") == true then
       local c, ups = colorOf(info), num(field(info, "numSkillUps"))
       local nm = field(info, "name")
-      if type(nm) == "string" then known[nm] = c or "gray" end -- toutes les recettes apprises, pas seulement le top
+      if type(nm) == "string" then known[nm] = c or "gray" end
+      known[id] = c or "gray" -- toutes les recettes apprises, pas seulement le top
       if c and not (ups and ups < 1) then
         best = math.min(best, CRANK[c])
         cands[#cands + 1] = { recipeID = id, name = field(info, "name"), color = c, skillUps = ups or 1,
@@ -305,14 +306,16 @@ local function stepFor(plan, rank)
   return plan.steps[#plan.steps]
 end
 
-local function knownRecipe(adv, name)
-  for _, e in ipairs(adv and adv.list or {}) do if e.name == name then return e end end
-  local c = adv and type(adv.known) == "table" and adv.known[name]
+-- rid (recipeID, optionnel) d'abord : les noms du plan sont traduits de memoire et peuvent differer du client.
+local function knownRecipe(adv, name, rid)
+  for _, e in ipairs(adv and adv.list or {}) do if (rid and e.recipeID == rid) or e.name == name then return e end end
+  local k = adv and type(adv.known) == "table" and adv.known
+  local c = k and ((rid and k[rid]) or k[name])
   if c then return { name = name, color = c } end
 end
 -- Recette sure d'etre inconnue : la fenetre du metier a ete lue (adv.known) et le nom n'y est pas.
-local function unknownRecipe(adv, name)
-  return adv ~= nil and type(adv.known) == "table" and not knownRecipe(adv, name)
+local function unknownRecipe(adv, name, rid)
+  return adv ~= nil and type(adv.known) == "table" and not knownRecipe(adv, name, rid)
 end
 
 local function names(t, sep) return table.concat(t, sep or ", ") end
@@ -397,14 +400,16 @@ function Prof.Steps(line)
   -- le joueur a vu ; cochee si la fenetre du metier la montre, a faire si elle n'y est pas, sans coche si la fenetre n'a jamais ete lue.
   if step.recipe and not (step.buy and step.buy.recipe == step.recipe) then
     local known -- true / false / nil (fenetre jamais lue)
-    if knownRecipe(adv, step.recipe) then known = true elseif unknownRecipe(adv, step.recipe) then known = false end
+    if knownRecipe(adv, step.recipe, step.rid) then known = true elseif unknownRecipe(adv, step.recipe, step.rid) then known = false end
     local dup
     for _, a in ipairs(todo) do if a.kind == "learn" and a.text:find(step.recipe, 1, true) then dup = true end end
     if not dup then
       local ok, d = false, nil
-      if known ~= true and GOKEY[line] and ns.Goto then ok, d = pcall(ns.Goto.For, GOKEY[line]) end
+      if known == false and GOKEY[line] and ns.Goto then ok, d = pcall(ns.Goto.For, GOKEY[line]) end
       local where = ok and type(d) == "table" and d.x and d.text
-      add("learn", where and L.PROF_STEP_LEARN:format(step.recipe, where) or L.PROF_STEP_LEARN_ANY:format(step.recipe), known)
+      local text = known == nil and L.PROF_STEP_LEARN_CHECK:format(step.recipe)
+        or where and L.PROF_STEP_LEARN:format(step.recipe, where) or L.PROF_STEP_LEARN_ANY:format(step.recipe)
+      add("learn", text, known)
       if known == false then learn = true end
     end
   end
@@ -472,7 +477,7 @@ local function compute()
     local p = State.profs[line]
     local adv = p and Get(line)
     for _, st in ipairs(p and plan.steps or {}) do
-      if st.recipe and st.comps and (p.rank or 0) >= st.from and st.to > (p.rank or 0) - FRESH and not unknownRecipe(adv, st.recipe) then
+      if st.recipe and st.comps and (p.rank or 0) >= st.from and st.to > (p.rank or 0) - FRESH and not unknownRecipe(adv, st.recipe, st.rid) then
         local n, with, ok = math.huge, {}, true
         for _, c in ipairs(st.comps) do
           if not c.vendor then
@@ -484,7 +489,7 @@ local function compute()
         end
         if ok and #with > 0 and n >= 1 then
           local e = { line = line, recipe = st.recipe, n = n, with = with, buy = {} }
-          local known = knownRecipe(adv, st.recipe)
+          local known = knownRecipe(adv, st.recipe, st.rid)
           if known then e.skillUp = (known.color == "orange" or known.color == "yellow") or nil
           else e.confirm = true e.skillUp = (p.rank or 0) < st.to or nil end
           -- Keep est la source : une ressource qu'il ne garde pas pour monter le metier (il la vend ou la craft ailleurs)
