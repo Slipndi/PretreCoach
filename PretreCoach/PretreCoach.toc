@@ -38,6 +38,7 @@ QuestDB.lua
 Quests.lua
 Guide.lua
 Rotation.lua
+HealCoach.lua
 GoldenRules.lua
 Training.lua
 Talents.lua

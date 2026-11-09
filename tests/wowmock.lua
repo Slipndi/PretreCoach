@@ -113,7 +113,7 @@ function mock.reset()
   mock.dead, mock.canAttack, mock.items, mock.hp, mock.cooldowns, mock.mana = nil, nil, nil, nil, nil, nil
   mock.vitalsReadable, mock.nodes, mock.unspent, mock.usable = nil, nil, nil, nil
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known = 0, "Creature-0", nil, nil, nil
-  mock.rangedSpeed, mock.bookOnly, mock.spellNames = nil, nil, nil
+  mock.rangedSpeed, mock.bookOnly, mock.spellNames, mock.roles, mock.shift, mock.classes = nil, nil, nil, nil, nil, nil
   mock.level, mock.xp, mock.xpMax, mock.xpSecret = nil, nil, nil, nil
   mock.secure, mock.attrCalls, mock.attrInCombat, mock.secureInCombat, mock.offline, mock.outOfRange = {}, 0, 0, 0, nil, nil
   mock.moveInCombat = 0
@@ -165,7 +165,7 @@ INVSLOT_MAINHAND, INVSLOT_RANGED = 16, 18
 -- API de jeu appelees par la sonde
 function GetLocale() return "frFR" end
 function GetBuildInfo() return "1.15.0", "60001", "Jan 1 2026", 16001 end
-function UnitClass() if mock.noClass then return nil end return "Pretre", "PRIEST", 5 end
+function UnitClass(u) if mock.noClass then return nil end local c = (mock.classes or {})[u] if c then return c, c, 1 end return "Pretre", "PRIEST", 5 end -- mock.classes = { party1 = "WARRIOR" }
 RAID_CLASS_COLORS = { PRIEST = { r = 0.9, g = 0.8, b = 0.7 } }
 function UnitRace() return "Mort-vivant", "Scourge", 5 end
 function UnitLevel() return mock.level or 12 end
@@ -416,6 +416,8 @@ function hooksecurefunc(obj, name, fn)
   mock.hooked[name] = fn
 end
 function IsInGroup() return mock.grouped == true end
+function UnitGroupRolesAssigned(u) return (mock.roles or {})[u] or "NONE" end -- mock.roles = { party1 = "TANK" }
+function IsShiftKeyDown() return mock.shift == true end
 
 -- Barres de nom : mock.plates = { [unit] = cadre } ; bulle d'unite : mock.tipCall = rappel de AddTooltipPostCall
 C_NamePlate = { GetNamePlateForUnit = function(unit) return (mock.plates or {})[unit] end }
@@ -447,7 +449,7 @@ C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) mock.superTracked = v
 -- APIs incertaines sur Forever : mock.setAbsent(true) les retire toutes (passe « absente »), false les remet.
 local UNCERTAIN = [[
 C_Traits C_ClassTalents C_SpecializationInfo GetNumSpecGroups GetNumUnspentTalents
-C_SpellBook IsPlayerSpell IsSpellKnown IsSpellKnownOrOverridesKnown GetProfessions GetProfessionInfo
+C_SpellBook IsPlayerSpell IsSpellKnown IsSpellKnownOrOverridesKnown UnitGroupRolesAssigned GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetTrainerServiceSkillLine GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 UiMapPoint C_SuperTrack WorldMapFrame hooksecurefunc Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex

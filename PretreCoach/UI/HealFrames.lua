@@ -140,6 +140,28 @@ function H.Refresh(b)
   b:SetAlpha(S.Get(UnitInRange, u) == false and 0.45 or 1) -- portee illisible : le cadre reste opaque
 end
 
+-- Coach de soin (affichage seul) : minuteurs de tes sorts sur chaque barre, conseil prioritaire au-dessus du cadre.
+function H.Coach()
+  local HC = ns.HealCoach
+  if not (built and HC) then return end
+  local units = {}
+  for _, b in ipairs(H.buttons) do
+    if S.Get(UnitExists, b.unit) == true then
+      units[#units + 1] = b.unit
+      local renew, weak = HC.Left(b.unit)
+      local t = {}
+      if renew > 0 then t[#t + 1] = "|cff33ff33" .. L.HEALC_RENEW_LEFT:format(renew) .. "|r" end
+      if weak > 0 then t[#t + 1] = "|cffaaaaaa" .. L.HEALC_WEAK_LEFT:format(weak) .. "|r" end
+      b.hot:SetText(table.concat(t, " "))
+    else
+      b.hot:SetText("")
+    end
+  end
+  local ok, text = pcall(HC.Advice, { units = units, inCombat = InCombatLockdown() == true, spells = spellsDB() })
+  H.adviceText = ok and text or nil
+  frame.advice:SetText(H.adviceText or "")
+end
+
 function H.Render()
   if not built then return end
   if not InCombatLockdown() then -- masquage hors combat seulement (le cadre contient des boutons securises)
@@ -149,6 +171,7 @@ function H.Render()
     end
   end
   for _, b in ipairs(H.buttons) do H.Refresh(b) end
+  H.Coach()
 end
 
 -- Creation hors combat uniquement : sinon reprise a PLAYER_REGEN_ENABLED.
@@ -202,6 +225,8 @@ function H.Build()
     b.mana:SetValue(1)
     b.state = b.bar:CreateFontString(nil, "OVERLAY", UI.font.small) -- etat a droite, dans la barre
     b.state:SetPoint("RIGHT", b.bar, "RIGHT", -4, 0)
+    b.hot = b.bar:CreateFontString(nil, "OVERLAY", UI.font.small) -- tes Renovation / Ame affaiblie (HealCoach), a gauche
+    b.hot:SetPoint("LEFT", b.bar, "LEFT", 4, 0)
     -- scripts non securises : infobulle des clics et memoire du dernier clic (retour visuel), aucun lancement
     b:SetScript("OnEnter", function(self)
       pcall(function()
@@ -213,19 +238,28 @@ function H.Build()
       end)
     end)
     b:SetScript("OnLeave", function() pcall(function() GameTooltip:Hide() end) end)
-    b:SetScript("PostClick", function(self) H.lastClick = { b = self, t = GetTime() } end)
+    b:SetScript("PostClick", function(self, button)
+      H.lastClick = { b = self, t = GetTime() }
+      local slot = button == "RightButton" and "2" or (S.Get(IsShiftKeyDown) == true and "shift-1" or "1")
+      if ns.HealCoach then ns.HealCoach.Clicked(self.unit, spellsDB()[slot]) end -- suivi seul, aucun lancement
+    end)
     H.buttons[i], byUnit[unit] = b, b
     applyClicks(b)
     if RegisterUnitWatch then RegisterUnitWatch(b) end
   end
   legend()
-  -- portee : relue deux fois par seconde tant que les cadres sont visibles
+  frame.advice = frame:CreateFontString(nil, "OVERLAY", UI.font.small) -- conseil du coach de soin, au-dessus du cadre
+  frame.advice:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 2, 2)
+  frame.advice:SetWidth(ROW_W + 2 * PAD)
+  frame.advice:SetJustifyH("LEFT")
+  -- portee et coach : relus deux fois par seconde tant que les cadres sont visibles
   local t = 0
   frame:SetScript("OnUpdate", function(_, dt)
     t = t + (dt or 0)
     if t < 0.5 then return end
     t = 0
     for _, b in ipairs(H.buttons) do H.Refresh(b) end
+    H.Coach()
   end)
   H.Render()
 end

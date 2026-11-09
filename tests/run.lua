@@ -2624,6 +2624,61 @@ local function suite(label)
   end
   local hasKnows = IsPlayerSpell or IsSpellKnown or (C_SpellBook and C_SpellBook.IsSpellInSpellBook)
 
+  check("Coach de soin : suivi des sorts lances depuis les cadres (Renovation, Ame affaiblie), clic et sort concordants", function()
+    local n = fresh().n
+    local HC = n.HealCoach
+    mock.noGuid = true -- le mock rend le meme GUID pour toutes les unites : suivi par jeton (repli reel si GUID secret)
+    mock.time = 100
+    HC.Clicked("party1", "RENEW")
+    HC.Cast(139) -- Renovation rang 1
+    assert(HC.Left("party1") == 15, "Renovation : duree du sort")
+    mock.time = 110
+    assert(HC.Left("party1") == 5)
+    HC.Clicked("party2", "RENEW")
+    HC.Cast(17) -- Bouclier lance : ne correspond pas au clic
+    assert(HC.Left("party2") == 0 and select(2, HC.Left("party2")) == 0, "sort different du clic : rien")
+    HC.Clicked("party2", "PWS")
+    mock.time = 114
+    HC.Cast(17)
+    assert(select(2, HC.Left("party2")) == 0, "plus de 3 s apres le clic : rien")
+    HC.Clicked("party2", "PWS")
+    HC.Cast(17)
+    assert(select(2, HC.Left("party2")) == 15, "Bouclier : Ame affaiblie 15 s")
+    HC.Cast(mock.SECRET)
+    mock.time, mock.noGuid = 0, nil
+  end)
+
+  check("Coach de soin : tank par role puis guerrier, conseils hors combat et en combat, clics conseilles", function()
+    local n = fresh().n
+    local HC, H = n.HealCoach, n.UI.HealFrames
+    if not IsPlayerSpell then return end
+    knows({ [2050] = true, [139] = true, [17] = true, [2054] = true, [2006] = true })
+    local units = { "player", "party1", "party2" }
+    local spells = { ["1"] = "LESSERHEAL", ["2"] = "RENEW", ["shift-1"] = "PWS" }
+    assert(HC.Tank(units) == nil, "aucun role, aucun guerrier")
+    mock.classes = { party2 = "WARRIOR" }
+    assert(HC.Tank(units) == "party2", "guerrier a defaut de role")
+    mock.roles = { party1 = "TANK" }
+    assert(HC.Tank(units) == "party1", "role TANK d'abord")
+    mock.time, mock.noGuid = 50, true
+    local a = HC.Advice({ units = units, inCombat = false, spells = spells })
+    assert(a and a:find("Avant le pull", 1, true) and a:find(H.SpellName("PWS"), 1, true) and a:find("(Maj)", 1, true), tostring(a))
+    HC.Clicked("party1", "PWS") HC.Cast(17)
+    a = HC.Advice({ units = units, inCombat = false, spells = spells })
+    assert(a and a:find("Clics conseillés", 1, true) and a:find("G " .. H.SpellName("HEAL"), 1, true), "tank : plus gros soin au clic gauche : " .. tostring(a))
+    assert(HC.Advice({ units = units, inCombat = false, spells = { ["1"] = "HEAL", ["2"] = "RENEW", ["shift-1"] = "PWS" } }) == nil, "reglage deja conseille : rien")
+    a = HC.Advice({ units = units, inCombat = true, spells = spells })
+    assert(a and a:find(H.SpellName("RENEW") .. " à reposer", 1, true) and a:find("(D)", 1, true), tostring(a))
+    HC.Clicked("party1", "RENEW") HC.Cast(139)
+    a = HC.Advice({ units = units, inCombat = true, spells = spells })
+    assert(a and a:find("Suis les barres", 1, true) and a:find(H.SpellName("HEAL"), 1, true) and a:find("sur aucun clic", 1, true), tostring(a))
+    mock.dead = true
+    a = HC.Advice({ units = units, inCombat = false, spells = spells })
+    assert(a and a:find(H.SpellName("RESURRECTION"), 1, true), "mort hors combat : Resurrection")
+    mock.dead, mock.time, mock.noGuid = nil, 0, nil
+    knows(nil)
+  end)
+
   check("Cadres de soin : soin plus fort appris = rappel de changer le clic, jamais de changement automatique", function()
     local o = fresh()
     local n = o.n
