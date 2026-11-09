@@ -18,6 +18,7 @@ Data\Gear.lua
 Data\Professions.lua
 Data\ProfPlan.lua
 Data\Herbs.lua
+Data\Forever.lua
 Data\Spells.lua
 Data\Talents.lua
 Data\Objectives.lua

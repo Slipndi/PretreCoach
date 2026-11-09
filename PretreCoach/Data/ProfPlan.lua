@@ -7,14 +7,15 @@ ns.Data = ns.Data or {}
 --   https://www.wow-professions.com/forever/first-aid-leveling-guide
 --   https://www.wow-professions.com/forever/herbalism-leveling-guide
 -- Cote Horde (pretre mort-vivant). Aucun prix de recette ni de fiole donne par les sources : price = nil (jamais invente).
--- rid = recipeID du sort de fabrication (compare avant le nom) : 2331, 2334, 3276 lus en jeu (2026-11-09), les autres = IDs Classic a verifier.
+-- rid = recipeID (sort de fabrication) : verifie contre Data/Forever.lua (genere depuis What's Training) par tests/run.lua :
+-- recette du metier sur Forever, apprenable au debut de la tranche, achat chez un marchand si et seulement si sa source est vendor.
+-- Les noms affiches viennent du client (C_Spell.GetSpellName(rid)) ; ceux d'ici ne servent que de repli.
 -- comps = par fabrication { name, id (itemID), n, vendor = vendu par un marchand simple, price = prix unitaire en cuivre ou nil }.
 -- crafts = nombre approximatif de fabrications sur toute la tranche. zones = uiMapID. masters[nomDeRang] = ou aller.
 local function s(from, to, t) t.from, t.to, t.verify = from, to, true return t end
 local VIDE = { name = "Fiole vide", id = 3371, n = 1, vendor = true }
 local PLOMB = { name = "Fiole de plomb", id = 3372, n = 1, vendor = true }
 local CRISTAL = { name = "Fiole de cristal", id = 8925, n = 1, vendor = true }
-local SPICE = { name = "Épices apaisantes", id = 3713, n = 1, vendor = true }
 local function herb(name, id, n) return { name = name, id = id, n = n or 1 } end
 local function cloth(name, id, n) return { name = name, id = id, n = n } end
 
@@ -26,8 +27,7 @@ ns.Data.ProfPlan = {
 			Artisan = "Rogvar (Stonard, Marais des Chagrins)",
 		},
 		steps = {
-			s(1, 10, { recipe = "Élixir arcanique mineur", crafts = 9, comps = { herb("Pacifique", 2447), VIDE } }),
-			s(10, 55, { recipe = "Élixir de défense mineure", rid = 7183, crafts = 45, comps = { herb("Feuillargent", 765), herb("Pacifique", 2447), VIDE } }),
+			s(1, 55, { recipe = "Élixir de défense mineure", rid = 7183, crafts = 54, comps = { herb("Feuillargent", 765), herb("Pacifique", 2447), VIDE } }),
 			s(55, 65, { recipe = "Potion de mana mineure", rid = 2331, crafts = 10, comps = { herb("Mage royal", 785), herb("Pacifique", 2447), VIDE } }),
 			s(65, 90, { recipe = "Elixir de Robustesse mineure", rid = 2334, crafts = 27, comps = { herb("Terrestrine", 2449, 2), herb("Pacifique", 2447), VIDE } }),
 			s(90, 120, { recipe = "Élixir de sagesse", rid = 3171, crafts = 30, comps = { herb("Mage royal", 785), herb("Églantine", 2450, 2), VIDE } }),
@@ -36,8 +36,7 @@ ns.Data.ProfPlan = {
 			s(195, 230, { recipe = "Potion de protection contre la nature", rid = 7259, crafts = 48, comps = { herb("Vietérule", 3357), herb("Strangleronce", 3820), PLOMB },
 				buy = { recipe = "Potion de protection contre la nature", where = "Bronk (Féralas), Glyx Brewright (Vallée de Strangleronce) ou Alchimiste Pestlezugg (Tanaris)" } }),
 			s(230, 265, { recipe = "Breuvage de détection des morts-vivants", rid = 11460, crafts = 45, comps = { herb("Larmes d'Arthas", 8836), CRISTAL } }),
-			s(265, 290, { recipe = "Potion de mana supérieure", rid = 11448, crafts = 30, comps = { herb("Soleillette", 8838, 2), herb("Aveuglette", 8839, 2), CRISTAL },
-				buy = { recipe = "Potion de mana supérieure", where = "Algernon (Fossoyeuse)" } }),
+			s(265, 290, { recipe = "Potion de mana supérieure", rid = 11448, crafts = 30, comps = { herb("Soleillette", 8838, 2), herb("Aveuglette", 8839, 2), CRISTAL } }),
 			s(290, 300, { crafts = 20, note = "Choisis une recette orange ou jaune dans ta fenêtre d'alchimie (recettes vendues ou en vente à l'hôtel des ventes)" }),
 		},
 	},
@@ -73,13 +72,12 @@ ns.Data.ProfPlan = {
 				buy = { recipe = "Secourisme expert", item = "Manuel : Secourisme expert", where = "Balai Lok'Wein (Marécage d'Âprefange)" } }),
 			s(180, 210, { recipe = "Bandage en soie épais", rid = 7929, crafts = 46, comps = { cloth("Étoffe de soie", 4306, 2) },
 				buy = { recipe = "Bandage en soie épais", item = "Manuel : Bandage en soie épais", where = "Balai Lok'Wein (Marécage d'Âprefange)" } }),
-			s(210, 225, { recipe = "Bandage en tisse-mage", rid = 10840, crafts = 17, comps = { cloth("Tisse-mage", 4338, 1) },
-				buy = { recipe = "Bandage en tisse-mage", item = "Manuel : Bandage en tisse-mage", where = "Balai Lok'Wein (Marécage d'Âprefange)" } }),
-			s(225, 240, { recipe = "Potion de soins supérieure", rid = 7181, crafts = 16, comps = { herb("Soleillette", 8838), SPICE, CRISTAL },
+			s(210, 240, { recipe = "Bandage en tisse-mage", rid = 10840, crafts = 40, comps = { cloth("Tisse-mage", 4338, 1) },
+				buy = { recipe = "Bandage en tisse-mage", item = "Manuel : Bandage en tisse-mage", where = "Balai Lok'Wein (Marécage d'Âprefange)" },
 				extra = "Quête Triage (secourisme 225, niveau 35) : Docteur Gregory Victor, Hammerfall (Hautes-terres d'Arathi), soigne 15 blessés en commençant par les plus graves" }),
 			s(240, 260, { recipe = "Bandage en tisse-mage épais", rid = 10841, crafts = 30, comps = { cloth("Tisse-mage", 4338, 2) } }),
-			s(260, 275, { recipe = "Bandage en étoffe runique", rid = 18629, crafts = 20, comps = { cloth("Étoffe runique", 14047, 1) } }),
-			s(275, 300, { recipe = "Potion de soins majeure", rid = 17556, crafts = 30, comps = { herb("Sansam doré", 13464), { name = "Épices apaisantes", id = 3713, n = 3, vendor = true }, CRISTAL } }),
+			s(260, 290, { recipe = "Bandage en étoffe runique", rid = 18629, crafts = 35, comps = { cloth("Étoffe runique", 14047, 1) } }),
+			s(290, 300, { recipe = "Bandage épais en étoffe runique", rid = 18630, crafts = 12, comps = { cloth("Étoffe runique", 14047, 2) } }),
 		},
 	},
 }

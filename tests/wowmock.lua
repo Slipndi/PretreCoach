@@ -102,6 +102,10 @@ function mock.fire(event, ...)
 end
 
 -- Remet le mock a zero entre deux chargements de l'addon.
+mock.PLAN_RIDS = {}
+for _, id in ipairs({ 7183, 2331, 2334, 3171, 3173, 3452, 7259, 11460, 11448, 3275, 3276, 3277, 3278, 7928, 7929, 10840, 10841, 18629, 18630 }) do
+  mock.PLAN_RIDS[id] = true
+end
 function mock.reset()
   mock.events, mock.timers, mock.errors, mock.printed = {}, {}, {}, {}
   mock.inCombat, mock.hasTarget, mock.rejectEvents, mock.noRegisterUnitEvent, mock.lastText = false, true, nil, false, nil
@@ -109,7 +113,7 @@ function mock.reset()
   mock.dead, mock.canAttack, mock.items, mock.hp, mock.cooldowns, mock.mana = nil, nil, nil, nil, nil, nil
   mock.vitalsReadable, mock.nodes, mock.unspent, mock.usable = nil, nil, nil, nil
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known = 0, "Creature-0", nil, nil, nil
-  mock.rangedSpeed, mock.bookOnly = nil, nil
+  mock.rangedSpeed, mock.bookOnly, mock.spellNames = nil, nil, nil
   mock.level, mock.xp, mock.xpMax, mock.xpSecret = nil, nil, nil, nil
   mock.secure, mock.attrCalls, mock.attrInCombat, mock.secureInCombat, mock.offline, mock.outOfRange = {}, 0, 0, 0, nil, nil
   mock.moveInCombat = 0
@@ -348,7 +352,12 @@ Settings = {
 -- mock.cooldowns = { [spellID] = { start, duree } } ; sans entree : pas de recharge
 local function cdOf(id) local c = (mock.cooldowns or {})[id] return c and c[1] or 0, c and c[2] or 0 end
 C_Spell = {
-  GetSpellName = function(id) if (mock.unknown.spell or {})[id] then return nil end return "Sort" .. id end,
+  -- recettes du plan (Data/ProfPlan rid) : pas de nom par defaut (le plan garde les siens) ; mock.spellNames = { [id] = nom }
+  GetSpellName = function(id)
+    if (mock.spellNames or {})[id] then return mock.spellNames[id] end
+    if (mock.unknown.spell or {})[id] or mock.PLAN_RIDS[id] then return nil end
+    return "Sort" .. id
+  end,
   GetSpellCooldown = function(id)
     if secretNow() then return mock.SECRET end
     local s, d = cdOf(id)

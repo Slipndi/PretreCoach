@@ -111,7 +111,7 @@ local function levelCost(from, to)
   for _, sp in ipairs(D.Spells) do
     if not sp.talent and not sp.noTrainer then
       for i, r in ipairs(sp.ranks) do
-        if r.level and r.level >= from and r.level <= to then
+        if r.level and r.level >= from and r.level <= to and not r.noTrainer then
           local c = Training.Cost(spellName(sp, i), i, r.id)
           if c then total = total + c else unknown = unknown + 1 end
         end
@@ -186,7 +186,7 @@ function Training.Plan(level)
     for _, sp in ipairs(D.Spells) do
       if not sp.talent and not sp.noTrainer then
         for _, r in ipairs(sp.ranks) do
-          if r.level and r.level > level and (not best or r.level < best) then best = r.level end
+          if r.level and not r.noTrainer and r.level > level and (not best or r.level < best) then best = r.level end
         end
       end
     end
@@ -196,7 +196,7 @@ function Training.Plan(level)
       for _, sp in ipairs(D.Spells) do
         if not sp.talent and not sp.noTrainer then
           for i, r in ipairs(sp.ranks) do
-            if r.level == best then out.nextNames[#out.nextNames + 1] = rankText(spellName(sp, i), i) end
+            if r.level == best and not r.noTrainer then out.nextNames[#out.nextNames + 1] = rankText(spellName(sp, i), i) end
           end
         end
       end

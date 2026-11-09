@@ -4449,7 +4449,7 @@ local function suite(label)
     assert(s.title == "Alchimie 52/75 : fais Élixir de défense mineure", s.title)
     assert(not kinds(s):find("rank", 1, true), "plafond loin : pas de maitre")
     n.State.profs[171] = { rank = 3, max = 75 }
-    assert(n.Prof.Steps(171).title:find("Élixir arcanique mineur", 1, true), "debut de tranche")
+    assert(n.Prof.Steps(171).title:find("Élixir de défense mineure", 1, true) and n.Prof.Steps(171).step.from == 1, "debut de tranche (Forever : apprise des 1)")
     n.State.level = 40
     n.State.profs[171] = { rank = 72, max = 75 }
     s = n.Prof.Steps(171)
@@ -4479,6 +4479,47 @@ local function suite(label)
     assert(s.todo[1].done == nil and kinds(s):find("live$"), "recette non listee : inconnue, En direct en dernier")
     n.Prof.Advice[171] = { list = { { name = "Potion de mana", color = "green" } } }
     assert(not kinds(n.Prof.Steps(171)):find("live", 1, true), "verte : pas de conseil En direct")
+  end)
+
+  check("Forever : chaque etape du plan = recette Forever du metier, apprenable en debut de tranche, achat ssi marchand", function()
+    local n = fresh().n
+    local F = n.Data.Forever and n.Data.Forever.recipes
+    assert(F and F[171] and F[129], "Data/Forever.lua charge (tools/import-forever.lua)")
+    for line, plan in pairs(n.Data.ProfPlan) do
+      for _, st in ipairs(plan.steps) do
+        if st.recipe then
+          local tag = line .. " " .. st.from .. "-" .. st.to .. " " .. st.recipe
+          local r = st.rid and F[line] and F[line][st.rid]
+          assert(r, tag .. " : rid absent de Forever")
+          assert(r.skill <= st.from, tag .. " : apprenable seulement a " .. r.skill)
+          local bought = (st.buy ~= nil and st.buy.recipe == st.recipe)
+          assert(bought == (r.src:find("vendor", 1, true) ~= nil), tag .. " : source Forever " .. r.src)
+          for _, c in ipairs(st.comps or {}) do assert(type(c.id) == "number", tag .. " : composant sans id") end
+        end
+      end
+    end
+  end)
+
+  check("Forever : niveaux des sorts du maitre Forever, rangs hors maitre jamais a apprendre", function()
+    local n = fresh().n
+    local function rank(key, i) for _, sp in ipairs(n.Data.Spells) do if sp.key == key then return sp.ranks[i] end end end
+    assert(rank("FADE", 2).level == 20 and rank("FADE", 6).level == 60, "Disparition : niveaux Forever")
+    assert(rank("RENEW", 10).noTrainer and not rank("RENEW", 9).noTrainer, "Renouveau rang 10 : livre, pas le maitre")
+    assert(rank("SMITE", 1).level == 1 and not rank("SMITE", 1).noTrainer, "sort de depart intact")
+    if not IsPlayerSpell then return end
+    knows({ [586] = true })
+    for _, e in ipairs(n.Calc.PendingSpells(19, n.State.Knows) or {}) do assert(e.key ~= "FADE", "Disparition rang 2 : niveau 20 sur Forever") end
+  end)
+
+  check("Prof : noms des recettes du plan donnes par le client, achat compris", function()
+    local n = fresh().n
+    mock.spellNames = { [7183] = "Élixir de défense mineur (client)", [7259] = "Potion de protection (client)" }
+    n.Prof.UseClientNames()
+    local st = n.Data.ProfPlan[171].steps
+    assert(st[1].recipe == "Élixir de défense mineur (client)", st[1].recipe)
+    assert(st[7].recipe == "Potion de protection (client)" and st[7].buy.recipe == st[7].recipe, "achat renomme avec l'etape")
+    assert(st[2].recipe == "Potion de mana mineure", "nom illisible : celui du plan")
+    mock.spellNames = nil
   end)
 
   check("Prof.Steps : recettes a apprendre = ce que le maitre du metier affiche disponible", function()
@@ -4612,8 +4653,7 @@ local function suite(label)
     mock.items = { [765] = 4, [2447] = 6 }
     local list = n.Prof.Craftable()
     if not GetItemCount then assert(#list == 0, "comptes illisibles : rien d'affirme") return end
-    assert(#list == 2 and list[1].recipe == "Élixir de défense mineure" and list[1].n == 4 and list[1].skillUp and list[1].confirm, "monte la competence d'abord")
-    assert(list[2].recipe == "Élixir arcanique mineur" and list[2].n == 6 and not list[2].skillUp, "grise de tranche : apres")
+    assert(#list == 1 and list[1].recipe == "Élixir de défense mineure" and list[1].n == 4 and list[1].skillUp and list[1].confirm, "monte la competence")
     assert(#list[1].buy == 1 and list[1].buy[1].name == "Fiole vide" and list[1].buy[1].qty == 4 and list[1].buy[1].cost == nil, "fioles a acheter, prix inconnu : nil")
     local text = n.Prof.BagText(list[1])
     assert(text == "Tu peux faire 4 Élixir de défense mineure avec tes Feuillargent et Pacifique : achète 4 Fiole vide chez un marchand de fournitures (recette à confirmer)", text)
@@ -4635,7 +4675,7 @@ local function suite(label)
     -- couleur lue en direct : verte = ne fait plus monter
     n.Prof.Advice[171] = { list = { { name = "Élixir de défense mineure", color = "green" } } }
     list = n.Prof.Craftable()
-    assert(not list[1].skillUp and list[1].recipe == "Élixir arcanique mineur" and list[1].n == 6, "tri : le plus grand nombre si rien ne monte")
+    assert(not list[1].skillUp and list[1].recipe == "Élixir de défense mineure" and list[1].n == 4, "verte : ne monte plus")
     assert(not n.Guide.Goals()[2].text:find("Tes sacs", 1, true), "pas de ligne sacs sans montee")
     n.Prof.Advice[171] = nil
     -- icones d'objet : presentes si lisibles, nom seul sinon
@@ -4648,7 +4688,7 @@ local function suite(label)
     -- secret : recette ignoree, jamais de faux compte
     mock.items = { [765] = mock.SECRET, [2447] = 6 }
     list = n.Prof.Craftable()
-    assert(#list == 1 and list[1].recipe == "Élixir arcanique mineur", "composant secret : recette ignoree")
+    assert(#list == 0, "composant secret : recette ignoree")
     mock.items = { [765] = mock.SECRET, [2447] = mock.SECRET }
     assert(#n.Prof.Craftable() == 0, "tout secret : rien")
     -- combat : dernier resultat conserve, pas de relecture ; rescan hors combat
@@ -4657,7 +4697,7 @@ local function suite(label)
     mock.items = nil
     mock.setCombat(true)
     mock.fire("BAG_UPDATE_DELAYED")
-    assert(#n.Prof.Craftable() == 2, "combat : resultat memorise")
+    assert(#n.Prof.Craftable() == 1, "combat : resultat memorise")
     mock.setCombat(false)
     assert(#n.Prof.Craftable() == 0, "hors combat : relu")
   end)
@@ -4805,12 +4845,12 @@ local function suite(label)
   check("Craft : recette non apprise : toast avec le vendeur du plan, sinon toast actuel", function()
     if not GetItemCount then return end
     local n, toasts, b = liveBoot({ name = "Autre" })
-    mock.recipeInfo[102] = { name = "Potion de mana supérieure", learned = false }
-    b.entry = { recipe = "Potion de mana supérieure" }
+    mock.recipeInfo[102] = { name = "Potion de protection contre la nature", learned = false }
+    b.entry = { recipe = "Potion de protection contre la nature" }
     b.hooks.PreClick(b)
     mock.time = 1.1 mock.flushTimers()
     assert(mock.selected == nil and mock.crafted == nil, "rien presélectionné")
-    assert(toasts[1] == "Recette Potion de mana supérieure non apprise : achète-la chez Algernon (Fossoyeuse)", tostring(toasts[1]))
+    assert(toasts[1] == "Recette Potion de protection contre la nature non apprise : achète-la chez " .. n.Data.ProfPlan[171].steps[7].buy.where, tostring(toasts[1]))
     assert(n.UI.CraftPopup.last.method == "aucune")
   end)
 

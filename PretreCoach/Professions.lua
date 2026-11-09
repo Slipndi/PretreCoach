@@ -554,6 +554,21 @@ end
 
 ns.On("BAG_UPDATE_DELAYED", function() if not InCombatLockdown() then Prof.Craftable() end end)
 
+-- Noms des recettes du plan donnes par le client (C_Spell.GetSpellName(rid)) : ceux du plan, traduits de memoire, ne sont
+-- qu'un repli. Une seule fois a la connexion ; un nom illisible garde celui du plan.
+function Prof.UseClientNames()
+  for _, plan in pairs(D.ProfPlan or {}) do
+    for _, st in ipairs(plan.steps or {}) do
+      local nm = st.rid and S.Get(C_Spell and C_Spell.GetSpellName, st.rid)
+      if type(nm) == "string" and nm ~= "" and nm ~= st.recipe then
+        if st.buy and st.buy.recipe == st.recipe then st.buy.recipe = nm end
+        st.recipe = nm
+      end
+    end
+  end
+end
+ns.On("PLAYER_LOGIN", Prof.UseClientNames)
+
 -- Lecture 0,3 s apres l'evenement, jamais en combat (reprise a la fin du combat).
 local waiting, deferred = false, false
 local function schedule()

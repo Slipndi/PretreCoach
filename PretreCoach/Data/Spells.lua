@@ -147,3 +147,17 @@ ns.Data.Spells = {
     cooldown = nil, duration = nil, manaCost = true, verify = true,
     ranks = { { id = 402174, level = nil, verify = true } } },
 }
+
+-- Niveaux Forever (Data/Forever.lua, genere depuis What's Training) : ils remplacent les niveaux Classic ci-dessus.
+-- Un rang absent du maitre Forever (livre, quete) au-dela du niveau 1 est marque noTrainer : jamais « a apprendre ».
+local F = ns.Data.Forever and ns.Data.Forever.spells
+if F then
+  for _, sp in ipairs(ns.Data.Spells) do
+    if not sp.talent and not sp.noTrainer then
+      for _, r in ipairs(sp.ranks) do
+        if F[r.id] then r.level = F[r.id]
+        elseif r.level and r.level > 1 then r.noTrainer = true end
+      end
+    end
+  end
+end

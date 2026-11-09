@@ -67,7 +67,7 @@ function Calc.PendingSpells(level, knowsFn)
     if not sp.talent and not sp.noTrainer then
       local top
       for i, r in ipairs(sp.ranks) do
-        if r.level and r.level <= level then top = i end
+        if r.level and r.level <= level and not r.noTrainer then top = i end
       end
       local known = top and knowsFn(sp.key)
       if top then asked = asked + 1 end
