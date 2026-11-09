@@ -254,9 +254,26 @@ end
 local spellByKey = {}
 for _, sp in ipairs(ns.Data.Spells) do spellByKey[sp.key] = sp end
 
+-- Sort connu ? true si UNE des API le dit (sur Forever, IsPlayerSpell rend faux pour un rang superieur appris : le livre
+-- de sorts C_SpellBook, comme What's Training, le voit) ; false si au moins une repond non ; nil si aucune ne repond.
+local BANK = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player or 0
+function State.SpellKnown(id)
+  local SB, answered = C_SpellBook, nil
+  local tries = { { SB and SB.IsSpellInSpellBook, id, BANK, false }, { SB and SB.IsSpellKnown, id, BANK },
+    { IsPlayerSpell, id }, { IsSpellKnown, id }, { IsSpellKnownOrOverridesKnown, id } }
+  for _, t in ipairs(tries) do
+    if t[1] then
+      local v = S.Get(unpack(t, 1, 4))
+      if v == true then return true end
+      if v == false then answered = false end
+    end
+  end
+  return answered
+end
+
 -- Plus haut rang connu du sort (0 si aucun) ; nil si inconnu (API absente, clé inconnue, ou aucun rang n'existe
 -- dans le client). Un rang dont l'ID n'a pas de nom (C_Spell.GetSpellName / GetSpellInfo) est ignoré.
-local function computeKnows(sp, fn)
+local function computeKnows(sp)
   local nameFn = (C_Spell and C_Spell.GetSpellName) or GetSpellInfo
   local answered = false
   local exists = false
@@ -265,7 +282,7 @@ local function computeKnows(sp, fn)
     local nameState = nameFn and select(2, S.Get(nameFn, id))
     if nameState ~= "nil" then -- si l'API de nom est absente ou en erreur, on ne filtre pas
       exists = true
-      local known = S.Get(fn, id)
+      local known = State.SpellKnown(id)
       if known == true then return i end
       if known ~= nil then answered = true end
     end
@@ -275,11 +292,10 @@ end
 
 function State.Knows(key)
   local sp = spellByKey[key]
-  local fn = IsPlayerSpell or IsSpellKnown or (C_SpellBook and C_SpellBook.IsSpellInSpellBook)
-  if not sp or not fn then return nil end
+  if not sp then return nil end
   local v = knownCache[key]
   if v == nil then
-    v = computeKnows(sp, fn)
+    v = computeKnows(sp)
     knownCache[key] = v == nil and NONE or v
   end
   if v == NONE then return nil end

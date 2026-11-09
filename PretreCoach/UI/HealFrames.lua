@@ -45,12 +45,8 @@ function H.Choices(current)
   for _, key in ipairs(CHOICES) do
     local e = entry(key)
     if e then
-      local known = key == current or not IsPlayerSpell
-      for _, r in ipairs(e.ranks) do
-        if known then break end
-        local ok, k = pcall(IsPlayerSpell, r.id)
-        known = ok and k == true
-      end
+      local k = key == current or ns.State.Knows(key)
+      local known = k == true or k == nil or (type(k) == "number" and k > 0) -- nil : aucune API, tous proposes
       if known then out[#out + 1] = key end
     end
   end

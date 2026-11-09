@@ -109,7 +109,7 @@ function mock.reset()
   mock.dead, mock.canAttack, mock.items, mock.hp, mock.cooldowns, mock.mana = nil, nil, nil, nil, nil, nil
   mock.vitalsReadable, mock.nodes, mock.unspent, mock.usable = nil, nil, nil, nil
   mock.time, mock.guid, mock.noGuid, mock.rangedID, mock.uncached, mock.known = 0, "Creature-0", nil, nil, nil
-  mock.rangedSpeed = nil
+  mock.rangedSpeed, mock.bookOnly = nil, nil
   mock.level, mock.xp, mock.xpMax, mock.xpSecret = nil, nil, nil, nil
   mock.secure, mock.attrCalls, mock.attrInCombat, mock.secureInCombat, mock.offline, mock.outOfRange = {}, 0, 0, 0, nil, nil
   mock.moveInCombat = 0
@@ -222,7 +222,10 @@ function GetTrainerServiceLevelReq() return 10 end
 function GetTrainerServiceCost() return 100 end
 function GetTrainerServiceSkillLine() return nil end
 function GetCoinTextureString(c) return "COIN:" .. c end
-C_SpellBook = { IsSpellKnown = function() return true end, IsSpellInSpellBook = function() return true end }
+-- Livre de sorts : suit mock.known, plus mock.bookOnly = { [id] = true } (rang vu par le livre mais pas par IsPlayerSpell, cas Forever)
+local function inBook(id) if (mock.bookOnly or {})[id] then return true end return IsPlayerSpell(id) end
+C_SpellBook = { IsSpellKnown = function(id) return inBook(id) end, IsSpellInSpellBook = function(id) return inBook(id) end }
+function IsSpellKnownOrOverridesKnown(id) return IsPlayerSpell(id) end
 -- Journal pilotable : mock.qlog = { { questID, title, isHeader, complete, objectives = { { text, numFulfilled, numRequired, finished } } } } ;
 -- mock.qdone = { [questID] = true } : quetes deja faites
 C_QuestLog = { IsQuestFlaggedCompleted = function(id) return (mock.qdone or {})[id] == true end, GetTitleForQuestID = function() return "Titre" end,
@@ -435,7 +438,7 @@ C_SuperTrack = { SetSuperTrackedUserWaypoint = function(v) mock.superTracked = v
 -- APIs incertaines sur Forever : mock.setAbsent(true) les retire toutes (passe « absente »), false les remet.
 local UNCERTAIN = [[
 C_Traits C_ClassTalents C_SpecializationInfo GetNumSpecGroups GetNumUnspentTalents
-C_SpellBook IsPlayerSpell IsSpellKnown GetProfessions GetProfessionInfo
+C_SpellBook IsPlayerSpell IsSpellKnown IsSpellKnownOrOverridesKnown GetProfessions GetProfessionInfo
 C_Map C_QuestLog GetUnitSpeed IsPlayerMoving C_Timer Settings GetNumTrainerServices GetTrainerServiceInfo
 GetTrainerServiceLevelReq GetTrainerServiceCost GetTrainerServiceSkillLine GetCoinTextureString GetInventoryItemID GetBindingText C_ActionBar issecretvalue C_TradeSkillUI GetItemCount
 UiMapPoint C_SuperTrack WorldMapFrame hooksecurefunc Enum C_Container C_AddOns C_EncounterJournal EJ_GetNumTiers EJ_GetTierInfo EJ_GetCurrentTier EJ_GetInstanceByIndex

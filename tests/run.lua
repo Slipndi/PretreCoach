@@ -1003,6 +1003,24 @@ local function suite(label)
   -- change les sorts connus du mock et invalide le cache de Knows (SPELLS_CHANGED atteint tous les ns charges)
   local function knows(ids) mock.known = ids mock.fire("SPELLS_CHANGED") mock.flushTimers() end
 
+  check("Knows : rang vu par le livre de sorts seul (Forever) = connu, plus a apprendre ; choix des cadres de soin", function()
+    local n = fresh().n
+    knows({ [586] = true, [2050] = true })
+    if not IsPlayerSpell then assert(n.State.Knows("FADE") == nil, "aucune API : inconnu") return end
+    assert(n.State.Knows("FADE") == 1, "rang 1 seul")
+    mock.bookOnly = { [9578] = true, [2054] = true } -- rang 2 de Disparition et Soins : IsPlayerSpell dit non, le livre dit oui
+    knows({ [586] = true, [2050] = true })
+    assert(n.State.Knows("FADE") == 2, "rang 2 vu par C_SpellBook")
+    local p = n.Calc.PendingSpells(16, n.State.Knows)
+    for _, e in ipairs(p or {}) do assert(e.key ~= "FADE", "Disparition rang 2 deja connue : pas a apprendre") end
+    if n.UI.HealFrames and n.UI.HealFrames.Choices then
+      local has
+      for _, k in ipairs(n.UI.HealFrames.Choices("LESSERHEAL")) do if k == "HEAL" then has = true end end
+      assert(has, "Soins appris : propose dans les cadres de soin")
+    end
+    mock.bookOnly = nil
+  end)
+
   check("Guide : checks prof, profRank, wand, wandItem", function()
     local n = fresh().n
     setState(n, { level = 5 })
