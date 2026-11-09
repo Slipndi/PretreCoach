@@ -393,16 +393,19 @@ function Prof.Steps(line)
     todo[#todo].blocked = not ok or nil
   end
   if step.extra then add("extra", step.extra) end
-  -- Recette du plan pas apprise (et pas achetee chez un marchand, ligne buy ci-dessus) : l'apprendre avant de fabriquer
-  if step.recipe and not (step.buy and step.buy.recipe == step.recipe) and unknownRecipe(adv, step.recipe) then
+  -- Recette du plan (pas achetee chez un marchand, ligne buy ci-dessus) : toujours citee, d'apres le plan et pas d'apres ce que
+  -- le joueur a vu ; cochee si la fenetre du metier la montre, a faire si elle n'y est pas, sans coche si la fenetre n'a jamais ete lue.
+  if step.recipe and not (step.buy and step.buy.recipe == step.recipe) then
+    local known -- true / false / nil (fenetre jamais lue)
+    if knownRecipe(adv, step.recipe) then known = true elseif unknownRecipe(adv, step.recipe) then known = false end
     local dup
     for _, a in ipairs(todo) do if a.kind == "learn" and a.text:find(step.recipe, 1, true) then dup = true end end
     if not dup then
       local ok, d = false, nil
-      if GOKEY[line] and ns.Goto then ok, d = pcall(ns.Goto.For, GOKEY[line]) end
+      if known ~= true and GOKEY[line] and ns.Goto then ok, d = pcall(ns.Goto.For, GOKEY[line]) end
       local where = ok and type(d) == "table" and d.x and d.text
-      add("learn", where and L.PROF_STEP_LEARN:format(step.recipe, where) or L.PROF_STEP_LEARN_ANY:format(step.recipe), false)
-      learn = true
+      add("learn", where and L.PROF_STEP_LEARN:format(step.recipe, where) or L.PROF_STEP_LEARN_ANY:format(step.recipe), known)
+      if known == false then learn = true end
     end
   end
   if step.comps then
@@ -441,13 +444,13 @@ function Prof.Steps(line)
 end
 
 -- Texte court pour la carte : titre + premiere action non faite (2 lignes max), ou le conseil « tes sacs » si une
--- fabrication fait monter la competence et que rien ne bloque (rang chez le maitre).
+-- fabrication fait monter la competence et que rien ne bloque (rang ou recette chez le maitre).
 function Prof.StepsText(line)
   local s = Prof.Steps(line)
   if not s then return nil end
   local first
   for _, a in ipairs(s.todo) do if a.done ~= true and not a.held then first = a break end end
-  if not (first and first.kind == "rank") then
+  if not (first and (first.kind == "rank" or first.kind == "learn")) then -- recette a avoir d'abord, pas un craft des sacs
     for _, e in ipairs(Prof.Craftable()) do
       if e.line == line and e.skillUp then return s.short .. "\n" .. Prof.BagShort(e) end
     end
