@@ -470,6 +470,57 @@ end
 ------------------------------------------------------------------------
 local FRESH = 25 -- recettes du plan plus de 25 points sous le rang : ignorees (grises)
 
+-- Recettes APPRISES hors plan (orange/jaune a la derniere ouverture du metier, index ns.db.reagents) : meme calcul avec les
+-- sacs ; composant vendu par un marchand (d'apres les fioles et epices du plan) = a acheter. Marge = celle lue a l'ouverture.
+-- shortcut: couleur et marge datent de la derniere ouverture de la fenetre du metier ; rouvrir la fenetre les met a jour.
+local function learnedCrafts(out)
+  local vendor, planned = {}, {}
+  for _, plan in pairs(D.ProfPlan or {}) do
+    for _, st in ipairs(plan.steps or {}) do
+      if st.rid then planned[st.rid] = true end
+      if st.recipe then planned[st.recipe] = true end
+      for _, c in ipairs(st.comps or {}) do if c.vendor then vendor[c.id] = c end end
+    end
+  end
+  local byRecipe = {}
+  for id, list in pairs(ns.db and type(ns.db.reagents) == "table" and ns.db.reagents or {}) do
+    for _, r in ipairs(type(list) == "table" and list or {}) do
+      if type(r) == "table" and num(r.recipeID) and type(r.name) == "string" and State.profs[r.line] then
+        local x = byRecipe[r.recipeID] or { line = r.line, name = r.name, color = r.color, comps = {} }
+        byRecipe[r.recipeID] = x
+        x.comps[#x.comps + 1] = { id = id, n = num(r.n) or 1 }
+      end
+    end
+  end
+  for rid, x in pairs(byRecipe) do
+    if not planned[rid] and not planned[x.name] then
+      local n, with, ok = math.huge, {}, true
+      for _, c in ipairs(x.comps) do
+        if not vendor[c.id] then
+          local have = count(c.id)
+          if have == nil then ok = false break end
+          n = math.min(n, math.floor(have / c.n))
+          with[#with + 1] = ico(c.id, itemName(c.id))
+        end
+      end
+      if ok and #with > 0 and n >= 1 then
+        local known = knownRecipe(Get(x.line), x.name, rid)
+        local e = { line = x.line, recipe = x.name, n = n, with = with, buy = {}, margin = known and num(known.margin),
+          skillUp = (x.color == "orange" or x.color == "yellow") or nil }
+        for _, c in ipairs(x.comps) do
+          local v = vendor[c.id]
+          if v then
+            local qty, have = n * c.n, count(c.id)
+            if have then qty = math.max(0, qty - have) end
+            if qty > 0 then e.buy[#e.buy + 1] = { name = v.name, id = c.id, qty = qty, cost = v.price and v.price * qty or nil } end
+          end
+        end
+        out[#out + 1] = e
+      end
+    end
+  end
+end
+
 local function compute()
   local out = {}
   if type(State.profs) ~= "table" then return out end
@@ -490,6 +541,7 @@ local function compute()
         if ok and #with > 0 and n >= 1 then
           local e = { line = line, recipe = st.recipe, n = n, with = with, buy = {} }
           local known = knownRecipe(adv, st.recipe, st.rid)
+          e.margin = known and num(known.margin)
           if known then e.skillUp = (known.color == "orange" or known.color == "yellow") or nil
           else e.confirm = true e.skillUp = (p.rank or 0) < st.to or nil end
           -- Keep est la source : une ressource qu'il ne garde pas pour monter le metier (il la vend ou la craft ailleurs)
@@ -512,8 +564,10 @@ local function compute()
       end
     end
   end
+  learnedCrafts(out)
   table.sort(out, function(a, b)
     if (a.skillUp or false) ~= (b.skillUp or false) then return a.skillUp or false end
+    if a.margin ~= b.margin then return (a.margin or -math.huge) > (b.margin or -math.huge) end
     if a.n ~= b.n then return a.n > b.n end
     if a.line ~= b.line then return a.line < b.line end
     return a.recipe < b.recipe
@@ -543,13 +597,13 @@ local function buyWhy(e)
 end
 
 function Prof.BagText(e)
-  local s = L.PROF_BAG:format(e.n, e.recipe, names(e.with, " et "))
+  local s = L.PROF_BAG:format(e.n, e.recipe, names(e.with, " et ")) .. (e.margin and L.PROF_MARGIN:format(margin(e.margin)) or "")
   if #e.buy > 0 then s = s .. L.PROF_BAG_BUY:format(buyList(e)) .. buyWhy(e) end
   return e.confirm and (s .. L.PROF_BAG_CONFIRM) or s
 end
 
 function Prof.BagShort(e)
-  return L.PROF_BAG_SHORT:format(e.n, e.recipe) .. (#e.buy > 0 and (L.PROF_BAG_SHORT_BUY:format(buyList(e)) .. buyWhy(e)) or "")
+  return L.PROF_BAG_SHORT:format(e.n, e.recipe) .. (e.margin and L.PROF_MARGIN:format(margin(e.margin)) or "") .. (#e.buy > 0 and (L.PROF_BAG_SHORT_BUY:format(buyList(e)) .. buyWhy(e)) or "")
 end
 
 ns.On("BAG_UPDATE_DELAYED", function() if not InCombatLockdown() then Prof.Craftable() end end)

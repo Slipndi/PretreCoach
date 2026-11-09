@@ -4645,6 +4645,31 @@ local function suite(label)
     assert(#n.Guide.Reference("profs") == 3, "metiers illisibles : liste complete, sans checklist")
   end)
 
+  check("Prof.Craftable : recettes apprises hors plan, avec les sacs, fioles a acheter, marge, tri par marge", function()
+    if not GetItemCount and not (C_Item and C_Item.GetItemCount) then return end
+    local n = fresh().n
+    planState(n, { [171] = { rank = 60, max = 150 } })
+    -- index des composants lu a l'ouverture du metier : Potion de soins mineure (hors plan) = 1 Pacifique + 1 Fiole vide
+    n.db.reagents = {
+      [2447] = { { line = 171, recipeID = 2330, name = "Potion de soins mineure", color = "yellow", ups = 1, n = 1 } },
+      [3371] = { { line = 171, recipeID = 2330, name = "Potion de soins mineure", color = "yellow", ups = 1, n = 1 } },
+      [118] = { { line = 999, recipeID = 1, name = "Metier non appris", color = "orange", n = 1 } },
+    }
+    n.Prof.Advice[171] = { list = { { recipeID = 2330, name = "Potion de soins mineure", color = "yellow", margin = 40 } } }
+    mock.items = { [2447] = 3 }
+    local list = n.Prof.Craftable()
+    local e
+    for _, x in ipairs(list) do if x.recipe == "Potion de soins mineure" then e = x end end
+    assert(e and e.n == 3 and e.skillUp and e.margin == 40, "hors plan : 3 avec les sacs, monte, marge lue")
+    assert(#e.buy == 1 and e.buy[1].id == 3371 and e.buy[1].qty == 3, "fioles a acheter")
+    assert(n.Prof.BagText(e):find("Marge", 1, true) and n.Prof.BagShort(e):find("Marge", 1, true), n.Prof.BagText(e))
+    for _, x in ipairs(list) do assert(x.recipe ~= "Metier non appris", "metier non appris ignore") end
+    n.db.reagents[2447][1].color = "green"
+    n.db.reagents[3371][1].color = "green"
+    for _, x in ipairs(n.Prof.Craftable()) do if x.recipe == "Potion de soins mineure" then assert(not x.skillUp, "verte : ne monte plus") end end
+    mock.items = nil
+  end)
+
   check("Prof.Craftable : craft avec achat marchand, rien, secret, tri par montee de competence", function()
     local o = fresh()
     local n = o.n
