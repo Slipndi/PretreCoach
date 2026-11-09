@@ -209,9 +209,21 @@ end)
 
 ns.On("PLAYER_LOGIN", function() ns.After(5, Q.StartIndex) end)
 
+-- Continent (1414 Kalimdor, 1415 Royaumes de l'Est) d'une carte, en remontant parentMapID ; nil si illisible.
+local function continentOf(mapID)
+  for _ = 1, 10 do
+    if mapID == 1414 or mapID == 1415 then return mapID end
+    local info = type(mapID) == "number" and S.Get(C_Map and C_Map.GetMapInfo, mapID)
+    mapID = type(info) == "table" and info.parentMapID or nil
+    if not mapID or mapID == 0 then return nil end
+  end
+end
+local CAPITAL_CONTINENT = { 1415, 1414, 1414 } -- Fossoyeuse, Orgrimmar, Pitons-du-Tonnerre
+
 -- PNJ du role (PRIEST, ALCHEMY, HERBALISM, FIRSTAID, COOKING ou AUCTIONEER) : meme zone que le joueur, sinon capitale Horde.
 -- Le joueur est donne par uiMapID et/ou areaID ; sans conversion de zones, seul l'areaID peut correspondre.
--- Hors zone, AUCTIONEER et PRIEST preferent Fossoyeuse, puis Orgrimmar, puis les Pitons-du-Tonnerre ; les autres roles : premier.
+-- Hors zone, une capitale du continent du joueur passe avant les autres ; a continent egal, AUCTIONEER et PRIEST preferent
+-- Fossoyeuse, puis Orgrimmar, puis les Pitons-du-Tonnerre ; les autres roles : premier.
 -- shortcut: pas de distance, premier PNJ de l'index qui convient. Memorise par (role, uiMapID, areaID), vide sur QINDEX.
 function Q.Nearest(role, uiMapID, areaID)
   Q.Available()
@@ -225,6 +237,7 @@ function Q.Nearest(role, uiMapID, areaID)
   local capitals = {}
   for r, k in ipairs({ "UNDERCITY", "ORGRIMMAR", "THUNDER_BLUFF" }) do capitals[zones[k] or false] = r end
   local prefer = role == "AUCTIONEER" or role == "PRIEST"
+  local here = continentOf(uiMapID)
   local capital, rank
   for _, id in ipairs(list) do
     local w = Q.Where(id)
@@ -234,7 +247,10 @@ function Q.Nearest(role, uiMapID, areaID)
         return id, w
       end
       local r = capitals[w.areaID]
-      if r and (not capital or (prefer and r < rank)) then capital, rank = { id, w }, r end
+      if r then
+        r = r + ((here and CAPITAL_CONTINENT[r] ~= here) and 10 or 0) -- autre continent : apres toute capitale d'ici
+        if not capital or r < rank and (prefer or (rank >= 10 and r < 10)) then capital, rank = { id, w }, r end
+      end
     end
   end
   nearCache[key] = capital or false

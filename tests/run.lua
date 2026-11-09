@@ -3589,6 +3589,14 @@ local function suite(label)
     n.db.qindex.trainers.COOKING = { 304, 303 }
     n.Fire("QINDEX")
     assert(n.Q.Nearest("COOKING") == 304, "autre role : premier trouve")
+    -- joueur en Kalimdor (carte 9001 -> 1414) : la capitale du meme continent passe avant Fossoyeuse
+    mock.mapParents = { [9001] = 1414, [9002] = 1415 }
+    n.db.qindex.trainers.PRIEST = { 375, 303 }
+    n.Fire("QINDEX")
+    assert(n.Q.Nearest("PRIEST", 9001) == 303, "Kalimdor : Orgrimmar")
+    assert(n.Q.Nearest("PRIEST", 9002) == 375, "Royaumes de l'Est : Fossoyeuse")
+    assert(n.Q.Nearest("COOKING", 9002) == 304 and n.Q.Nearest("COOKING", 9001) == 303, "autre role : continent d'abord")
+    mock.mapParents = nil
   end)
 
   -- L15 : « Ou aller » (conversion AreaID -> uiMapID, Goto, repere de carte)
