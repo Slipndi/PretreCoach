@@ -271,6 +271,7 @@ ns.L = {
   TALENT_LINE = "%s, rangée %d : %s (%d/%d → %d/%d)",
   TALENT_LINE_BLIND = "%s, rangée %d : %s (objectif %d/%d)",
   TALENT_UNSPENT = "Points non dépensés : %d",
+  TALENT_SPEND = "Attribue ton point de talent (touche N)",
   TALENT_RESPEC = "Va voir le maître : réinitialise tes talents, puis 31 points en Ombre",
   TALENT_NEXT = "Ensuite : %s (%s) au niveau %d",
   TALENT_NONE = "Aucun talent à prendre pour l'instant",

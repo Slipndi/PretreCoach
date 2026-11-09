@@ -4080,6 +4080,19 @@ local function suite(label)
     assert(#n.Guide.Goals() == 2, "metiers illisibles : XP et Or seuls")
   end)
 
+  check("Guide : point de talent libre = rangee XP « attribue le point », hors tranche d'objectif talent aussi", function()
+    local n = fresh().n
+    setState(n, { level = 25 })
+    n.Guide.Evaluate = function() return {} end
+    n.State.unspentTalents = 0
+    assert(not n.Guide.Goals()[1].text:find("talent", 1, true), "aucun point : rien")
+    n.State.unspentTalents = 2
+    local g = n.Guide.Goals()[1]
+    assert(g.text:find("talent", 1, true) and g.detail == n.L.TALENT_UNSPENT:format(2) and g.e == nil, g.text)
+    n.State.unspentTalents = mock.SECRET
+    assert(not n.Guide.Goals()[1].text:find("talent", 1, true), "secret : rien d'affirme")
+  end)
+
   check("Guide : Goals, repli XP et repli metier (rang chez le maitre, Prof.Text)", function()
     local n = fresh().n
     setState(n, { level = 9, profs = { [182] = { rank = 60, max = 75 }, [171] = { rank = 10, max = 75 } } })

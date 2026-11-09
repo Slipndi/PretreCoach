@@ -393,7 +393,15 @@ function Guide.Goals()
   -- 1. débloquable maintenant ; 2. la quête choisie par Quests ; 3. le reste des objectifs ; 4. repli de zone (xpText(nil))
   local xp, quest = xpPick(list, false), nil
   local text, detail, go
-  if not xp then
+  -- point de talent libre : a attribuer avant tout le reste (le talent du plan s'il y en a un, sinon le simple rappel)
+  local pts = unspent()
+  if pts > 0 and not (xp and xp.check == "talent") then
+    local okT, todo = pcall(function() return ns.Talents.Todo(State.level) end)
+    local it = okT and type(todo) == "table" and todo[1]
+    text = it and L.TALENT_POINT:format(ns.Talents.Describe(it)) or L.TALENT_SPEND
+    detail, xp = L.TALENT_UNSPENT:format(pts), nil
+  end
+  if not xp and not text then
     quest = ns.Quests and ns.Quests.Best()
     if quest then text, detail, go = quest.text, quest.detail, quest.go else xp = xpPick(list, true) end
   end
