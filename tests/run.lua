@@ -4480,6 +4480,26 @@ local function suite(label)
     assert(not n.Prof.Steps(171).learn, "deja connue dans la fenetre")
   end)
 
+  check("Prof.Steps / Craftable : recette du plan absente de la fenetre lue = a apprendre, jamais a fabriquer", function()
+    local n = fresh().n
+    planState(n, { [171] = { rank = 52, max = 75 } }, 9) -- etape : Élixir de défense mineure
+    mock.items = { [765] = 99, [2447] = 99, [3371] = 99 }
+    local counts = GetItemCount or (C_Item and C_Item.GetItemCount)
+    local function bag()
+      for _, e in ipairs(n.Prof.Craftable()) do if e.recipe == "Élixir de défense mineure" then return e end end
+      if not counts then return { skillUp = true } end -- API absente : rien de lisible, on ne verifie que Steps
+    end
+    assert(not counts or bag().confirm, "fenetre jamais lue : propose, a confirmer")
+    n.Prof.Advice[171] = { list = {}, known = { ["Élixir arcanique mineur"] = "gray" } }
+    local s = n.Prof.Steps(171)
+    assert(s.learn and todoText(s):find("Apprends « Élixir de défense mineure »", 1, true), todoText(s))
+    assert(not counts or not bag(), "inconnue : pas proposee avec les sacs")
+    n.Prof.Advice[171].known["Élixir de défense mineure"] = "yellow" -- connue hors du top
+    s = n.Prof.Steps(171)
+    assert(not s.learn and bag() and not bag().confirm and bag().skillUp, "connue : a fabriquer")
+    mock.items = nil
+  end)
+
   check("Prof.Steps : comptes de composants lisibles, absents, secrets", function()
     local n = fresh().n
     planState(n, { [171] = { rank = 10, max = 75 } })

@@ -173,11 +173,13 @@ function Prof.Read()
   local line, rank, max = openLine()
   local ids = S.Get(T.GetAllRecipeIDs)
   if not line or type(ids) ~= "table" then return end
-  local cands, best = {}, 9
+  local cands, best, known = {}, 9, {}
   for _, id in ipairs(ids) do
     local info = S.Get(T.GetRecipeInfo, id)
     if type(info) == "table" and field(info, "learned") == true then
       local c, ups = colorOf(info), num(field(info, "numSkillUps"))
+      local nm = field(info, "name")
+      if type(nm) == "string" then known[nm] = c or "gray" end -- toutes les recettes apprises, pas seulement le top
       if c and not (ups and ups < 1) then
         best = math.min(best, CRANK[c])
         cands[#cands + 1] = { recipeID = id, name = field(info, "name"), color = c, skillUps = ups or 1,
@@ -193,7 +195,7 @@ function Prof.Read()
   for _, e in ipairs(list) do enrich(e) end
   table.sort(list, sortFinal)
   local old = Get(line)
-  local adv = { rank = rank, max = max, list = list, when = date("%Y-%m-%d %H:%M:%S") }
+  local adv = { rank = rank, max = max, list = list, known = known, when = date("%Y-%m-%d %H:%M:%S") }
   Prof.Advice[line] = adv
   if ns.db then ns.db.prof = ns.db.prof or {}; ns.db.prof[line] = adv end
   local top, prev = list[1], old and old.list and old.list[1]
@@ -305,6 +307,12 @@ end
 
 local function knownRecipe(adv, name)
   for _, e in ipairs(adv and adv.list or {}) do if e.name == name then return e end end
+  local c = adv and type(adv.known) == "table" and adv.known[name]
+  if c then return { name = name, color = c } end
+end
+-- Recette sure d'etre inconnue : la fenetre du metier a ete lue (adv.known) et le nom n'y est pas.
+local function unknownRecipe(adv, name)
+  return adv ~= nil and type(adv.known) == "table" and not knownRecipe(adv, name)
 end
 
 local function names(t, sep) return table.concat(t, sep or ", ") end
@@ -385,6 +393,18 @@ function Prof.Steps(line)
     todo[#todo].blocked = not ok or nil
   end
   if step.extra then add("extra", step.extra) end
+  -- Recette du plan pas apprise (et pas achetee chez un marchand, ligne buy ci-dessus) : l'apprendre avant de fabriquer
+  if step.recipe and not (step.buy and step.buy.recipe == step.recipe) and unknownRecipe(adv, step.recipe) then
+    local dup
+    for _, a in ipairs(todo) do if a.kind == "learn" and a.text:find(step.recipe, 1, true) then dup = true end end
+    if not dup then
+      local ok, d = false, nil
+      if GOKEY[line] and ns.Goto then ok, d = pcall(ns.Goto.For, GOKEY[line]) end
+      local where = ok and type(d) == "table" and d.x and d.text
+      add("learn", where and L.PROF_STEP_LEARN:format(step.recipe, where) or L.PROF_STEP_LEARN_ANY:format(step.recipe), false)
+      learn = true
+    end
+  end
   if step.comps then
     local left = math.max(1, math.ceil(step.crafts * (step.to - math.min(math.max(rank, step.from), step.to)) / (step.to - step.from)))
     local parts, vendors, all, spend = {}, {}, true, 0
@@ -449,7 +469,7 @@ local function compute()
     local p = State.profs[line]
     local adv = p and Get(line)
     for _, st in ipairs(p and plan.steps or {}) do
-      if st.recipe and st.comps and (p.rank or 0) >= st.from and st.to > (p.rank or 0) - FRESH then
+      if st.recipe and st.comps and (p.rank or 0) >= st.from and st.to > (p.rank or 0) - FRESH and not unknownRecipe(adv, st.recipe) then
         local n, with, ok = math.huge, {}, true
         for _, c in ipairs(st.comps) do
           if not c.vendor then
